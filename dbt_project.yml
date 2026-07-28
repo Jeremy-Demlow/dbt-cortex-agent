@@ -1,0 +1,23 @@
+name: 'dbt_cortex_agent'
+version: '0.1.0'
+config-version: 2
+
+# Installable dbt package: Cortex Agent + eval macros and the generic
+# eval-question-coverage test. No project-specific coupling (see the coupling
+# audit in docs/dbt_cortex_agent_extraction.md). Consumers supply agents as
+# exposures with meta.cortex_agent and eval datasets with meta.cortex_eval.
+require-dbt-version: [">=1.9.0", "<2.0.0"]
+
+macro-paths: ["macros"]
+
+# Public var surface (documented in the extraction manifest). Defaults chosen so
+# a consumer can start with zero config; override in the consuming project.
+vars:
+  cortex_agent_deploy_target: dbt_focus
+  cortex_agent_schema: AGENTS
+  cortex_eval_schema: EVAL
+  cortex_agent_skill_stage: SKILL_STAGE
+  cortex_agent_default_model: claude-sonnet-4-5
+  code_execution_enabled: false
+  force_agent_recreate: false
+  mcp_deploy_enabled: false
