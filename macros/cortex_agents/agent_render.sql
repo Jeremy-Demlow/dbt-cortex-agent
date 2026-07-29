@@ -231,7 +231,7 @@
 
   {% set ddl %}
 -- Native Cortex Agent versioning deploy (applied path branches on current state).
--- See docs/dbt_native_agent_eval_walkthrough.md for the full annotated sequence.
+-- See docs/architecture.md for the lifecycle contract.
 -- First deploy: CREATE AGENT (auto VERSION$1 + LIVE draft) -> MODIFY LIVE SET SPEC
 --   -> COMMIT (VERSION$N, DEFAULT auto-advances) -> MODIFY VERSION SET ALIAS -> ADD LIVE FROM LAST.
 -- Re-deploy: ADD LIVE FROM LAST -> MODIFY LIVE SET SPEC -> COMMIT -> SET ALIAS -> ADD LIVE FROM LAST.
