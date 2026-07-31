@@ -1,4 +1,5 @@
 dbt_packages/
 logs/
 target/
+.user.yml
 dbt_internal_packages/
