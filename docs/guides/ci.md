@@ -35,7 +35,8 @@ and parameterize it rather than assuming the dbt package installs it.
 
 Copyable starting points:
 
-- [`package-check.yml`](../../examples/ci/package-check.yml) — dependency, parse,
+- [`package-check.yml`](../../.github/workflows/package-check.yml) — active standalone
+  dependency, parse,
   compile, validation, deterministic render, and deployment dry-run.
 
 The containing framework repository also provides a full-framework template for
