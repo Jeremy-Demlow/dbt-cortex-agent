@@ -1,0 +1,55 @@
+version: 2
+
+models:
+  - name: eval_orders_assistant__core
+    description: Minimal native-eval dataset for Orders Assistant.
+    config:
+      materialized: table
+      schema: eval
+      meta:
+        cortex_eval:
+          name: core
+          agent: orders_assistant
+          projection: native_eval
+          description: Core routing, correctness, and boundary checks.
+          metrics:
+            - answer_correctness
+            - logical_consistency
+            - tool_selection_accuracy
+            - tool_execution_accuracy
+          thresholds:
+            answer_correctness: 0.60
+            logical_consistency: 0.60
+            tool_selection_accuracy: 0.80
+            tool_execution_accuracy: 0.70
+          questions:
+            - id: total_revenue
+              test_type: in_scope
+              expected_tools: [OrdersAnalytics]
+              ground_truth_ref: total_revenue
+            - id: out_of_scope_competitor_inventory
+              test_type: out_of_scope
+              expected_tools: []
+              ground_truth_ref: out_of_scope_competitor_inventory
+            - id: negative_future_revenue
+              test_type: negative
+              expected_tools: []
+              ground_truth_ref: negative_future_revenue
+    data_tests:
+      - dbt_cortex_agent.cortex_eval_question_coverage:
+          arguments:
+            min_out_of_scope: 1
+            min_negative: 1
+            expected_tools: [OrdersAnalytics]
+            expected_refs:
+              - total_revenue
+              - out_of_scope_competitor_inventory
+              - negative_future_revenue
+    columns:
+      - name: input_query
+        data_tests:
+          - not_null
+          - unique
+      - name: output
+        data_tests:
+          - not_null

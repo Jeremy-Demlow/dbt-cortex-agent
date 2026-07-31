@@ -1,0 +1,46 @@
+version: 2
+
+exposures:
+  - name: orders_assistant
+    label: Orders Assistant
+    type: application
+    maturity: medium
+    owner:
+      name: analytics
+      email: analytics@example.com
+    depends_on:
+      - ref('sem_orders')
+    config:
+      meta:
+        cortex_agent:
+          enabled: true
+          snowflake_name: ORDERS_ASSISTANT
+          naming:
+            sandbox: ORDERS_ASSISTANT_SANDBOX
+            prod: ORDERS_ASSISTANT
+          access:
+            usage_roles:
+              - "{{ env_var('CORTEX_AGENT_RUNTIME_ROLE', 'ORDERS_AGENT_USER') }}"
+          model:
+            orchestration: claude-sonnet-4-5
+          orchestration:
+            budget:
+              seconds: 60
+              tokens: 16000
+          instructions:
+            orchestration: Use OrdersAnalytics for governed order questions. Do not invent unavailable facts.
+            response: Answer concisely and state the requested time scope and units.
+          sample_questions:
+            - What was total order revenue?
+            - Which region generated the most revenue?
+          tools:
+            - name: OrdersAnalytics
+              type: cortex_analyst_text_to_sql
+              semantic_view_model: sem_orders
+              warehouse: "{{ target.warehouse }}"
+              query_timeout: 60
+              evaluation_supported: true
+              description: >
+                Analyzes governed order revenue, count, average value, dates, and
+                regions. Use for aggregate order questions and comparisons. Not
+                for competitor data, inventory, support tickets, or forecasts.

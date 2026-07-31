@@ -1,0 +1,58 @@
+name: dbt Cortex Agent package check
+
+on:
+  pull_request:
+
+jobs:
+  package-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: examples/starter_project
+    env:
+      DBT_TARGET: sandbox
+      AGENT_NAME: orders_assistant
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/snowflake_key.p8
+      SNOWFLAKE_ROLE: ${{ vars.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ vars.SNOWFLAKE_WAREHOUSE }}
+      SNOWFLAKE_DATABASE: ${{ vars.SNOWFLAKE_DATABASE }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: Configure private key
+        shell: bash
+        working-directory: .
+        run: |
+          umask 077
+          printf '%s' '${{ secrets.SNOWFLAKE_PRIVATE_KEY }}' > "$SNOWFLAKE_PRIVATE_KEY_PATH"
+
+      - name: Install dbt Core authority
+        working-directory: .
+        run: pip install 'dbt-snowflake==1.11.4'
+
+      - name: Dependency, graph, and compile checks
+        run: |
+          dbt deps
+          dbt parse --no-partial-parse
+          dbt compile --no-partial-parse
+
+      - name: Validate and render Agent contracts
+        run: |
+          dbt run-operation cortex_agent__validate \
+            --args "{agent_name: $AGENT_NAME, projection: canonical}"
+          dbt run-operation cortex_agent__render_spec \
+            --args "{agent_name: $AGENT_NAME, projection: canonical}"
+          dbt run-operation cortex_agent__render_spec \
+            --args "{agent_name: $AGENT_NAME, projection: native_eval}"
+          dbt run-operation cortex_agent__deploy \
+            --args "{agent_name: $AGENT_NAME, projection: canonical, dry_run: true}"
+
+      - name: Cleanup
+        if: always()
+        run: rm -f "$SNOWFLAKE_PRIVATE_KEY_PATH"

@@ -1,0 +1,27 @@
+name: cortex_agent_starter
+version: 0.1.0
+config-version: 2
+
+profile: cortex_agent_starter
+
+model-paths: [models]
+seed-paths: [seeds]
+test-paths: [tests]
+macro-paths: [macros]
+
+target-path: target
+clean-targets:
+  - target
+  - dbt_packages
+  - logs
+
+vars:
+  cortex_agent_deploy_target: sandbox
+  cortex_agent_schema: AGENTS
+  cortex_eval_schema: EVAL
+
+models:
+  cortex_agent_starter:
+    semantic:
+      +materialized: semantic_view
+      +schema: semantic
