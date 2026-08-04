@@ -98,5 +98,10 @@ def test_current_product_versions_and_project_names_align():
 
 def test_generated_residue_is_ignored_or_cleaned_by_workflow():
     text = _workflow_text()
-    for value in ("dbt clean", "rm -rf build dist src/*.egg-info", "rm -rf .pytest_cache", "__pycache__"):
+    for value in (
+        "rm -rf integration_tests/dbt_packages integration_tests/target integration_tests/logs",
+        "rm -rf build dist src/*.egg-info",
+        "rm -rf .pytest_cache",
+        "__pycache__",
+    ):
         assert value in text
