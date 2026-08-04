@@ -105,3 +105,9 @@ def test_generated_residue_is_ignored_or_cleaned_by_workflow():
         "__pycache__",
     ):
         assert value in text
+
+
+def test_secret_scan_is_limited_to_tracked_non_lock_files():
+    text = _workflow_text()
+    assert "git ls-files -z -- ':!:*lock*'" in text
+    assert "detect-secrets scan --all-files" not in text

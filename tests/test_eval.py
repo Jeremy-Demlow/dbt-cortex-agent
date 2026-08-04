@@ -317,7 +317,7 @@ def _result(*, score=0.8, passed=True, ids=None):
         "thresholds": {"answer_correctness": 0.6},
         "regression_tolerances": {"answer_correctness": 0.05},
         "passed": passed, "total_records": 2, "ordered_ground_truth_refs": ids or ["q1", "q2"],
-        "results": [{"secret": "detail"}],
+        "results": [{"secret": "detail"}],  # pragma: allowlist secret
     }
 
 
