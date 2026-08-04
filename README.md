@@ -1,215 +1,115 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` is a Snowflake-only dbt package for defining, validating,
-rendering, versioning, and evaluating Snowflake Cortex Agents from dbt metadata.
+`dbt_cortex_agent` 0.3.0 is a Snowflake-only dbt package and Python CLI for
+defining, validating, rendering, versioning, and evaluating Cortex Agents from
+dbt metadata. Agents are dbt exposures; semantic views and evaluation datasets
+remain dbt models. dbt owns the specification and lifecycle macros, while the
+CLI consumes `target/manifest.json`, delegates Agent changes to those macros,
+and manages local files, runtime clients, and evaluation artifacts.
 
-Agents are dbt **exposures**, not fake relations. Semantic views and evaluation
-datasets remain dbt models, while explicit macros manage the Agent lifecycle:
-LIVE drafts, immutable `VERSION$N` versions, aliases, skills, MCP attachment, and
-Agent-object grants.
+## Install one version on two surfaces
 
-## At a glance
-
-| Capability | Package contract |
-|---|---|
-| Agent definition | Exposure with `config.meta.cortex_agent` |
-| Eval definition | Table model with `config.meta.cortex_eval` |
-| Dependencies | Exposure `depends_on`, model `ref()`, manifest resolution |
-| Deployment | Explicit `cortex_agent__deploy`; dry-run by default |
-| Versioning | Spec/skill hashes, LIVE commit, aliases, no-change skip |
-| Evaluation | Native eval config/start/poll/results/threshold macros |
-| Safety | Mutations restricted to `cortex_agent_deploy_target` |
-| dbt | `>=1.9,<2.0`; dbt Core + Snowflake is authoritative |
-
-## End-to-end flow
-
-```text
-AUTHOR [consumer dbt project]
-  Agent exposure + semantic models + eval table + optional skills
-                    |
-                    v
-          dbt parse / resolved graph
-                    |
-         +----------+-----------+
-         |                      |
-         v                      v
-  Package macros [P]     target/manifest.json
-  validate + render             |
-         |                      v
-         |              Copyable tooling [T]
-         |              scope + orchestrate
-         +----------+-----------+
-                    |
-       +------------+-------------+
-       |                          |
-       v                          v
-  CANONICAL LANE             NATIVE-EVAL LANE
-  upload skills first        filtered *_EVAL Agent
-  hash spec + skills         materialize ground truth
-  commit VERSION$N           run Agent Evaluation
-  assign alias               threshold + baseline gate
-       |
-       +--> separate grants, promotion, rollback, MCP, and smoke
-
-[P] installed dbt package   [T] optional copied tooling   [R] reference only
-```
-
-See the [detailed end-to-end flow](docs/concepts/end-to-end-flow.md) for ownership,
-failure boundaries, versioning, evaluation, and CI behavior.
-
-## Installation status
-
-The package is developed in `agentmanagementdbt` and released to the private
-`Jeremy-Demlow/dbt-cortex-agent` repository. During monorepo development, use the
-local package path:
+Pin the dbt package to the `v0.3.0` Git revision in `packages.yml`:
 
 ```yaml
-# packages.yml in the consuming dbt project
 packages:
-  - local: ../packages/dbt_cortex_agent
+  - git: "git@github.com:Jeremy-Demlow/dbt-cortex-agent.git"
+    revision: v0.3.0
 ```
 
-Then install it:
+Install the matching wheel from the approved release source or private index:
 
 ```bash
 dbt deps
+python -m pip install 'dbt-cortex-agent==0.3.0'
 ```
 
-For the standalone repository, pin the immutable `v0.2.0` Git revision; never use
-an unpinned branch. See [installation](docs/getting-started/installation.md).
+Use `dbt-cortex-agent[runtime]==0.3.0` only for connector-backed skill smoke
+or paid evaluation. The supported runtime is Python `>=3.10,<4`, dbt
+`>=1.10,<2.0`, and `dbt-snowflake`; see [compatibility](docs/reference/compatibility.md)
+and [installation](docs/getting-started/installation.md).
 
-## First Agent
+## Five-minute non-mutating quickstart
 
-For a complete minimal consumer that is compiled and contract-tested independently,
-start with the [`starter_project`](examples/starter_project/README.md). The inline
-example below is the same adoption shape in condensed form.
-
-Create an exposure in `models/agents/orders_assistant/agent.yml`:
-
-```yaml
-version: 2
-
-exposures:
-  - name: orders_assistant
-    label: Orders Assistant
-    type: application
-    maturity: medium
-    owner:
-      name: analytics
-      email: analytics@example.com
-    depends_on:
-      - ref('sem_orders')
-    config:
-      meta:
-        cortex_agent:
-          enabled: true
-          snowflake_name: ORDERS_ASSISTANT
-          naming:
-            sandbox: ORDERS_ASSISTANT_SANDBOX
-            prod: ORDERS_ASSISTANT
-          access:
-            usage_roles: [ORDERS_AGENT_USER]
-          model:
-            orchestration: claude-sonnet-4-5
-          orchestration:
-            budget: {seconds: 60, tokens: 16000}
-          instructions:
-            orchestration: Use OrdersAnalytics for governed order questions.
-            response: Answer concisely and include the requested time scope.
-          sample_questions:
-            - What was order revenue last month?
-          tools:
-            - name: OrdersAnalytics
-              type: cortex_analyst_text_to_sql
-              semantic_view_model: sem_orders
-              warehouse: "{{ target.warehouse }}"
-              description: >
-                Analyzes governed order revenue and volume. Use for order trends
-                and period comparisons. Not for customer-support policy.
-```
-
-The exposure `depends_on` creates dbt lineage. `semantic_view_model` is resolved
-against the manifest and must identify a `semantic_view` model.
-
-## Validate, render, and dry-run
+From a consumer dbt project with an Agent exposure:
 
 ```bash
-dbt parse
-
-dbt run-operation cortex_agent__validate \
-  --args '{"agent_name":"orders_assistant","projection":"canonical"}'
-
-dbt run-operation cortex_agent__render_spec \
-  --args '{"agent_name":"orders_assistant","projection":"canonical"}'
-
-dbt run-operation cortex_agent__deploy \
-  --args '{"agent_name":"orders_assistant","projection":"canonical","dry_run":true}'
+dbt-cortex-agent doctor --project-dir . --target sandbox --json
+dbt-cortex-agent manifest validate --project-dir . --target sandbox --json
+dbt-cortex-agent agent render --project-dir . --target sandbox --agent orders_assistant --json
+dbt-cortex-agent agent deploy --project-dir . --target sandbox --agent orders_assistant \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --json
 ```
 
-`cortex_agent__deploy` is non-mutating by default. A live deployment additionally
-requires the active target to equal `cortex_agent_deploy_target`.
+These commands run a fresh `dbt parse`; none uses `--apply`. The final command
+renders the controlled deploy path without mutating Snowflake. Follow the
+[quickstart](docs/getting-started/quickstart.md) to create the metadata and
+bootstrap explicit allowlists.
 
-## Deploy and manage versions
+## Controlled deploy
+
+Review the dry run, use an isolated target/database, then opt in explicitly:
 
 ```bash
-dbt run-operation cortex_agent__deploy --target sandbox \
-  --args '{"agent_name":"orders_assistant","projection":"canonical","dry_run":false}'
-
-dbt run-operation cortex_agent__promote_alias --target sandbox \
-  --args '{"agent_name":"orders_assistant","from_alias":"validated","to_alias":"production","dry_run":true}'
-
-dbt run-operation cortex_agent__rollback_alias --target sandbox \
-  --args '{"agent_name":"orders_assistant","alias":"production","to_version":"VERSION$2","dry_run":true}'
+dbt-cortex-agent agent deploy --project-dir . --target sandbox \
+  --agent orders_assistant --connection sandbox --database ANALYTICS_DEV \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --apply
 ```
 
-Deployment compares the final spec hash and staged-skill hash with the current
-version comment. Unchanged deployments skip version churn. See
-[lifecycle and versioning](docs/concepts/lifecycle-and-versioning.md).
+`--apply` requires an explicit `--connection`; the configured database must
+match dbt's resolved target, and the target/database must pass both CLI and dbt
+allowlists. Deployment updates LIVE, commits `VERSION$N`, and may move an alias.
+Read [lifecycle](docs/guides/lifecycle.md) and [Snowflake setup](docs/getting-started/snowflake-setup.md)
+before crossing this boundary.
 
-## Canonical versus native-eval
+## CLI or dbt macros
 
-The canonical projection represents intended Agent behavior. The `native_eval`
-projection excludes capabilities unsupported by built-in Cortex Agent Evaluation,
-including skills, MCP connectors, and explicitly unsupported tools/capabilities.
-Both projections come from one exposure. See
-[canonical versus native-eval](docs/concepts/canonical-vs-native-eval.md).
+| Need | Shipped CLI | Public dbt macro |
+|---|---|---|
+| Diagnose a project | `doctor` | — |
+| Validate resolved metadata | `manifest validate` | `cortex_agent__validate` |
+| Render canonical specs | `agent render` | `cortex_agent__render_spec` |
+| Deploy/version an Agent | `agent deploy` | `cortex_agent__deploy` |
+| Grant, promote, roll back | `agent grant/promote/rollback` | lifecycle macros |
+| Plan/upload/smoke skills | `skill plan/upload/smoke` | deploy validates staged skills |
+| Render/run native evaluation | `eval run` | `cortex_eval__execution_plan`, `cortex_eval__run` |
+| Compare/gate/accept artifacts | `eval compare/gate/accept-baseline` | threshold macros only |
 
-## Skills, evaluations, access, MCP, and CI
+Use macros inside dbt-native automation. Use the CLI when local file upload,
+stable process exits/JSON, connector clients, or durable evaluation artifacts
+are required. Both paths consume the same dbt metadata; Python does not own a
+second Agent DDL implementation.
 
-- [Skills](docs/guides/skills.md)
-- [Evaluations](docs/guides/evaluations.md)
-- [Access control](docs/guides/access-control.md)
-- [MCP connectors](docs/guides/mcp.md)
-- [CI adoption](docs/guides/ci.md)
+## Lifecycle and evaluation
 
-Skills and the advanced client-side evaluation gate use optional copyable tooling
-from the containing repository. Those Python scripts and Make targets are not
-installed by this dbt package.
+Canonical deploy validates and hashes the rendered spec plus staged skills,
+skips unchanged versions, modifies LIVE, commits an immutable version, and
+applies the requested alias. Promotion, rollback, grants, MCP attachment, and
+skill smoke remain explicit operations.
 
-## Reference
+Native evaluation uses a separate suffixed Agent rendered from the same exposure
+without unsupported skills or MCP connectors. `eval run` is a client for an
+already deployed native-eval Agent, materialized eval table, and evaluation
+stage; `--apply` incurs Cortex spend. It writes candidate JSON with plan identity,
+ordered ground-truth refs, policy, and pre/post DEFAULT provenance for threshold
+and accepted-baseline gates. See [evaluations](docs/guides/evaluations.md).
 
-- [Agent metadata](docs/reference/agent-metadata.md)
-- [Eval metadata and dataset shape](docs/reference/eval-metadata.md)
-- [Public macros](docs/reference/macros.md)
-- [Variables](docs/reference/variables.md)
-- [Compatibility](docs/reference/compatibility.md)
-- [Detailed end-to-end flow](docs/concepts/end-to-end-flow.md)
-- [Troubleshooting](docs/troubleshooting.md)
-- [Upgrade policy](UPGRADING.md)
-- [Changelog](CHANGELOG.md)
+## Documentation
 
-## Important limitations
+- Start: [installation](docs/getting-started/installation.md), [quickstart](docs/getting-started/quickstart.md), [Snowflake setup](docs/getting-started/snowflake-setup.md)
+- Configure: [configuration model](docs/guides/configuration-model.md), [Agent metadata](docs/reference/agent-metadata.md), [eval metadata](docs/reference/eval-metadata.md), [variables](docs/reference/variables.md)
+- Operate: [lifecycle](docs/guides/lifecycle.md), [skills](docs/guides/skills.md), [evaluations](docs/guides/evaluations.md), [CI](docs/guides/ci.md)
+- Reference: [CLI](docs/reference/cli.md), [macros](docs/reference/macros.md), [compatibility](docs/reference/compatibility.md), [architecture](docs/concepts/end-to-end-flow.md), [troubleshooting](docs/troubleshooting.md)
+- Change: [upgrade from v0.2.0](UPGRADING.md), [changelog](CHANGELOG.md)
 
-- Snowflake is the only supported execution adapter.
-- Agent exposures are deployed through explicit macros, not `dbt run`.
-- Package macros called from model SQL must be package-qualified.
-- Property-file Jinja cannot call custom macros; use `target`, `var`, and
-  `env_var` there.
-- `cortex_eval__render_config` may query the materialized dataset and Snowflake
-  dataset inventory; it is not an unconditional offline render.
-- Package-native evaluation gates thresholds. Retry artifacts, accepted-baseline
-  comparison, and state-scoped CI are optional framework tooling.
+## Limitations and policies
 
-## License
+- Snowflake and dbt Core with `dbt-snowflake` are the release authority; DuckDB is unsupported and Fusion is advisory.
+- `dbt run` does not deploy exposures. Agent lifecycle requires explicit CLI commands or `dbt run-operation` macros.
+- Property YAML may use `target`, `var`, and `env_var`, but cannot call package macros.
+- Skills and MCP connectors are excluded from built-in native Agent Evaluation and require separate smoke/integration proof.
+- Live mutation, runtime smoke, and evaluation spend are never default operations.
+- This independent package is not sponsored, endorsed, supported, or maintained by Snowflake Inc. Public publication remains subject to [governance](GOVERNANCE.md), [maintainer](MAINTAINERS.md), and legal-review gates.
 
-Apache License 2.0. See [LICENSE](LICENSE).
+Apache License 2.0. See [LICENSE](LICENSE), [contributing](CONTRIBUTING.md),
+[security](SECURITY.md), [support](SUPPORT.md), and [Code of Conduct](CODE_OF_CONDUCT.md).

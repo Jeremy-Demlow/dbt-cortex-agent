@@ -1,35 +1,93 @@
 # Evaluations
 
-An eval suite is a table model with `config.meta.cortex_eval`. The model computes
-ground truth in SQL and materializes `INPUT_QUERY` plus `OUTPUT` VARIANT rows.
+An evaluation suite is a table model with `config.meta.cortex_eval`. dbt owns the
+suite, native configuration, target identities, metric policy, and public macros.
+The Python CLI consumes one dbt-rendered execution plan and adds bounded polling,
+retry, durable candidate artifacts, comparison, gates, and accepted baselines.
 
-## Package-native capabilities
+## Prerequisites and spend boundary
 
-- validate metadata and live dataset shape,
-- render/start an Agent Evaluation,
-- poll and write a Snowflake results table,
-- enforce declared metric thresholds,
-- test question refs, boundary minimums, and expected-tool coverage.
+Before a paid CLI run, provide all three prerequisites:
 
-## Optional framework capabilities
+1. a **deployed native-eval Agent** rendered from the suite's projection;
+2. a **materialized eval table** with `INPUT_QUERY` and `OUTPUT` VARIANT rows;
+3. access to the **evaluation stage** resolved as
+   `<target.database>.<cortex_agent_schema>.EVAL_CONFIG_STAGE`.
 
-Copyable Python tooling adds client-side retry, durable JSON artifacts, accepted
-baseline comparison, suite-signature checks, and changed-Agent CI scoping.
+The native-eval Agent normally uses the canonical target name plus
+`cortex_agent_eval_suffix` (default `_EVAL`). The eval table FQN comes from the
+resolved dbt model in `cortex_eval_schema`. Dataset names are content-hashed from
+the Agent/suite identity so changed ground truth does not silently reuse a stale
+Snowflake dataset.
 
-| Capability | Package macros | Framework tooling |
-|---|---:|---:|
-| Config/start/poll/results | Yes | Yes |
-| Threshold gate | Yes | Yes |
-| Retry transient failures | No | Yes |
-| Durable JSON | No | Yes |
-| Accepted-baseline comparison | No | Yes |
-| State-scoped CI | No | Yes |
+`dbt-cortex-agent eval run` does not create these prerequisites. Its default path
+only renders the authoritative plan. `--apply` uploads a generated JSON config,
+creates the stage if needed, starts Snowflake Agent Evaluation, and incurs Cortex
+and warehouse spend. Applied execution requires explicit `--connection` and
+`--warehouse`; `--database` and `--target`, when supplied, must match the plan.
 
-## Important behavior
+## Python client path
 
-- Boundary rows may have no ground-truth invocation.
-- Tool metrics should gate only in-scope rows.
-- Package model-SQL helpers must be called package-qualified.
-- `cortex_eval__render_config` can query the materialized table and Snowflake
-  dataset inventory; it is not an unconditional offline operation.
-- Live evaluation incurs Cortex spend and must be explicitly approved.
+Render the plan without spend:
+
+```bash
+dbt-cortex-agent eval run --project-dir . --target sandbox \
+  --agent orders_assistant --suite core --json
+```
+
+After separately deploying the native-eval Agent and materializing/testing the
+eval model, an approved paid run uses:
+
+```bash
+dbt-cortex-agent eval run --project-dir . --target sandbox \
+  --agent orders_assistant --suite core --connection sandbox \
+  --database ANALYTICS_DEV --warehouse EVAL_WH --apply --json
+```
+
+The CLI parses, calls `cortex_eval__execution_plan`, verifies plan identity and
+signature, validates live table rows, records the pre-run DEFAULT Agent version,
+starts/polls the evaluation with bounded transient retry, records post-run
+provenance, and writes a candidate JSON under `target/dbt_cortex_agent` unless
+`--artifact-dir` overrides it. DEFAULT drift makes the result indeterminate.
+
+Candidate schema v2 includes plan/suite signatures, ordered ground-truth refs,
+metrics, thresholds, regression tolerances, row evidence, and pre/post version
+provenance.
+
+```bash
+dbt-cortex-agent eval gate candidate.json --json
+dbt-cortex-agent eval compare baseline.json candidate.json --json
+dbt-cortex-agent eval accept-baseline candidate.json
+```
+
+Baseline acceptance is preview-only until `--apply`; `--force` also requires
+`--apply`. A candidate cannot widen accepted baseline tolerances. A baseline move
+is a reviewed policy decision, never an automatic response to a failed gate.
+
+## dbt macro path
+
+Use public macros when the complete workflow should remain in dbt:
+
+```bash
+dbt run-operation cortex_eval__execution_plan --target sandbox \
+  --args '{"agent_name":"orders_assistant","suite_name":"core"}'
+dbt run-operation cortex_eval__run --target sandbox \
+  --args '{"model_name":"eval_orders_assistant__core","dry_run":true}'
+```
+
+`cortex_eval__run` can render, start, poll, write Snowflake result rows, and apply
+declared threshold gates. It is an on-demand native macro path; it does not write
+the CLI's durable candidate/baseline artifacts or apply accepted-baseline policy.
+
+## Ground-truth rules
+
+- Every row has one `OUTPUT` VARIANT with `ground_truth_output` for
+  `answer_correctness`.
+- Tool metrics use `ground_truth_invocations`; expected invocation tool names
+  must match projected tool names.
+- `tool_execution_accuracy` should include `tool_input` and `tool_output` when
+  behavior matters.
+- Web search expected invocations use `tool_name: web_search`.
+- Custom metric prompts preserve `{{input}}`, `{{output}}`, `{{ground_truth}}`,
+  and `{{tool_info}}` placeholders.
+- Skills and MCP behavior require separate smoke/integration proof.

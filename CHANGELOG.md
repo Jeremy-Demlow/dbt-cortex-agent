@@ -3,9 +3,16 @@
 All notable package changes are recorded here. The package follows semantic
 versioning for documented public macros, metadata contracts, and rendered specs.
 
-## Unreleased
+## 0.3.0 — Unreleased
 
-No unreleased changes.
+- Combined the dbt package and Python companion under one versioned product.
+- Defined the dbt/Python ownership boundary: dbt owns graph contracts, rendering,
+  Agent lifecycle DDL, naming, versions, aliases, grants, and eval-plan rendering;
+  Python owns local and remote coordination, polling/retry, and local artifacts.
+- Added guards that keep Python Agent lifecycle operations delegated to dbt macros
+  and prohibit mutating Agent DDL in Python source.
+- Removed premature convenience exports from `dbt_cortex_agent.eval`; CLI imports
+  remain internal and explicit.
 
 ## 0.2.0 — 2026-07-31
 

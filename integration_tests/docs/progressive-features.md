@@ -55,16 +55,24 @@ capabilities:
 
 Place local content at
 `models/agents/orders_assistant/skills/order_summary/SKILL.md`, upload it with the
-optional framework tooling, and smoke-test skill selection after deployment.
+installed CLI, and smoke-test skill selection after deployment:
+
+```bash
+dbt-cortex-agent skill plan --project-dir . --target sandbox \
+  --agent orders_assistant --json
+dbt-cortex-agent skill upload --project-dir . --target sandbox \
+  --agent orders_assistant --json
+```
 
 ## Alias promotion and rollback
 
 ```bash
-dbt run-operation cortex_agent__promote_alias --profiles-dir . --target sandbox \
-  --args '{"agent_name":"orders_assistant","from_alias":"validated","to_alias":"production","dry_run":true}'
-
-dbt run-operation cortex_agent__rollback_alias --profiles-dir . --target sandbox \
-  --args '{"agent_name":"orders_assistant","alias":"production","to_version":"VERSION$1","dry_run":true}'
+dbt-cortex-agent agent promote --project-dir . --target sandbox \
+  --agent orders_assistant --from-alias validated --to-alias production \
+  --allow-target sandbox --allow-database AM_SKI_RESORT_DBT_FOCUS
+dbt-cortex-agent agent rollback --project-dir . --target sandbox \
+  --agent orders_assistant --alias production --to-version 'VERSION$1' \
+  --allow-target sandbox --allow-database AM_SKI_RESORT_DBT_FOCUS
 ```
 
 Review dry-run output before applying either operation.

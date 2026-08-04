@@ -1,8 +1,10 @@
 # Compatibility
 
+This matrix applies to `dbt_cortex_agent` 0.3.0 on both install surfaces.
+
 ## Required
 
-- dbt `>=1.9,<2.0` as declared by the package.
+- dbt `>=1.10,<2.0` as declared by the package.
 - Snowflake adapter for execution.
 - Snowflake account features and privileges required by Cortex Agents and Agent
   Evaluation.
@@ -11,15 +13,17 @@
 
 | Component | Status |
 |---|---|
-| dbt Core | Authoritative package compile/artifact path |
+| dbt Core 1.10.22 | Verified lower-bound dependency/parse path |
+| dbt Core 1.11.11 | Authoritative package compile/artifact path |
+| dbt-snowflake 1.10.3 | Verified lower-bound CI adapter |
 | dbt-snowflake 1.11.4 | Verified reference CI adapter |
 | dbt_semantic_view 1.0.5 | Verified reference dependency |
 | Snowflake sandbox | Required for DDL, skills, versions, aliases, and eval execution |
 | dbt Fusion 2.0.0-preview.203 | Advisory compile compatibility; not a release authority |
 | DuckDB | Not supported or tested |
 
-The declared dbt range is broader than the currently tested matrix. Do not infer
-that every accepted version has live lifecycle coverage.
+The CI matrix covers the lower accepted minor and the authoritative minor. Do not
+infer that every accepted patch has live lifecycle coverage.
 
 ## Fusion boundary
 
@@ -51,6 +55,8 @@ One relevant difference remains: Fusion omitted
 dependencies to widen Agent evaluation scope, Fusion artifacts are not an
 authoritative replacement yet.
 
-The package therefore retains `require-dbt-version: ">=1.9.0,<2.0.0"`. Fusion may
+dbt Core 1.9.10/dbt-snowflake 1.9.4 cannot parse the integration fixture because
+that line does not accept the modern generic-test `arguments` contract. The package
+therefore requires `require-dbt-version: ">=1.10.0,<2.0.0"`. Fusion may
 emit a package-compatibility warning because the range excludes 2.0. Widen it only
 after macro dependency parity is resolved and the complete release gate passes.

@@ -6,8 +6,6 @@ profile: cortex_agent_starter
 
 model-paths: [models]
 seed-paths: [seeds]
-test-paths: [tests]
-macro-paths: [macros]
 
 target-path: target
 clean-targets:
@@ -17,6 +15,8 @@ clean-targets:
 
 vars:
   cortex_agent_deploy_target: sandbox
+  cortex_agent_allowed_targets: [sandbox]
+  cortex_agent_allowed_databases: []
   cortex_agent_schema: AGENTS
   cortex_eval_schema: EVAL
 

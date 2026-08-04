@@ -30,7 +30,7 @@ Eval metadata lives at `models[].config.meta.cortex_eval` on a table model.
 | `questions[].ground_truth_ref` | string | Yes | Must map to exactly one live dataset row |
 
 Custom metrics require `name` and `prompt`. `thresholds` are used by package-native
-gating. `regression_tolerances` are consumed by optional framework comparison tooling.
+gating. `regression_tolerances` are consumed by the shipped CLI comparison and gate commands.
 
 Each question requires `id` and `ground_truth_ref`; `expected_tools` must exist in
 the selected rendered projection. Use `test_type` values `in_scope`,
@@ -51,6 +51,5 @@ In-scope rows require invocations when tool metrics are selected. Boundary rows 
 have an empty invocation array.
 
 The generic coverage test verifies declared refs exactly once, boundary minimums,
-and expected-tool coverage. It does not currently reject every possible undeclared
-extra dataset row; use a uniqueness test on `INPUT_QUERY` and keep SQL/YAML changes
-reviewed together.
+and expected-tool coverage. Python execution additionally rejects missing or duplicate
+`ground_truth_ref` and duplicate `INPUT_QUERY` values before starting an evaluation.

@@ -1,0 +1,32 @@
+name: Package bug report
+description: Report a reproducible, non-security package defect.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not report vulnerabilities here. Follow SECURITY.md and sanitize all evidence.
+  - type: input
+    id: version
+    attributes:
+      label: Package version or revision
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Sanitized minimal reproduction
+      description: Include dbt/adapter versions and synthetic expected/actual behavior.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: This is not a security vulnerability.
+          required: true
+        - label: I removed credentials, confidential data, account identifiers, private names, results, and URLs.
+          required: true
+        - label: I reviewed SUPPORT.md and searched existing issues.
+          required: true

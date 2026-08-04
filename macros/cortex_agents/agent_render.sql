@@ -2,6 +2,14 @@
   {{ return(value is sameas false or (value | string | lower) == 'false') }}
 {% endmacro %}
 
+{% macro cortex_agent__unquoted_identifier(value, label='identifier') %}
+  {% set text = value | string %}
+  {% if not modules.re.match('^[A-Za-z_][A-Za-z0-9_$]*$', text) %}
+    {{ exceptions.raise_compiler_error(label ~ " must be an unquoted Snowflake identifier, got '" ~ text ~ "'") }}
+  {% endif %}
+  {{ return(text | upper) }}
+{% endmacro %}
+
 {% macro cortex_agent__target_agent_name(agent, projection='canonical') %}
   {% set naming = agent.get('naming', {}) %}
   {% set explicit = naming.get(target.name) %}
@@ -19,12 +27,12 @@
   {% if projection == 'native_eval' and not base_name.endswith(eval_suffix) %}
     {% set base_name = base_name ~ eval_suffix %}
   {% endif %}
-  {{ return(base_name) }}
+  {{ return(cortex_agent__unquoted_identifier(base_name, 'Agent object')) }}
 {% endmacro %}
 
 {% macro cortex_agent__target_agent_fqn(agent, projection='canonical') %}
-  {% set database_name = target.database %}
-  {% set schema_name = cortex_agent__schema() %}
+  {% set database_name = cortex_agent__unquoted_identifier(target.database, 'database') %}
+  {% set schema_name = cortex_agent__unquoted_identifier(cortex_agent__schema(), 'schema') %}
   {% set agent_name = cortex_agent__target_agent_name(agent, projection) %}
   {{ return(database_name ~ '.' ~ schema_name ~ '.' ~ agent_name) }}
 {% endmacro %}
@@ -223,6 +231,7 @@
   {% set spec_json = tojson(spec) %}
   {% set agent_fqn = cortex_agent__target_agent_fqn(agent, projection) %}
   {% set deploy_alias = alias or cortex_agent__deploy_alias(agent) %}
+  {% set deploy_alias = cortex_agent__unquoted_identifier(deploy_alias, 'deploy alias') %}
   {% set mcp_statements = cortex_agent__render_mcp_ddl(agent, agent_fqn, projection) %}
 
   {% if '$$' in spec_json %}
@@ -262,7 +271,7 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
       {% do log("[WARN] staged-skill readiness check skipped via var('cortex_agent_validate_staged_skills', false) escape hatch", info=True) %}
     {% endif %}
     {% set skill_hash = cortex_agent__skills_hash(agent, projection) %}
-    {{ return(cortex_agent__apply_deploy(agent_fqn, spec_json, deploy_alias, mcp_statements, skill_hash)) }}
+    {{ return(cortex_agent__apply_deploy(agent_fqn, spec_json, deploy_alias, mcp_statements, skill_hash, alias is not none)) }}
   {% endif %}
 {% endmacro %}
 
@@ -281,7 +290,7 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
     {% if (source.get('type') | string | lower) == 'stage' %}
       {% set ls_result = run_query("LIST " ~ source.get('path') ~ " PATTERN='.*SKILL[.]md'") %}
       {% if ls_result.rows | length == 0 %}
-        {{ exceptions.raise_compiler_error("Refusing to deploy agent '" ~ agent.get('snowflake_name', '<agent>') ~ "': staged skill '" ~ skill.get('name') ~ "' has no SKILL.md at " ~ source.get('path') ~ ". Deploy the skill first (make dbt-focus-skill-deploy) or set var('cortex_agent_validate_staged_skills', false) to override.") }}
+        {{ exceptions.raise_compiler_error("Refusing to deploy agent '" ~ agent.get('snowflake_name', '<agent>') ~ "': staged skill '" ~ skill.get('name') ~ "' has no SKILL.md at " ~ source.get('path') ~ ". Upload the declared skill with dbt-cortex-agent skill upload --apply, or set var('cortex_agent_validate_staged_skills', false) to override.") }}
       {% endif %}
     {% endif %}
   {% endfor %}
@@ -291,8 +300,8 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
 {% macro cortex_agent__debug_assert_skill_path(path) %}
   {# Behavioral test hook (read-only LIST, no mutation): run the fail-closed
      staged-skill readiness check against a synthetic single-skill agent pointed at
-     `path`. The dbt-focus-deploy-empty-skill-guard Make target calls this against a
-     guaranteed-empty stage path to prove the guard rejects a dangling skill ref. #}
+     `path`. Contract tests call this against a guaranteed-empty stage path to prove
+     the guard rejects a dangling skill ref. #}
   {% set synthetic = {'snowflake_name': 'DEBUG_PROBE', 'capabilities': {'skills': [{'name': 'probe', 'source': {'type': 'stage', 'path': path}}]}} %}
   {% do cortex_agent__assert_staged_skills_ready(synthetic, 'canonical') %}
   {% do log('[OK] staged-skill path has SKILL.md: ' ~ path, info=True) %}
@@ -413,7 +422,7 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {{ return(local_md5(entries | sort | join('|'))) }}
 {% endmacro %}
 
-{% macro cortex_agent__apply_deploy(agent_fqn, spec_json, deploy_alias, mcp_statements=[], skill_hash='') %}
+{% macro cortex_agent__apply_deploy(agent_fqn, spec_json, deploy_alias, mcp_statements=[], skill_hash='', reconcile_alias=false) %}
   {% if not execute %}
     {{ return('') }}
   {% endif %}
@@ -437,6 +446,13 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {% if existed and not var('force_agent_recreate', false) %}
     {% set current_hashes = cortex_agent__current_deploy_hashes(agent_fqn) %}
     {% if current_hashes.get('spec_md5') == spec_hash and current_hashes.get('skill_md5', '') == skill_hash %}
+      {% set aliases = cortex_agent__describe_aliases(agent_fqn) %}
+      {% set default_version = aliases.get('DEFAULT') %}
+      {% set alias_key = deploy_alias | upper %}
+      {% if reconcile_alias and default_version and aliases.get(alias_key) != default_version %}
+        {% do run_query("ALTER AGENT " ~ agent_fqn ~ " MODIFY VERSION " ~ default_version ~ " SET ALIAS = " ~ deploy_alias) %}
+        {% do log("Reconciled alias " ~ deploy_alias ~ " -> " ~ default_version ~ " on unchanged " ~ agent_fqn, info=True) %}
+      {% endif %}
       {% do log("No spec/skill change for " ~ agent_fqn ~ " (spec_md5=" ~ spec_hash ~ ", skill_md5=" ~ skill_hash ~ "); skipping COMMIT. Set var('force_agent_recreate', true) to force a new version.", info=True) %}
       {{ return(agent_fqn) }}
     {% endif %}

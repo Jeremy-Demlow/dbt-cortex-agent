@@ -27,17 +27,19 @@
   {% set exposure = cortex_agent__get_agent(agent_name) %}
   {% set agent = exposure.meta.get('cortex_agent', {}) %}
   {% set agent_fqn = cortex_agent__target_agent_fqn(agent, projection) %}
+  {% set alias = cortex_agent__unquoted_identifier(alias, 'alias') %}
 
   {% if not execute %}
     {{ return('') }}
   {% endif %}
 
   {% if to_version is not none %}
-    {% if not modules.re.match('^VERSION\\$\\d+$', to_version) %}
+    {% if not modules.re.match('^VERSION\\$[1-9]\\d*$', to_version) %}
       {{ exceptions.raise_compiler_error("set_alias: to_version must look like VERSION$N, got '" ~ to_version ~ "'") }}
     {% endif %}
     {% set target_version = to_version %}
   {% elif from_alias is not none %}
+    {% set from_alias = cortex_agent__unquoted_identifier(from_alias, 'source alias') %}
     {% set aliases = cortex_agent__describe_aliases(agent_fqn) %}
     {% set from_key = from_alias | upper %}
     {% if from_key not in aliases %}

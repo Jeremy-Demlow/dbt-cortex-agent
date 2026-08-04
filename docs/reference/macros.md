@@ -24,6 +24,7 @@ Provide exactly one of `to_version` and `from_alias` to `set_alias`.
 | `cortex_eval__validate` | `model_name`, `execute_checks=false` | Optional live table checks |
 | `cortex_eval__render_dataset_fqn` | `model_name` | Logs resolved table FQN |
 | `cortex_eval__render_config` | `model_name`, run/dataset names, checks | May query table/dataset inventory |
+| `cortex_eval__execution_plan` | `agent_name`, `suite_name` | Emits one offline schema-versioned JSON plan for Python execution |
 | `cortex_eval__start` | names, stage, `dry_run=true`, checks | Apply starts native evaluation |
 | `cortex_eval__run` | `model_name`, `dry_run=true`, polling controls | On-demand native loop and threshold gate |
 | `dbt_cortex_agent.cortex_eval_question_coverage` | refs/tools/minimums | Generic data test |

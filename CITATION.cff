@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use dbt_cortex_agent, cite the repository and immutable version used."
+title: "dbt_cortex_agent"
+type: software
+authors:
+  - family-names: Demlow
+    given-names: Jeremy
+license: Apache-2.0
+version: 0.3.0
+repository-code: "https://github.com/Jeremy-Demlow/dbt-cortex-agent"
+abstract: "A dbt package for defining, rendering, versioning, and evaluating Snowflake Cortex Agents."
+keywords:
+  - dbt
+  - Snowflake Cortex Agents
+  - evaluation

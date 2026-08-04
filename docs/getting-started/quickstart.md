@@ -1,0 +1,53 @@
+# Five-minute non-mutating quickstart
+
+This path proves installation, configuration, manifest discovery, rendering, and
+the deploy plan locally. It does not upload skills, invoke an Agent, mutate
+Snowflake, commit a version, or start a paid evaluation.
+
+## 1. Confirm the two 0.3.0 surfaces
+
+```bash
+dbt deps
+dbt-cortex-agent --version
+```
+
+## 2. Preview explicit safety configuration
+
+If the project is not configured, preview bootstrap additions:
+
+```bash
+dbt-cortex-agent init --project-dir . --target sandbox \
+  --allow-target sandbox --allow-database ANALYTICS_DEV
+```
+
+An existing package dependency is preserved. If none exists, add
+`--package-source` and `--revision v0.3.0`. Do not add `--apply` in this quickstart.
+
+## 3. Define one Agent exposure
+
+Use the minimal exposure and eval examples in the
+[configuration model](../guides/configuration-model.md). The independent
+[`integration_tests`](../../integration_tests/README.md) project is an executable
+fixture if a consumer project is not ready.
+
+## 4. Diagnose and inspect the resolved graph
+
+```bash
+dbt-cortex-agent doctor --project-dir . --target sandbox --json
+dbt-cortex-agent manifest validate --project-dir . --target sandbox --agent orders_assistant --json
+```
+
+Both commands run a fresh `dbt parse` before reading `target/manifest.json`.
+Resolve every doctor failure before continuing.
+
+## 5. Render and dry-run deployment
+
+```bash
+dbt-cortex-agent agent render --project-dir . --target sandbox --agent orders_assistant --json
+dbt-cortex-agent agent deploy --project-dir . --target sandbox --agent orders_assistant --allow-target sandbox --allow-database ANALYTICS_DEV --json
+```
+
+No command above contains `--apply`. The next boundary is a
+[controlled deploy](../guides/lifecycle.md), which requires Snowflake setup,
+an explicit connection, a matching database, both allowlists, and deliberate
+operator approval.

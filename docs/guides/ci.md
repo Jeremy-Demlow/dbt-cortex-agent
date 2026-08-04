@@ -1,48 +1,54 @@
-# CI adoption
+# CI
 
-Use progressive gates.
+Separate free/local proof, controlled sandbox mutation, and paid evaluation into
+distinct jobs. Never make `--apply` or evaluation spend an unlabeled PR default.
 
-## Package checks
+## Pull request: non-spend
 
-1. `dbt deps`
-2. `dbt parse`
-3. compile Agent eval models
-4. validate Agent/eval metadata
-5. render canonical and native-eval specs
-6. compare renders with reviewed snapshots
-7. dry-run deployment
+Run without live mutation or paid evaluation:
 
-## Full framework checks
+1. install pinned dbt and Python 0.3.0 surfaces;
+2. `dbt deps` and `dbt parse`;
+3. run package/consumer tests and compile where credentials permit;
+4. `dbt-cortex-agent doctor --json`;
+5. `manifest validate`, `agent render`, and `agent deploy` without `--apply`;
+6. `skill plan` and `skill upload` without `--apply`;
+7. `eval run` without `--apply` to validate the dbt-rendered plan;
+8. compare deterministic renders and local gate artifacts with reviewed evidence.
 
-Optional copyable tooling adds:
+The repository's active root [`package-check.yml`](../../.github/workflows/package-check.yml)
+is the credential-free package release gate. It runs Python and dbt compatibility
+matrices, deterministic fixture previews, distribution checks, clean-wheel smoke,
+secret/residue guards, license inventory, and SBOM generation. It deliberately contains
+no Snowflake secrets or live jobs. Consumer CI must supply its own package coordinates,
+profiles, objects, roles, and secrets for separately approved live checks.
 
-- manifest discovery,
-- eval dataset run/test,
-- state-based Agent scoping,
-- skill upload and smoke,
-- spend-bearing live evaluation,
-- accepted-baseline comparison.
+`dbt compile`, including `--no-introspect`, opens the Snowflake adapter for this semantic
+view fixture. The credential-free gate therefore uses `dbt parse`, deterministic macro
+contracts, and Python byte-compilation; run `dbt compile` only in a separately approved,
+credentialed integration job.
 
-Do not make a live evaluation an unlabeled default. Missing base state may widen
-evaluation scope for correctness, so CI must make that cost behavior visible.
+## Sandbox deploy: mutation
 
-For skill changes, CI should call one upload-before-canonical-deploy orchestrator
-for the affected exposure names, then smoke each selected Agent separately. Shared
-library skill changes must select every declaring Agent.
+Use a protected job/environment and an isolated database. Require operator
+approval, an explicit connection/database, repeatable CLI allowlists, matching
+dbt vars, and `--apply`. Upload selected skills before canonical deploy; deploy
+and grant only selected Agents. Run live skill smoke afterward as a separate
+runtime check.
 
-See the containing repository workflow for a full reference implementation; copy
-and parameterize it rather than assuming the dbt package installs it.
+Normal production Agents and semantic views must not be mutated by a sandbox
+gate. Promotion beyond sandbox is a separate approved lifecycle operation.
 
-Copyable starting points:
+## Paid evaluation: opt in
 
-- [`package-check.yml`](../../.github/workflows/package-check.yml) — active standalone
-  dependency, parse,
-  compile, validation, deterministic render, and deployment dry-run.
+Run only after the sandbox job has separately:
 
-The containing framework repository also provides a full-framework template for
-selected skill deployment/smoke and optional paid evaluation. It is deliberately
-outside the package because it requires copied Python, Make, and evaluation tooling.
+- deployed the native-eval Agent,
+- materialized and tested the eval table,
+- provisioned/accessed `EVAL_CONFIG_STAGE`,
+- selected an evaluation warehouse and cost controls.
 
-Both templates require consumer-specific roles, objects, package coordinates, and
-secret setup. The full-framework template assumes the copyable Python/Make tooling
-has been adopted alongside the package.
+Then invoke `eval run --apply`, gate the candidate, and retain artifacts. Baseline
+acceptance is a separate reviewed mutation. Missing selection/base-state evidence
+must not silently skip required suites; widening scope can increase spend, so make
+the selected Agents/suites visible before approval.

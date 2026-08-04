@@ -1,0 +1,27 @@
+name: Package feature request
+description: Propose a focused package contract or capability.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: State the desired user outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria and sanitized example
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: This contains no security details, secrets, or confidential data.
+          required: true
+        - label: I understand support and implementation are best effort with no SLA.
+          required: true

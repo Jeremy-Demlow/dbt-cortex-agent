@@ -31,6 +31,27 @@
   {{ return(node.config.meta.get('cortex_eval', {})) }}
 {% endmacro %}
 
+{% macro cortex_eval__get_suite(agent_name, suite_name) %}
+  {% set matches = [] %}
+  {% set nodes = graph.nodes.values() if graph.nodes is defined else graph.get('nodes', {}).values() %}
+  {% for node in nodes %}
+    {% set resource_type = node.resource_type if node.resource_type is defined else node.get('resource_type') %}
+    {% if node is mapping %}
+      {% set eval_meta = node.get('config', {}).get('meta', {}).get('cortex_eval', {}) or node.get('meta', {}).get('cortex_eval', {}) %}
+    {% else %}
+      {% set eval_meta = node.config.meta.get('cortex_eval', {}) if node.config.meta is mapping else {} %}
+    {% endif %}
+    {% if resource_type == 'model' and eval_meta and eval_meta.get('enabled', true) != false and eval_meta.get('agent') == agent_name and eval_meta.get('name') == suite_name %}
+      {% do matches.append(node) %}
+    {% endif %}
+  {% endfor %}
+
+  {% if matches | length != 1 %}
+    {{ exceptions.raise_compiler_error("Expected exactly one enabled cortex_eval for Agent '" ~ agent_name ~ "' and suite '" ~ suite_name ~ "', found " ~ (matches | length)) }}
+  {% endif %}
+  {{ return(matches[0]) }}
+{% endmacro %}
+
 {% macro cortex_eval__dataset_fqn(model_name) %}
   {% set node = cortex_eval__get_eval(model_name) %}
   {% set materialized = node.config.get('materialized') %}
@@ -80,6 +101,8 @@
   {% set metrics = eval_meta.get('metrics', []) %}
   {% set questions = eval_meta.get('questions', []) %}
   {% set metric_names = cortex_eval__metric_names(metrics) %}
+  {% set question_ids = [] %}
+  {% set ground_truth_refs = [] %}
 
   {% if metrics | length == 0 %}
     {{ exceptions.raise_compiler_error("Eval model '" ~ model_name ~ "' must define at least one metric") }}
@@ -109,6 +132,14 @@
     {% if not question.get('ground_truth_ref') %}
       {{ exceptions.raise_compiler_error("Eval question '" ~ question.get('id') ~ "' must define ground_truth_ref") }}
     {% endif %}
+    {% if question.get('id') in question_ids %}
+      {{ exceptions.raise_compiler_error("Eval model '" ~ model_name ~ "' has duplicate question id '" ~ question.get('id') ~ "'") }}
+    {% endif %}
+    {% if question.get('ground_truth_ref') in ground_truth_refs %}
+      {{ exceptions.raise_compiler_error("Eval model '" ~ model_name ~ "' has duplicate ground_truth_ref '" ~ question.get('ground_truth_ref') ~ "'") }}
+    {% endif %}
+    {% do question_ids.append(question.get('id')) %}
+    {% do ground_truth_refs.append(question.get('ground_truth_ref')) %}
   {% endfor %}
 
   {% set spec = cortex_agent__build_spec(eval_meta.get('agent'), projection) %}

@@ -1,59 +1,166 @@
-name: dbt Cortex Agent package check
+name: dbt Cortex Agent package CI
 
 on:
   pull_request:
+  push:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: package-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUTF8: "1"
+
 jobs:
-  package-check:
+  policy-and-project-health:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: examples/starter_project
-    env:
-      DBT_TARGET: sandbox
-      AGENT_NAME: orders_assistant
-      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-      SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/snowflake_key.p8
-      SNOWFLAKE_ROLE: ${{ vars.SNOWFLAKE_ROLE }}
-      SNOWFLAKE_WAREHOUSE: ${{ vars.SNOWFLAKE_WAREHOUSE }}
-      SNOWFLAKE_DATABASE: ${{ vars.SNOWFLAKE_DATABASE }}
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-
-      - name: Configure private key
-        shell: bash
-        working-directory: .
+          python-version: "3.13"
+          cache: pip
+      - name: Install policy tooling
+        run: python -m pip install --disable-pip-version-check 'PyYAML>=6,<7' 'pytest>=8,<9'
+      - name: Run policy, documentation, and CI contract tests
+        run: pytest -q tests/test_docs.py tests/test_ci.py
+      - name: Compile Python sources and tests
+        run: python -m compileall -q src tests
+      - name: Check patch hygiene
+        run: git diff --check
+      - name: Scan tracked files for secrets
         run: |
-          umask 077
-          printf '%s' '${{ secrets.SNOWFLAKE_PRIVATE_KEY }}' > "$SNOWFLAKE_PRIVATE_KEY_PATH"
-
-      - name: Install dbt Core authority
-        working-directory: .
-        run: pip install 'dbt-snowflake==1.11.4'
-
-      - name: Dependency, graph, and compile checks
+          python -m pip install --disable-pip-version-check 'detect-secrets==1.5.0'
+          detect-secrets scan --all-files --exclude-files '(^|/)(uv\.lock|\.git/)' > "$RUNNER_TEMP/detect-secrets.json"
+          python -c 'import json,os,pathlib,sys; p=json.loads(pathlib.Path(os.environ["RUNNER_TEMP"]).joinpath("detect-secrets.json").read_text()); sys.exit(bool(p.get("results")))'
+      - name: Reject generated residue
         run: |
-          dbt deps
-          dbt parse --no-partial-parse
-          dbt compile --no-partial-parse
+          rm -rf .pytest_cache
+          find src tests -type d -name __pycache__ -prune -exec rm -rf {} +
+          test -z "$(git status --porcelain)"
 
-      - name: Validate and render Agent contracts
-        run: |
-          dbt run-operation cortex_agent__validate \
-            --args "{agent_name: $AGENT_NAME, projection: canonical}"
-          dbt run-operation cortex_agent__render_spec \
-            --args "{agent_name: $AGENT_NAME, projection: canonical}"
-          dbt run-operation cortex_agent__render_spec \
-            --args "{agent_name: $AGENT_NAME, projection: native_eval}"
-          dbt run-operation cortex_agent__deploy \
-            --args "{agent_name: $AGENT_NAME, projection: canonical, dry_run: true}"
+  python-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install package test surface
+        run: python -m pip install --disable-pip-version-check -e '.[test]'
+      - name: Run full Python suite
+        run: pytest -q
 
-      - name: Cleanup
+  dbt-compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - line: lower-bound
+            dbt-core: "~=1.10.0"
+            dbt-snowflake: "1.10.3"
+          - line: authority
+            dbt-core: "~=1.11.0"
+            dbt-snowflake: "1.11.4"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install package and ${{ matrix.line }} dbt line
+        run: >-
+          python -m pip install --disable-pip-version-check -e '.[test]'
+          'dbt-core${{ matrix.dbt-core }}'
+          'dbt-snowflake==${{ matrix.dbt-snowflake }}'
+      - name: Show resolved dbt versions
+        run: dbt --version
+      - name: Resolve integration dependencies
+        run: dbt deps --project-dir integration_tests --profiles-dir integration_tests
+      - name: Parse integration consumer offline
+        env:
+          DBT_TARGET: sandbox
+          SNOWFLAKE_ACCOUNT: offline
+          SNOWFLAKE_USER: offline
+          SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/nonexistent-package-ci-key.p8
+          SNOWFLAKE_ROLE: offline
+          SNOWFLAKE_WAREHOUSE: offline
+          SNOWFLAKE_DATABASE: AM_SKI_RESORT_DBT_FOCUS
+        run: dbt parse --project-dir integration_tests --profiles-dir integration_tests --no-partial-parse
+      - name: Verify deterministic Agent, eval, and lifecycle contracts
+        run: >-
+          pytest -q
+          tests/test_eval_plan_macros.py
+          tests/test_deploy.py
+          tests/test_eval.py
+          tests/test_cli.py
+          tests/test_manifest.py
+      - name: Clean dbt residue
         if: always()
-        run: rm -f "$SNOWFLAKE_PRIVATE_KEY_PATH"
+        run: dbt clean --project-dir integration_tests --profiles-dir integration_tests
+
+  distribution:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install pinned release tooling
+        run: >-
+          python -m pip install --disable-pip-version-check
+          'build==1.3.0'
+          'twine==6.2.0'
+          'pip-licenses==5.5.0'
+          'cyclonedx-bom==7.1.0'
+      - name: Build source and wheel distributions
+        run: python -m build
+      - name: Check distribution metadata
+        run: python -m twine check dist/*
+      - name: Verify wheel package-data inventory
+        run: python tests/verify_wheel.py dist/*.whl
+      - name: Install wheel outside checkout
+        run: |
+          python -m venv "$RUNNER_TEMP/wheel-smoke"
+          "$RUNNER_TEMP/wheel-smoke/bin/python" -m pip install --disable-pip-version-check dist/*.whl
+      - name: Exercise installed CLI help, version, and preview fixture
+        working-directory: ${{ runner.temp }}
+        run: |
+          "$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" --help
+          test "$("$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" --version)" = "0.3.0"
+          mkdir preview-project
+          printf "name: preview_project\nversion: 1.0.0\nconfig-version: 2\n" > preview-project/dbt_project.yml
+          "$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" init \
+            --project-dir preview-project \
+            --package-source https://example.invalid/dbt-cortex-agent.git \
+            --target sandbox \
+            --allow-database AM_SKI_RESORT_DBT_FOCUS \
+            --json > preview.json
+      - name: Generate dependency license inventory and SBOM
+        run: |
+          python -m pip install --disable-pip-version-check dist/*.whl
+          mkdir -p "$RUNNER_TEMP/supply-chain"
+          python -m piplicenses --format=json --output-file="$RUNNER_TEMP/supply-chain/licenses.json"
+          cyclonedx-py environment --output-format JSON --output-file "$RUNNER_TEMP/supply-chain/sbom.cdx.json"
+      - name: Upload supply-chain evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: supply-chain-evidence
+          path: ${{ runner.temp }}/supply-chain
+          if-no-files-found: error
+      - name: Clean generated distribution residue
+        if: always()
+        run: rm -rf build dist src/*.egg-info
+      - name: Reject generated residue
+        run: test -z "$(git status --porcelain)"

@@ -15,7 +15,8 @@
   {% set statements = [] %}
   {% for role in usage_roles %}
     {% if role %}
-      {% do statements.append("GRANT USAGE ON AGENT " ~ agent_fqn ~ " TO ROLE " ~ role) %}
+      {% set safe_role = cortex_agent__unquoted_identifier(role, 'usage role') %}
+      {% do statements.append("GRANT USAGE ON AGENT " ~ agent_fqn ~ " TO ROLE " ~ safe_role) %}
     {% endif %}
   {% endfor %}
 

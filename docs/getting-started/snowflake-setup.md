@@ -1,37 +1,36 @@
-# Snowflake setup
+# Snowflake setup and security
 
-Use separate responsibilities for deployment and runtime consumption.
+Use separate deploy, runtime, and evaluation responsibilities in an isolated
+sandbox first. Exact grant syntax may vary with Snowflake feature availability
+and account policy; validate least privilege with the account security owner.
 
-## Deploy role
+| Responsibility | Required access | Not granted by this package |
+|---|---|---|
+| dbt parse/render | profile access to resolve the target; metadata dependencies | Agent DDL, stage writes, evaluation spend |
+| Agent deploy role | database/schema usage; warehouse usage; create/alter Agent privileges; referenced semantic view/search/procedure access | consumer runtime access; broad role inheritance |
+| Skill uploader | stage/database/schema access and Snow CLI authentication; explicit target/database allowlists | Agent deployment or Agent usage |
+| Runtime consumer | database/schema and warehouse usage; `USAGE ON AGENT`; privileges needed by referenced resources | automatic semantic-view, search-service, procedure, or stage grants |
+| Evaluation operator | deployed native-eval Agent usage; materialized eval table access; evaluation-stage create/write/read; warehouse usage; Agent Evaluation privileges | creation of the Agent/table prerequisites by the CLI |
+| MCP deployer | access to the pre-existing external MCP server and Agent attachment privileges | MCP server creation or credential management |
 
-The role running mutating package macros needs, at minimum:
+`access.usage_roles` plus `cortex_agent__grant_usage` grants only `USAGE ON AGENT`.
+It does not grant database/schema, warehouse, semantic view, Cortex Search,
+procedure, stage, MCP, or Agent Evaluation privileges.
 
-- `USAGE` on the target database and schemas.
-- `USAGE` on the query warehouse.
-- privileges required to create and alter Agents in the Agent schema.
-- access to semantic views, search services, and procedures referenced by tools.
-- stage creation/write privileges when using package-native evaluation or staged skills.
-- Cortex Agent Evaluation privileges when starting native evaluations.
-- optional permission to attach a pre-existing external MCP server.
+## Required execution context
 
-Exact privileges can vary by Snowflake feature release and account policy. Validate
-the setup in an isolated sandbox before using a mutating macro.
+Provide target, connection, database, schema, warehouse, and authentication
+through approved local dbt/Snowflake configuration. Do not store credentials in
+Agent/eval YAML, dbt vars, examples, or artifacts.
 
-## Runtime role
+For an applied CLI operation:
 
-`access.usage_roles` and `cortex_agent__grant_usage` grant only:
+- pass `--connection` explicitly (an environment-only connection is rejected),
+- pass/resolve a database that matches dbt's manifest target,
+- pass both CLI allowlists,
+- configure matching dbt target/database allowlists,
+- use a role scoped to the operation rather than one all-purpose owner role.
 
-```sql
-GRANT USAGE ON AGENT <agent_fqn> TO ROLE <role>;
-```
-
-They do not grant database/schema, warehouse, semantic-view, search-service,
-procedure, stage, or Cortex database-role privileges. Manage those separately.
-
-## Required dbt profile context
-
-Provide account, user/authentication, role, warehouse, database, and target name
-explicitly. Mutations are allowed only when `target.name` equals
-`cortex_agent_deploy_target`.
-
-Start with render and dry-run operations before any live mutation.
+Begin with [doctor and non-mutating quickstart](quickstart.md), then review the
+[lifecycle](../guides/lifecycle.md) or [evaluation](../guides/evaluations.md)
+boundary before granting mutation or spend.

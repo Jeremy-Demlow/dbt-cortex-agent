@@ -1,20 +1,34 @@
 # Troubleshooting
 
-| Symptom | Check |
-|---|---|
-| No enabled exposure found | `enabled: true` and exact exposure name |
-| Semantic model does not resolve | Model name is unique and `materialized='semantic_view'` |
-| Package macro undefined in model SQL | Call it as `dbt_cortex_agent.<macro>` |
-| Custom macro undefined in `agent.yml` | Property YAML supports `target`, `var`, `env_var`, not package macros |
-| Wrong deploy target | Match `target.name` to `cortex_agent_deploy_target` or use dry run |
-| Missing staged `SKILL.md` | Upload the declared local skill directory to the exact stage path |
-| Render contains `$$` | Remove the delimiter from instructions/config content |
-| Expected eval tool missing | Confirm projection and `evaluation_supported` flags |
-| Eval table invalid | Materialize `INPUT_QUERY` and `OUTPUT` VARIANT; run live validation |
-| Tool metrics fail on boundary rows | Ensure `custom_criteria.test_type` is set correctly |
-| Eval render needs Snowflake | Config rendering hashes table content and checks dataset inventory |
-| MCP not attached after no-change skip | Review MCP state and use intentional force only when needed |
-| Unexpected `_EVAL` or environment suffix | Review naming map and suffix vars |
+Start with doctor; do not bypass a failed diagnostic with `--no-parse`:
 
-For client-side retries, durable JSON artifacts, accepted baselines, and CI scoping,
-use the optional framework tooling rather than the package-native eval loop alone.
+```bash
+dbt-cortex-agent doctor --project-dir . --target sandbox --json
+```
+
+Exit `0` means diagnostics passed, `1` means a diagnostic/gate failed, and `2`
+means a controlled configuration/runtime error. Fix the first failure, rerun
+doctor, then use the domain command with `--json` for structured evidence.
+
+| Symptom | Resolution |
+|---|---|
+| dbt/project/executable failure | Verify `--project-dir`, `--dbt-executable`, dependency install, and profile target; rerun doctor. |
+| No enabled exposure | Set `config.meta.cortex_agent.enabled: true`; use the logical exposure name. |
+| Semantic model does not resolve | Make the model name unique and materialize it as `semantic_view`. |
+| Package macro undefined in model SQL | Call package helpers as `dbt_cortex_agent.<macro>`. |
+| Macro call in property YAML fails | Property YAML supports `target`, `var`, and `env_var`, not custom macros. |
+| Mutation target rejected | Align CLI `--target`/`--allow-target` with `cortex_agent_deploy_target` and `cortex_agent_allowed_targets`. |
+| Database allowlist rejected | Pass `--database` matching dbt's target and include it in CLI/dbt allowed databases. |
+| Apply says connection is not explicit | Pass `--connection`; `SNOWFLAKE_CONNECTION_NAME` alone does not authorize apply. |
+| Missing staged `SKILL.md` | Run `skill plan`, upload the declared directory to the exact stage path, then deploy. |
+| Wrong skill directory | Mirror the declared stage suffix under the private/shared layout; do not add name-keyed remapping. |
+| Expected eval tool missing | Check `projection` and `evaluation_supported`; native eval excludes skills and MCP. |
+| Eval plan works but apply fails | Confirm the deployed native-eval Agent, materialized eval table, evaluation stage access, explicit connection, matching database, warehouse, and runtime extra. |
+| Eval dataset rejected | Require unique `ground_truth_ref`, unique `INPUT_QUERY`, and one valid `OUTPUT` VARIANT per row. |
+| Tool metric fails on boundary rows | Set `custom_criteria.test_type`; require invocations only for relevant in-scope rows. |
+| Candidate is indeterminate | Check pre/post DEFAULT provenance; do not rerun until green or relax tolerances. |
+| Baseline comparison rejected | Keep suite signature/policy compatible and use the accepted baseline's tolerances. |
+| Unexpected `_EVAL`/target suffix | Review `naming.<target>`, `cortex_agent_env_suffixes`, and `cortex_agent_eval_suffix`. |
+| Controlled error lacks JSON on stdout | Errors are emitted to stderr; process exit is `2`. |
+
+See the [CLI reference](reference/cli.md) and [configuration model](guides/configuration-model.md).

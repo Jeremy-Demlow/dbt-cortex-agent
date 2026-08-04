@@ -1,0 +1,35 @@
+# dbt
+dbt_packages/
+dbt_modules/
+logs/
+target/
+dbt_internal_packages/
+package-lock.yml
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Editor and OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Credentials and local-user state
+.env
+.env.*
+.user.yml
+profiles.local.yml
+profiles.yml.bak
+connections.toml
+*.p8
+*.pem
+*.key

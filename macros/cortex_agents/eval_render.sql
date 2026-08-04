@@ -54,22 +54,7 @@
   {{ return(false) }}
 {% endmacro %}
 
-{% macro cortex_eval__build_config(model_name, run_name=none, dataset_name=none, execute_checks=false, include_dataset=none) %}
-  {% do cortex_eval__validate(model_name, execute_checks) %}
-  {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
-  {% set exposure = cortex_agent__get_agent(eval_meta.get('agent')) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
-  {% set projection = eval_meta.get('projection', 'native_eval') %}
-  {% set dataset_fqn = cortex_eval__dataset_fqn(model_name) %}
-  {% set content_hash = cortex_eval__dataset_content_hash(model_name) %}
-  {% set eval_dataset_name = cortex_eval__hash_named_dataset_name(dataset_name, content_hash) or cortex_eval__default_dataset_name(model_name, eval_meta, content_hash) %}
-  {% set include_dataset_block = include_dataset %}
-  {% if include_dataset_block is none %}
-    {% set include_dataset_block = not cortex_eval__dataset_exists(eval_dataset_name) %}
-  {% endif %}
-  {% set agent_fqn = cortex_agent__target_agent_fqn(agent, projection) %}
-  {% set label = run_name or (agent.get('snowflake_name') ~ ' ' ~ eval_meta.get('name') ~ ' evaluation') %}
-
+{% macro cortex_eval__native_config(eval_meta, agent_fqn, dataset_fqn, eval_dataset_name, label, include_dataset_block=true) %}
   {% set eval_config = {
     'evaluation': {
       'agent_params': {
@@ -87,7 +72,6 @@
     },
     'metrics': eval_meta.get('metrics', [])
   } %}
-
   {% if include_dataset_block %}
     {% do eval_config.update({
       'dataset': {
@@ -101,8 +85,26 @@
       }
     }) %}
   {% endif %}
-
   {{ return(eval_config) }}
+{% endmacro %}
+
+{% macro cortex_eval__build_config(model_name, run_name=none, dataset_name=none, execute_checks=false, include_dataset=none) %}
+  {% do cortex_eval__validate(model_name, execute_checks) %}
+  {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
+  {% set exposure = cortex_agent__get_agent(eval_meta.get('agent')) %}
+  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set projection = eval_meta.get('projection', 'native_eval') %}
+  {% set dataset_fqn = cortex_eval__dataset_fqn(model_name) %}
+  {% set content_hash = cortex_eval__dataset_content_hash(model_name) %}
+  {% set eval_dataset_name = cortex_eval__hash_named_dataset_name(dataset_name, content_hash) or cortex_eval__default_dataset_name(model_name, eval_meta, content_hash) %}
+  {% set include_dataset_block = include_dataset %}
+  {% if include_dataset_block is none %}
+    {% set include_dataset_block = not cortex_eval__dataset_exists(eval_dataset_name) %}
+  {% endif %}
+  {% set agent_fqn = cortex_agent__target_agent_fqn(agent, projection) %}
+  {% set label = run_name or (agent.get('snowflake_name') ~ ' ' ~ eval_meta.get('name') ~ ' evaluation') %}
+
+  {{ return(cortex_eval__native_config(eval_meta, agent_fqn, dataset_fqn, eval_dataset_name, label, include_dataset_block)) }}
 {% endmacro %}
 
 {% macro cortex_eval__render_config(model_name, run_name=none, dataset_name=none, execute_checks=false) %}
@@ -121,6 +123,71 @@
 
 {% macro cortex_eval__default_stage_fqn() %}
   {{ return(target.database ~ '.' ~ cortex_agent__schema() ~ '.EVAL_CONFIG_STAGE') }}
+{% endmacro %}
+
+{% macro cortex_eval__execution_plan(agent_name, suite_name) %}
+  {% set plan_schema_version = 1 %}
+  {% set dataset_token = '__DBT_CORTEX_AGENT_DATASET_NAME__' %}
+  {% set node = cortex_eval__get_suite(agent_name, suite_name) %}
+  {% set model_name = node.name %}
+  {% do cortex_eval__validate(model_name, false) %}
+  {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
+  {% set exposure = cortex_agent__get_agent(agent_name) %}
+  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set projection = eval_meta.get('projection', 'native_eval') %}
+  {% set metrics = eval_meta.get('metrics', []) %}
+  {% set metric_names = cortex_eval__metric_names(metrics) %}
+  {% set thresholds = eval_meta.get('thresholds', {}) %}
+  {% set tolerances = eval_meta.get('regression_tolerances', {}) %}
+  {% set dataset_fqn = cortex_eval__dataset_fqn(model_name) %}
+  {% set agent_fqn = cortex_agent__target_agent_fqn(agent, projection) %}
+  {% set stage_fqn = cortex_eval__default_stage_fqn() %}
+  {% set config_filename_template = model_name ~ '__RUN_NAME__.json' %}
+  {% set ordered_refs = [] %}
+  {% for question in eval_meta.get('questions', []) %}
+    {% do ordered_refs.append(question.get('ground_truth_ref')) %}
+  {% endfor %}
+  {% set native_config = cortex_eval__native_config(
+    eval_meta, agent_fqn, dataset_fqn, dataset_token, agent_name ~ '/' ~ suite_name, true
+  ) %}
+  {% set identity = {
+    'agent_name': agent_name,
+    'suite_name': suite_name,
+    'eval_model': model_name,
+    'projection': projection,
+    'agent_fqn': agent_fqn,
+    'dataset_fqn': dataset_fqn,
+    'stage_fqn': stage_fqn,
+    'target_name': target.name,
+    'target_database': (target.database | upper),
+    'target_schema': (target.schema | upper),
+    'target_warehouse': target.warehouse
+  } %}
+  {% set signature_inputs = {
+    'plan_schema_version': plan_schema_version,
+    'identity': identity,
+    'native_eval_config': native_config,
+    'metric_names': metric_names,
+    'thresholds': thresholds,
+    'regression_tolerances': tolerances,
+    'ordered_ground_truth_refs': ordered_refs
+  } %}
+  {% set signature_material = tojson(signature_inputs) %}
+  {% set plan = {
+    'schema_version': plan_schema_version,
+    'identity': identity,
+    'native_eval_config': native_config,
+    'dataset_name_token': dataset_token,
+    'config_filename_template': config_filename_template,
+    'metric_names': metric_names,
+    'thresholds': thresholds,
+    'regression_tolerances': tolerances,
+    'ordered_ground_truth_refs': ordered_refs,
+    'signature_material': signature_material,
+    'suite_signature': local_md5(signature_material)
+  } %}
+  {% do log('CORTEX_EVAL_PLAN_JSON=' ~ tojson(plan), info=True) %}
+  {{ return(tojson(plan)) }}
 {% endmacro %}
 
 {% macro cortex_eval__start(model_name, run_name=none, dataset_name=none, stage_fqn=none, dry_run=true, execute_checks=true) %}
