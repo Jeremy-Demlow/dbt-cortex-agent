@@ -7,25 +7,38 @@ remain dbt models. dbt owns the specification and lifecycle macros, while the
 CLI consumes `target/manifest.json`, delegates Agent changes to those macros,
 and manages local files, runtime clients, and evaluation artifacts.
 
-## Install one version on two surfaces
+## Install one immutable version on two surfaces
 
-Pin the dbt package to the `v0.3.0` Git revision in `packages.yml`:
+After v0.3.0 is published to PyPI, install the Python CLI and runtime support in
+an isolated environment:
+
+```bash
+pipx install 'dbt-cortex-agent[runtime]==0.3.0'
+```
+
+For a managed Python environment, use
+`python -m pip install 'dbt-cortex-agent[runtime]==0.3.0'`. Before publication,
+environments that can access the repository can install the current source
+snapshot pinned to commit `7027d45613423e90a522a8e1ec283c6ce56f33bc`:
+
+```bash
+pipx install 'dbt-cortex-agent[runtime] @ git+https://github.com/Jeremy-Demlow/dbt-cortex-agent.git@7027d45613423e90a522a8e1ec283c6ce56f33bc'
+```
+
+dbt does not install packages from PyPI. Pin the dbt package separately to the
+public HTTPS `v0.3.0` Git tag in `packages.yml`:
 
 ```yaml
 packages:
-  - git: "git@github.com:Jeremy-Demlow/dbt-cortex-agent.git"
+  - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
     revision: v0.3.0
 ```
 
-Install the matching wheel from the approved release source or private index:
-
-```bash
-dbt deps
-python -m pip install 'dbt-cortex-agent==0.3.0'
-```
-
-Use `dbt-cortex-agent[runtime]==0.3.0` only for connector-backed skill smoke
-or paid evaluation. The supported runtime is Python `>=3.10,<4`, dbt
+The PyPI version `0.3.0` and Git tag `v0.3.0` identify the same immutable
+release across the CLI and dbt surfaces. Run `dbt deps`, then
+`dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
+declared dbt dependency, and installed dbt package versions align. The supported
+runtime is Python `>=3.10,<4`, dbt
 `>=1.10,<2.0`, and `dbt-snowflake`; see [compatibility](docs/reference/compatibility.md)
 and [installation](docs/getting-started/installation.md).
 
@@ -98,7 +111,7 @@ and accepted-baseline gates. See [evaluations](docs/guides/evaluations.md).
 
 - Start: [installation](docs/getting-started/installation.md), [quickstart](docs/getting-started/quickstart.md), [Snowflake setup](docs/getting-started/snowflake-setup.md)
 - Configure: [configuration model](docs/guides/configuration-model.md), [Agent metadata](docs/reference/agent-metadata.md), [eval metadata](docs/reference/eval-metadata.md), [variables](docs/reference/variables.md)
-- Operate: [lifecycle](docs/guides/lifecycle.md), [skills](docs/guides/skills.md), [evaluations](docs/guides/evaluations.md), [CI](docs/guides/ci.md)
+- Operate: [lifecycle](docs/guides/lifecycle.md), [skills](docs/guides/skills.md), [evaluations](docs/guides/evaluations.md), [CI](docs/guides/ci.md), [releasing](docs/guides/releasing.md)
 - Reference: [CLI](docs/reference/cli.md), [macros](docs/reference/macros.md), [compatibility](docs/reference/compatibility.md), [architecture](docs/concepts/end-to-end-flow.md), [troubleshooting](docs/troubleshooting.md)
 - Change: [upgrade from v0.2.0](UPGRADING.md), [changelog](CHANGELOG.md)
 
@@ -109,7 +122,7 @@ and accepted-baseline gates. See [evaluations](docs/guides/evaluations.md).
 - Property YAML may use `target`, `var`, and `env_var`, but cannot call package macros.
 - Skills and MCP connectors are excluded from built-in native Agent Evaluation and require separate smoke/integration proof.
 - Live mutation, runtime smoke, and evaluation spend are never default operations.
-- This independent package is not sponsored, endorsed, supported, or maintained by Snowflake Inc. Public publication remains subject to [governance](GOVERNANCE.md), [maintainer](MAINTAINERS.md), and legal-review gates.
+- This independent, maintainer-led package is not sponsored, endorsed, supported, or maintained by Snowflake Inc.
 
 Apache License 2.0. See [LICENSE](LICENSE), [contributing](CONTRIBUTING.md),
 [security](SECURITY.md), [support](SUPPORT.md), and [Code of Conduct](CODE_OF_CONDUCT.md).

@@ -9,26 +9,39 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/package-check.yml"
+RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
 
 
 def _workflow_text() -> str:
     return WORKFLOW.read_text(encoding="utf-8")
 
 
-def test_one_active_root_package_workflow_has_required_triggers_and_permissions():
+def _release_workflow_text() -> str:
+    return RELEASE_WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_active_root_workflows_have_separate_package_and_release_triggers():
     workflows = sorted((ROOT / ".github/workflows").glob("*.yml")) + sorted(
         (ROOT / ".github/workflows").glob("*.yaml")
     )
     nested = sorted((ROOT / ".github/workflows").glob("**/*.yml")) + sorted(
         (ROOT / ".github/workflows").glob("**/*.yaml")
     )
-    assert workflows == [WORKFLOW]
+    assert workflows == sorted([WORKFLOW, RELEASE_WORKFLOW])
     assert nested == workflows
 
     workflow = yaml.safe_load(_workflow_text())
     triggers = workflow[True]
     assert set(triggers) == {"pull_request", "push", "workflow_dispatch"}
     assert workflow["permissions"] == {"contents": "read"}
+
+    release = yaml.safe_load(_release_workflow_text())
+    release_triggers = release[True]
+    assert set(release_triggers) == {"release", "workflow_dispatch"}
+    assert release_triggers["release"] == {"types": ["published"]}
+    assert "push" not in release_triggers
+    assert "pull_request" not in release_triggers
+    assert release["permissions"] == {"contents": "read"}
 
 
 def test_workflow_is_credential_free_non_mutating_and_non_spend():
@@ -111,3 +124,64 @@ def test_secret_scan_is_limited_to_tracked_non_lock_files():
     text = _workflow_text()
     assert "git ls-files -z -- ':!:*lock*'" in text
     assert "detect-secrets scan --all-files" not in text
+
+
+def test_release_workflow_builds_and_checks_artifacts_before_upload():
+    workflow = yaml.safe_load(_release_workflow_text())
+    build = workflow["jobs"]["build"]
+    assert "permissions" not in build
+    steps = build["steps"]
+    uses = [step.get("uses", "") for step in steps]
+    commands = "\n".join(step.get("run", "") for step in steps)
+    assert "actions/checkout@v4" in uses
+    assert "actions/setup-python@v5" in uses
+    assert "actions/upload-artifact@v4" in uses
+    assert "build==1.3.0" in commands
+    assert "twine==6.2.0" in commands
+    assert "scripts/release_preflight.py" in commands
+    assert "pytest -q" in commands
+    assert "python -m build" in commands
+    assert "python -m twine check dist/*" in commands
+    assert "python tests/verify_wheel.py dist/*.whl" in commands
+
+
+def test_release_publish_job_is_oidc_only_and_environment_protected():
+    workflow = yaml.safe_load(_release_workflow_text())
+    publish = workflow["jobs"]["publish"]
+    assert publish["needs"] == "build"
+    assert publish["environment"] == "pypi"
+    assert publish["permissions"] == {"contents": "read", "id-token": "write"}
+    assert "github.event_name == 'release'" in publish["if"]
+    assert "github.event.action == 'published'" in publish["if"]
+    assert "startsWith(github.event.release.tag_name, 'v')" in publish["if"]
+    uses = [step.get("uses", "") for step in publish["steps"]]
+    assert uses == ["actions/download-artifact@v4", "pypa/gh-action-pypi-publish@release/v1"]
+
+
+def test_release_workflow_has_no_long_lived_pypi_credentials():
+    text = _release_workflow_text().lower()
+    forbidden = (
+        "${{ secrets.",
+        "pypi_api_token",
+        "password:",
+        "user:",
+        "username:",
+    )
+    assert all(value not in text for value in forbidden)
+
+
+def test_release_documentation_covers_trusted_publisher_and_checklist():
+    text = (ROOT / "docs/guides/releasing.md").read_text(encoding="utf-8").lower()
+    required = (
+        "github oidc trusted publishing",
+        "environment named exactly `pypi`",
+        "github trusted publisher",
+        "workflow: `release.yml`",
+        "environment: `pypi`",
+        "release checklist",
+        "manual dispatch",
+        "cannot publish",
+        "vmajor.minor.patch",
+        "post-publication",
+    )
+    assert all(value in text for value in required)

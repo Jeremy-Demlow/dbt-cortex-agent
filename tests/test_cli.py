@@ -45,7 +45,7 @@ def test_init_exposes_explicit_bootstrap_options():
     args = build_parser().parse_args(
         [
             "init",
-            "--package-source", "ssh://example/repo.git",
+            "--package-source", "https://example.invalid/repo.git",
             "--revision", "v9",
             "--target", "safe",
             "--allow-target", "qa",
@@ -57,7 +57,7 @@ def test_init_exposes_explicit_bootstrap_options():
         ]
     )
 
-    assert args.package_source == "ssh://example/repo.git"
+    assert args.package_source == "https://example.invalid/repo.git"
     assert args.revision == "v9"
     assert args.allow_target == ["qa", "prod"]
     assert args.allow_database == ["DB", "AUDIT"]
@@ -334,7 +334,7 @@ def test_v030_identity_is_consistent_and_v020_history_is_preserved():
     assert __version__ == "0.3.0"
     assert DEFAULT_REVISION == f"v{__version__}"
     assert 'name = "dbt-cortex-agent"\nversion = "0.3.0"' in lock
-    assert "`v0.3.0` Git revision" in readme
+    assert "public HTTPS `v0.3.0` Git tag" in readme
     assert "revision: v0.3.0" in installation
     assert "## 0.3.0 — Unreleased" in changelog
     assert "## 0.2.0 — 2026-07-31" in changelog

@@ -127,7 +127,8 @@ def test_doctor_explains_missing_active_target(tmp_path):
 def test_doctor_detects_consumer_version_mismatch(tmp_path):
     config = _config(tmp_path)
     (tmp_path / "packages.yml").write_text(
-        "packages:\n  - git: git@github.com:Jeremy-Demlow/dbt-cortex-agent.git\n    revision: v0.1.0\n"
+        "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
+        "    revision: v0.1.0\n"
     )
 
     diagnostics = run_doctor(

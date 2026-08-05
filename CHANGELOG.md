@@ -13,6 +13,10 @@ versioning for documented public macros, metadata contracts, and rendered specs.
   and prohibit mutating Agent DDL in Python source.
 - Removed premature convenience exports from `dbt_cortex_agent.eval`; CLI imports
   remain internal and explicit.
+- Documented the public distribution contract: the Python CLI will install from
+  PyPI after v0.3.0 publication, the dbt package installs from the matching public
+  HTTPS `v0.3.0` Git tag, and an immutable commit supports source installation in
+  environments with repository access before the release is published.
 
 ## 0.2.0 — 2026-07-31
 

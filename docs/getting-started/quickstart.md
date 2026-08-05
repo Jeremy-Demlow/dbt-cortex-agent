@@ -21,7 +21,8 @@ dbt-cortex-agent init --project-dir . --target sandbox \
 ```
 
 An existing package dependency is preserved. If none exists, add
-`--package-source` and `--revision v0.3.0`. Do not add `--apply` in this quickstart.
+`--package-source https://github.com/Jeremy-Demlow/dbt-cortex-agent.git` and
+`--revision v0.3.0`. Do not add `--apply` in this quickstart.
 
 ## 3. Define one Agent exposure
 

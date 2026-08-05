@@ -38,6 +38,7 @@
 - As a platform owner, I can identify each privilege and explicit apply/spend boundary before granting access or running automation.
 - As an automation author, I can rely on documented commands, outputs, and exit codes that are checked against the shipped parser.
 - As an upgrader, I can move from v0.2.0 without retaining copied tooling or retired extras.
+- As an installer, I can distinguish commands available after PyPI publication from the public tagged source fallback available now.
 
 ## REQ-008
 
@@ -45,3 +46,17 @@
 - As a security reviewer, I can prove default CI cannot mutate Snowflake or spend credits.
 - As a release operator, I can install the exact wheel outside the source checkout and use its CLI before publishing it.
 - As a consumer, I can inspect license and SBOM evidence for the verified dependency set.
+
+## REQ-009
+
+- As a contributor, I can understand the license and submit work without invented employer or publication approvals.
+- As a maintainer, I can lead project decisions without a fabricated vacant-role block.
+- As a security reporter, I retain a private reporting route.
+- As a package consumer, I can rely on explicit best-effort support and technical release checks.
+
+## REQ-010
+
+- As a release operator, I can publish from a protected GitHub release without managing a PyPI API token.
+- As a package consumer, I can trust that the PyPI and dbt Git versions identify the same release.
+- As a security reviewer, I can prove that OIDC permission is isolated to the protected publish job and cannot be reached from push, pull request, or manual runs.
+- As a maintainer, I can run the exact release preflight and artifact checks before publication.

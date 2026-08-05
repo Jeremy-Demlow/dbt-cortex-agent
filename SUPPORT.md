@@ -1,6 +1,6 @@
 # Support
 
-Community support is best effort with no SLA, warranty, or entitlement to a response or fix.
+Maintainer-led community support is best effort with no SLA, warranty, or entitlement to a response or fix.
 Use public issues for non-security defects, documentation problems, and focused requests. Include
 the package version, dbt and adapter versions, expected/actual behavior, and a sanitized minimal
 reproduction. Remove secrets, customer data, account identifiers, private names, results, and

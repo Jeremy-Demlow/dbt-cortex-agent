@@ -64,6 +64,9 @@
 6. Verify quickstart CLI examples parse through the shipped parser and contain no `--apply`, runtime smoke, baseline write, or paid evaluation execution.
 7. Verify evaluation docs state that the CLI requires a materialized eval table, stage, and deployed native-eval Agent and does not create those prerequisites.
 8. Run docs tests, the full Python suite, package build, and integration-consumer dbt parse without live mutation, runtime invocation, or paid evaluation.
+9. Verify README, installation, upgrade, init, package metadata, and test fixtures use the public HTTPS repository/tag and contain no private-index, private-Git, or SSH installation wording.
+10. Verify the primary post-publication CLI install is pinned `pipx install 'dbt-cortex-agent[runtime]==0.3.0'`, a pip equivalent is present, the pre-publication source fallback is commit-pinned and access-qualified, and dbt remains an HTTPS Git dependency because `dbt deps` does not install from PyPI.
+11. Verify the docs explain that PyPI `0.3.0` and Git tag `v0.3.0` are one immutable release and that `doctor` checks CLI, declared dependency, and installed dbt package alignment.
 
 ## REQ-008: standalone CI and release verification
 
@@ -77,3 +80,23 @@
 8. Exercise installed CLI help/version and deterministic consumer fixture previews without a connection, mutation, runtime invocation, or spend.
 9. Generate pinned dependency-license and CycloneDX SBOM artifacts outside the checkout.
 10. Run focused/full tests and local build/install checks, then remove dbt, build, cache, license, and SBOM residue from the checkout.
+
+## REQ-009: simple maintainer-led project policy
+
+1. Verify `GOVERNANCE.md` and `MAINTAINERS.md` are absent and no local Markdown link references them.
+2. Verify project policy surfaces contain no two-maintainer, vacant-role, employer-approval, legal-review, or publication-block language.
+3. Verify CONTRIBUTING and the pull request template retain minimal Apache-2.0 authorization and attribution language without special employer approval claims.
+4. Verify SECURITY retains private vulnerability reporting and SUPPORT retains best-effort community support.
+5. Verify CODEOWNERS names the maintainer without comments or entries for deleted governance files.
+6. Run focused docs/policy tests, the full Python suite, tracked-file secret scanning, and package build.
+
+## REQ-010: trusted PyPI publishing
+
+1. Parse both root workflows and verify release publishing triggers only on a published GitHub release or manual build-only dispatch, never push or pull request.
+2. Verify the build job has read-only permissions and performs tag checkout, preflight, critical tests, pinned build, Twine, wheel inventory, and artifact upload.
+3. Verify only the publish job has `id-token: write`, uses the protected `pypi` environment, downloads the verified artifact, and invokes the version-pinned PyPI publish action.
+4. Verify manual dispatch cannot reach publication and a release tag must begin with `v` before the publish job runs.
+5. Verify release workflow and documentation contain no PyPI API token, password, username, or secret interpolation contract.
+6. Simulate a clean tagged v0.3.0 repository and verify preflight success; verify dirty, malformed/missing tag, mismatched Python/dbt versions, and unreleased/undated changelog states fail closed.
+7. Verify release documentation covers owner setup, GitHub environment protection, PyPI trusted-publisher fields, release checklist/tag ordering, build-only validation, and post-publication checks.
+8. Run YAML parsing, focused/full tests, build, Twine, wheel inventory, and v0.3.0 preflight simulation without commit, tag, release, publication, visibility change, or Snowflake mutation.

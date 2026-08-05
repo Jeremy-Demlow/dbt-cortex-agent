@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use dbt_cortex_agent, cite the repository and immutable version used."
+message: "Please cite the repository and immutable version of dbt_cortex_agent that you use."
 title: "dbt_cortex_agent"
 type: software
 authors:

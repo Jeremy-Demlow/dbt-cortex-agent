@@ -20,6 +20,16 @@ ADOPTER_DOCS = [
     *sorted((ROOT / "docs").rglob("*.md")),
     *sorted((ROOT / "integration_tests/docs").rglob("*.md")),
 ]
+POLICY_FILES = [
+    README,
+    ROOT / "CONTRIBUTING.md",
+    ROOT / "CODE_OF_CONDUCT.md",
+    ROOT / "SUPPORT.md",
+    ROOT / "THIRD_PARTY_LICENSES.md",
+    ROOT / "CITATION.cff",
+    ROOT / ".github/PULL_REQUEST_TEMPLATE.md",
+    ROOT / ".github/CODEOWNERS",
+]
 
 
 def _parser_contract() -> tuple[set[str], set[str]]:
@@ -82,6 +92,46 @@ def test_adopter_docs_remove_stale_release_language() -> None:
         assert phrase not in text
 
 
+def test_project_policy_is_simple_and_maintainer_led() -> None:
+    assert not (ROOT / "GOVERNANCE.md").exists()
+    assert not (ROOT / "MAINTAINERS.md").exists()
+
+    text = "\n".join(path.read_text(encoding="utf-8").lower() for path in POLICY_FILES)
+    forbidden = (
+        "two-maintainer",
+        "two distinct maintainers",
+        "second maintainer",
+        "vacant role",
+        "employer-rights",
+        "applicable employer",
+        "legal review",
+        "publication blocked",
+        "blocks publication",
+        "governance.md",
+        "maintainers.md",
+    )
+    assert all(phrase not in text for phrase in forbidden)
+    assert "maintainer-led" in text
+
+
+def test_project_policy_retains_license_security_and_support_contracts() -> None:
+    contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    pull_request = (ROOT / ".github/PULL_REQUEST_TEMPLATE.md").read_text(encoding="utf-8")
+    security = (ROOT / "SECURITY.md").read_text(encoding="utf-8").lower()
+    support = (ROOT / "SUPPORT.md").read_text(encoding="utf-8").lower()
+    codeowners = (ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
+
+    assert "Apache License 2.0 Section 5" in contributing
+    assert "right to license" in contributing
+    assert "Apache-2.0 Section 5" in pull_request
+    assert "email" in security
+    assert "do not open a public issue" in security
+    assert "best effort" in support
+    assert "@Jeremy-Demlow" in codeowners
+    assert "GOVERNANCE.md" not in codeowners
+    assert "MAINTAINERS.md" not in codeowners
+
+
 def test_current_release_surfaces_identify_v030() -> None:
     for path in (
         README,
@@ -92,6 +142,48 @@ def test_current_release_surfaces_identify_v030() -> None:
         ROOT / "UPGRADING.md",
     ):
         assert "0.3.0" in path.read_text(encoding="utf-8"), path
+
+
+def test_public_dual_surface_install_contract() -> None:
+    readme = README.read_text(encoding="utf-8")
+    installation = (ROOT / "docs/getting-started/installation.md").read_text(encoding="utf-8")
+    upgrading = (ROOT / "UPGRADING.md").read_text(encoding="utf-8")
+    metadata = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    combined = "\n".join((readme, installation, upgrading))
+    public_source = "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
+    primary_install = "pipx install 'dbt-cortex-agent[runtime]==0.3.0'"
+    source_snapshot = f"{public_source}@7027d45613423e90a522a8e1ec283c6ce56f33bc"
+
+    assert all(public_source in text for text in (readme, installation, upgrading, metadata))
+    assert all(primary_install in text for text in (readme, installation, upgrading))
+    assert "python -m pip install 'dbt-cortex-agent[runtime]==0.3.0'" in combined
+    assert "dbt deps` does not install" in combined
+    assert "same immutable" in combined
+    assert "doctor" in combined and "align" in combined
+    assert "after v0.3.0 is published to pypi" in combined.lower()
+    assert all(source_snapshot in text for text in (readme, installation, upgrading))
+    assert "source snapshot" in combined.lower()
+    assert "environments that can access the repository" in combined.lower()
+
+
+def test_adopter_and_fixture_surfaces_reject_private_install_references() -> None:
+    paths = [
+        README,
+        ROOT / "UPGRADING.md",
+        ROOT / "pyproject.toml",
+        *sorted((ROOT / "docs").rglob("*.md")),
+        *(path for path in sorted((ROOT / "tests").glob("*.py")) if path != Path(__file__)),
+    ]
+    text = "\n".join(path.read_text(encoding="utf-8").lower() for path in paths)
+    forbidden = (
+        "git@" + "github.com",
+        "ssh" + "://",
+        "private git",
+        "private " + "index",
+        "configured private python",
+        "approved release " + "source",
+    )
+    assert all(phrase not in text for phrase in forbidden)
 
 
 def test_quickstart_cli_examples_parse_and_do_not_cross_apply_boundaries() -> None:

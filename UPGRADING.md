@@ -7,10 +7,29 @@ manifest-owned contract. Upgrade both install surfaces together.
 
 Pin the dbt package to `v0.3.0` and install the Python distribution at `0.3.0`:
 
+```yaml
+packages:
+  - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
+    revision: v0.3.0
+```
+
+After v0.3.0 is published to PyPI:
+
 ```bash
-python -m pip install --upgrade 'dbt-cortex-agent==0.3.0'
+pipx install 'dbt-cortex-agent[runtime]==0.3.0'
+# Managed environment equivalent:
+python -m pip install --upgrade 'dbt-cortex-agent[runtime]==0.3.0'
 dbt deps
 ```
+
+Before publication, environments that can access the repository can install the
+current source snapshot pinned to commit `7027d45613423e90a522a8e1ec283c6ce56f33bc` with
+`pipx install 'dbt-cortex-agent[runtime] @ git+https://github.com/Jeremy-Demlow/dbt-cortex-agent.git@7027d45613423e90a522a8e1ec283c6ce56f33bc'`.
+dbt remains a separate HTTPS Git dependency because `dbt deps` does not install
+packages from PyPI. Public adopters need the repository and `v0.3.0` tag to be
+published before that dependency resolves. PyPI `0.3.0` and Git tag `v0.3.0` are the same immutable
+release; run `dbt-cortex-agent doctor --project-dir . --json` after `dbt deps` to
+verify the CLI, declaration, and installed dbt package align.
 
 Replace former `dbt-cortex-agent[invoke]` and `dbt-cortex-agent[eval]` installs
 with `dbt-cortex-agent[runtime]==0.3.0`. Remove local lifecycle/eval scripts and

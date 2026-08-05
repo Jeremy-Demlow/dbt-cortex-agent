@@ -23,6 +23,11 @@ secret/residue guards, license inventory, and SBOM generation. It deliberately c
 no Snowflake secrets or live jobs. Consumer CI must supply its own package coordinates,
 profiles, objects, roles, and secrets for separately approved live checks.
 
+The separate [`release.yml`](../../.github/workflows/release.yml) workflow publishes only after a
+GitHub release is published from a matching `v*` tag. Manual dispatch is build-only. Publication
+uses the protected `pypi` environment and PyPI trusted publishing, so no API token is stored. See
+[releasing](releasing.md) for owner setup and the release checklist.
+
 `dbt compile`, including `--no-introspect`, opens the Snowflake adapter for this semantic
 view fixture. The credential-free gate therefore uses `dbt parse`, deterministic macro
 contracts, and Python byte-compilation; run `dbt compile` only in a separately approved,

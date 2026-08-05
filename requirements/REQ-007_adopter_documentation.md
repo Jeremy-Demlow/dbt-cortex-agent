@@ -25,8 +25,9 @@ public dbt macros without encountering stale or contradictory instructions.
    one version, compatibility, five-minute non-mutating quickstart, controlled deploy,
    CLI-versus-macro ownership, lifecycle/evaluation overview, docs map, limitations, and
    project policies.
-2. Installation and upgrade guidance covers the pinned dbt Git package plus Python wheel,
-   the single `runtime` extra, compatibility, and migration from v0.2.0/former extras.
+2. Installation and upgrade guidance covers the public HTTPS-tagged dbt Git package plus the
+   Python distribution, the single `runtime` extra, compatibility, source-install fallback,
+   and migration from v0.2.0/former extras. PyPI commands are explicitly post-publication.
 3. A standalone quickstart uses the shipped CLI, fresh manifest behavior, explicit target
    and database allowlists, and no `--apply`, Agent commit, live runtime call, or paid eval.
 4. Configuration documentation defines exposure and eval metadata, dbt vars, CLI flags,
@@ -47,6 +48,9 @@ public dbt macros without encountering stale or contradictory instructions.
     removal, local links, v0.3.0 identity, parseable metadata examples, and quickstart safety.
 11. Documentation tests, the full Python suite, package build, and offline integration dbt
     parse pass without commit, live Snowflake mutation, runtime invocation, or paid evaluation.
+12. The dbt package tag and Python distribution use the same immutable `0.3.0` release identity;
+    `doctor` is documented as the local alignment check, and automated guards reject SSH/private
+    install wording or drift from the public HTTPS tag and pinned Python commands.
 
 ## User stories
 
@@ -57,6 +61,8 @@ public dbt macros without encountering stale or contradictory instructions.
 - As an automation author, I can rely on documented commands, outputs, and exit codes that
   are checked against the shipped parser.
 - As an upgrader, I can move from v0.2.0 without retaining copied tooling or retired extras.
+- As an installer, I can distinguish commands available after PyPI publication from the public
+  tagged source fallback available now.
 
 ## Dependencies
 
@@ -70,7 +76,7 @@ public dbt macros without encountering stale or contradictory instructions.
 
 - New CLI commands, macros, Agent/eval semantics, or Snowflake objects.
 - Agent commit, alias movement, live mutation, runtime invocation, or paid evaluation.
-- Public release, repository publication, or maintainer-policy changes.
+- Package publishing automation or repository visibility changes.
 
 ## Notes
 
@@ -82,6 +88,13 @@ public dbt macros without encountering stale or contradictory instructions.
   sandbox apply -> optional native evaluation -> local gate/baseline evidence.
 - Reversible local choice: keep focused pages under the existing `docs/` hierarchy and add
   quickstart, configuration-model, and CLI reference pages rather than a new docs framework.
+- Reversible local choice: make `pipx` with the `runtime` extra the primary CLI recommendation,
+  retain a pip equivalent for managed environments, and use the public `v0.3.0` Git tag for dbt
+  plus the Python source install after release. No package publication or repository visibility
+  is changed by this slice.
+- Ask-first decision: because the public `v0.3.0` tag does not yet exist, the user selected the
+  current commit SHA as the immutable source-install-now fallback for environments with repository
+  access; public release-tag examples remain `v0.3.0` and become runnable when that tag is published.
 - Verifier: full local documentation tests, Python tests, package build, and offline
   integration `dbt parse`; no live proof is permitted because this slice changes docs/tests
   only and explicitly excludes mutation, runtime invocation, and spend.
@@ -94,3 +107,12 @@ public dbt macros without encountering stale or contradictory instructions.
   plus offline `dbt parse --no-partial-parse` with dbt 1.11.11/dbt-snowflake 1.11.4 and an
   intentionally nonexistent key path. No connection, Agent commit, live mutation, runtime
   invocation, paid evaluation, baseline movement, or git commit was performed.
+- Verification on 2026-08-05: all 184 Python tests passed; Python byte-compilation,
+  `git diff --check`, Twine metadata checks, wheel inventory, local Markdown links, and the
+  private/SSH install-reference scan passed; `uv build` produced the v0.3.0 sdist and wheel;
+  and dbt 1.11.11/dbt-snowflake 1.11.4 completed integration dependency resolution plus
+  offline parse. The pinned source SHA is advertised by the authenticated HTTPS remote.
+  Anonymous GitHub metadata links still return 404 because repository visibility and the
+  `v0.3.0` tag remain intentionally unchanged; those links become public release surfaces
+  only when the repository/tag are published. No workflow, visibility, Snowflake state,
+  package publication, or git commit was changed.

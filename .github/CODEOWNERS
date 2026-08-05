@@ -1,10 +1,7 @@
 * @Jeremy-Demlow
 
-# A second distinct maintainer approval is required but the role is vacant.
 /.github/ @Jeremy-Demlow
 /SECURITY.md @Jeremy-Demlow
-/GOVERNANCE.md @Jeremy-Demlow
-/MAINTAINERS.md @Jeremy-Demlow
 /LICENSE @Jeremy-Demlow
 /THIRD_PARTY_LICENSES.md @Jeremy-Demlow
 /CITATION.cff @Jeremy-Demlow
