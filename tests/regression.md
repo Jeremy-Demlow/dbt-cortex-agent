@@ -35,3 +35,9 @@
 - Root cause: `require-dbt-version` accepted dbt 1.9, but dbt Core 1.9.10/dbt-snowflake 1.9.4 cannot parse the integration fixture's modern generic-test `arguments` contract.
 - Fix summary: the declared floor and CI lower-bound matrix now use dbt 1.10 with dbt-snowflake 1.10.3.
 - Verification: dbt Core 1.10.22/dbt-snowflake 1.10.3 and authority dbt Core 1.11.11/dbt-snowflake 1.11.4 complete offline dependency resolution and parse; the lower line also passes 73 deterministic Agent/eval/lifecycle tests.
+
+## Agent lifecycle CLI eagerly read unrelated subcommand arguments
+
+- Root cause: the Agent handler constructed grant, promote, and rollback argument dictionaries together, so `agent grant` attempted to read nonexistent `from_alias` and `to_alias` attributes before selecting the grant macro.
+- Fix summary: lifecycle macro arguments are now constructed only inside the selected subcommand branch.
+- Verification: a parser/handler regression invokes `agent grant` without promote or rollback options, and the full package suite passes.

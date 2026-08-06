@@ -16,6 +16,53 @@ from dbt_cortex_agent.cli import build_parser, main
 from dbt_cortex_agent.init import DEFAULT_REVISION
 
 
+def test_agent_grant_dispatch_does_not_require_promote_or_rollback_args(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "dbt_project.yml").write_text("name: fixture\nversion: 1.0.0\nconfig-version: 2\n")
+    manifest = project / "target" / "manifest.json"
+    manifest.parent.mkdir()
+    manifest.write_text(
+        json.dumps(
+            {
+                "metadata": {"dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"},
+                "nodes": {},
+                "exposures": {
+                    "exposure.fixture.agent": {
+                        "name": "agent",
+                        "config": {"meta": {"cortex_agent": {"enabled": True}}},
+                    }
+                },
+            }
+        )
+    )
+
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.fresh_manifest",
+        lambda *_args, **_kwargs: json.loads(manifest.read_text()),
+    )
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.lifecycle_macro",
+        lambda *_args, **_kwargs: type("Result", (), {"agents": ("agent",)})(),
+    )
+
+    assert (
+        main(
+            [
+                "agent",
+                "grant",
+                "--project-dir",
+                str(project),
+                "--manifest",
+                str(manifest),
+                "--agent",
+                "agent",
+            ]
+        )
+        == 0
+    )
+
+
 def test_parser_exposes_foundation_and_lifecycle_commands():
     parser = build_parser()
     choices = next(

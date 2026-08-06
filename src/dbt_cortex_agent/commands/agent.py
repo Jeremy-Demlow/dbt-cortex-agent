@@ -83,12 +83,14 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             alias=args.alias,
         )
     else:
-        macro_by_command = {
-            "grant": ("cortex_agent__grant_usage", {}),
-            "promote": ("cortex_agent__promote_alias", {"from_alias": args.from_alias, "to_alias": args.to_alias}),
-            "rollback": ("cortex_agent__rollback_alias", {"alias": args.alias, "to_version": args.to_version}),
-        }
-        macro, arguments = macro_by_command[args.agent_command]
+        if args.agent_command == "grant":
+            macro, arguments = "cortex_agent__grant_usage", {}
+        elif args.agent_command == "promote":
+            macro = "cortex_agent__promote_alias"
+            arguments = {"from_alias": args.from_alias, "to_alias": args.to_alias}
+        else:
+            macro = "cortex_agent__rollback_alias"
+            arguments = {"alias": args.alias, "to_version": args.to_version}
         result = lifecycle_macro(
             config,
             args.agents,
