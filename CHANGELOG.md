@@ -3,7 +3,7 @@
 All notable package changes are recorded here. The package follows semantic
 versioning for documented public macros, metadata contracts, and rendered specs.
 
-## 0.3.0 — Unreleased
+## 0.3.0 — 2026-08-06
 
 - Combined the dbt package and Python companion under one versioned product.
 - Defined the dbt/Python ownership boundary: dbt owns graph contracts, rendering,

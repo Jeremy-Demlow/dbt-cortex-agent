@@ -419,5 +419,5 @@ def test_v030_identity_is_consistent_and_v020_history_is_preserved():
     assert 'name = "dbt-cortex-agent"\nversion = "0.3.0"' in lock
     assert "public HTTPS `v0.3.0` Git tag" in readme
     assert "revision: v0.3.0" in installation
-    assert "## 0.3.0 — Unreleased" in changelog
+    assert "## 0.3.0 — 2026-08-06" in changelog
     assert "## 0.2.0 — 2026-07-31" in changelog
