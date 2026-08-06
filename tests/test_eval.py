@@ -408,6 +408,7 @@ def test_legacy_baseline_migration_uses_current_plan_and_preserves_provenance(tm
     assert baseline["ordered_ground_truth_refs"] == plan.ordered_ground_truth_refs
     assert baseline["suite_signature"] == plan.suite_signature
     assert baseline["run_metadata"]["evaluated_version"] == "VERSION$4"
+    assert baseline["run_metadata"]["legacy_migration"]["source"] == "legacy.json"
     assert baseline["run_metadata"]["legacy_migration"]["run_metadata"]["git_sha"] == "legacy-sha"
 
     _, written = migrate_legacy_baseline(

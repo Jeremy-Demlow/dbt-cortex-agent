@@ -59,7 +59,7 @@ def build_migrated_baseline(legacy: dict[str, Any], plan, source: str | Path) ->
         "post_completion": {"default_version": version, "aliases": {}},
         "default_version_changed": False,
         "legacy_migration": {
-            "source": str(Path(source).resolve()),
+            "source": Path(source).name,
             "schema_version": legacy.get("schema_version"),
             "artifact_type": legacy.get("artifact_type"),
             "run_name": run_name,
