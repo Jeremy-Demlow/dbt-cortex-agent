@@ -47,3 +47,9 @@
 - Root cause: the Agent handler constructed grant, promote, and rollback argument dictionaries together, so `agent grant` attempted to read nonexistent `from_alias` and `to_alias` attributes before selecting the grant macro.
 - Fix summary: lifecycle macro arguments are now constructed only inside the selected subcommand branch.
 - Verification: a parser/handler regression invokes `agent grant` without promote or rollback options, and the full package suite passes.
+
+## Legacy accepted baselines used physical eval Agent identities
+
+- Root cause: the schema-v2 migration initially required the legacy `agent` field to equal the logical dbt exposure name, but historical accepted artifacts identify the exact physical native-eval Agent object.
+- Fix summary: migration accepts only the current plan's exact logical name, physical object name, or fully qualified physical Agent name; near matches still fail closed.
+- Verification: focused migration tests cover both exact physical identities and reject a suffixed near match.

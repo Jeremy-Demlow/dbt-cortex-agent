@@ -33,9 +33,11 @@ def build_migrated_baseline(legacy: dict[str, Any], plan, source: str | Path) ->
         raise ValueError("Legacy accepted artifact schema_version must be absent or 1")
     if legacy.get("artifact_type") not in (None, "baseline") or legacy.get("passed") is not True:
         raise ValueError("Legacy artifact must be an accepted passing baseline")
-    for field, expected in (("agent", plan.agent_name), ("suite", plan.suite_name)):
-        if legacy.get(field) != expected:
-            raise ValueError(f"Legacy artifact {field} does not match the dbt evaluation plan")
+    physical_agent = plan.agent_fqn.rsplit(".", 1)[-1]
+    if legacy.get("agent") not in {plan.agent_name, physical_agent, plan.agent_fqn}:
+        raise ValueError("Legacy artifact agent does not match the dbt evaluation plan")
+    if legacy.get("suite") not in (None, plan.suite_name):
+        raise ValueError("Legacy artifact suite does not match the dbt evaluation plan")
     run_name = legacy.get("run_name")
     timestamp = legacy.get("timestamp")
     metadata = legacy.get("run_metadata")

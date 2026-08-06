@@ -421,6 +421,16 @@ def test_legacy_baseline_migration_uses_current_plan_and_preserves_provenance(tm
         source, plan, tmp_path / "new-baselines", apply=True, force=True
     )[1] == written
 
+    for legacy_agent in (plan.agent_fqn.rsplit(".", 1)[-1], plan.agent_fqn):
+        physical = _legacy_baseline()
+        physical["agent"] = legacy_agent
+        assert build_migrated_baseline(physical, plan, source)["agent"] == plan.agent_name
+
+    near_match = _legacy_baseline()
+    near_match["agent"] = f"{plan.agent_fqn.rsplit('.', 1)[-1]}_OTHER"
+    with pytest.raises(ValueError, match="agent does not match"):
+        build_migrated_baseline(near_match, plan, source)
+
 
 def test_legacy_baseline_migration_rejects_unknown_shapes_and_policy_drift(tmp_path):
     plan = build_plan(
