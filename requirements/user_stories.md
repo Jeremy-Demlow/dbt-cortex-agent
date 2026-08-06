@@ -24,6 +24,8 @@
 - As an evaluation maintainer, I can inspect one dbt-rendered plan that exactly identifies what will be evaluated and under which policy.
 - As a release operator, I can prove a candidate used one stable DEFAULT version for the complete run.
 - As a baseline owner, a candidate cannot relax the accepted regression policy to pass its own comparison.
+- As an evaluation operator, an applied run cannot connect until its dbt-rendered target and database are explicitly allowlisted, and it executes under the role dbt resolved.
+- As a baseline owner, I can preview a deterministic migration of known legacy accepted evidence without silently overwriting a current baseline or paying for a new evaluation.
 
 ## REQ-006
 

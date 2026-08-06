@@ -18,6 +18,12 @@
 - Fix summary: one offline dbt-rendered plan now supplies the complete execution contract, datasets require unique stable refs, pre/post DEFAULT provenance detects drift, artifact schema v2 binds evidence to a deterministic suite signature, and baseline policy controls comparison.
 - Verification: macro structural tests, plan parser/runner fakes, dataset/provenance/artifact tests, compare/gate tests, full pytest/build, and integration dbt parse run without live evaluation.
 
+## REQ-005: Paid eval context and legacy baseline integrity gaps
+
+- Root cause: `eval run --apply` did not expose the common allowlists, connected before proving the dbt plan target/database were authorized, and did not set the dbt-resolved role; schema-v2 validation also left known legacy accepted evidence with no safe explicit migration path.
+- Fix summary: eval apply now validates shared target/database allowlists before connector use and sets the signed plan role first; preview-first migration takes all current contract fields from a fresh dbt plan, preserves legacy summary/run provenance, rejects unknown shapes, and protects existing targets behind explicit apply plus force.
+- Verification: parser, plan signature, pre-connector safety, SQL context order, migration preview/apply/force, provenance, policy-authority, documentation, full package, and dbt contract tests run without live Snowflake or paid evaluation.
+
 ## REQ-006: Monolithic and inconsistent CLI process contract
 
 - Root cause: one dispatcher mixed parser construction, presentation, safety gates, manifest freshness, and all domain orchestration; duplicate connector extras and unused role configuration exposed contracts with no distinct behavior.

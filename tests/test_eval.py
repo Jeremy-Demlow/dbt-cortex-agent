@@ -11,7 +11,12 @@ import pytest
 
 from dbt_cortex_agent.artifacts import ARTIFACT_SCHEMA_VERSION
 from dbt_cortex_agent.config import resolve_config
-from dbt_cortex_agent.eval.baseline import accept_baseline, build_baseline
+from dbt_cortex_agent.eval.baseline import (
+    accept_baseline,
+    build_baseline,
+    build_migrated_baseline,
+    migrate_legacy_baseline,
+)
 from dbt_cortex_agent.eval.compare import compare_results
 from dbt_cortex_agent.eval.dataset import validate_eval_meta, validate_table
 from dbt_cortex_agent.eval.lifecycle import (
@@ -119,7 +124,8 @@ def _plan_payload(*, refs=None, tolerances=None):
         "eval_model": "eval_orders", "projection": "native_eval",
         "agent_fqn": "DB.AGENT_SCHEMA.ORDERS_ASSISTANT_SANDBOX_EVAL",
         "dataset_fqn": "DB.EVAL.EVAL_ORDERS", "stage_fqn": "DB.AGENT_SCHEMA.EVAL_CONFIG_STAGE",
-        "target_name": "sandbox", "target_database": "DB", "target_schema": "AGENT_SCHEMA",
+        "target_name": "sandbox", "target_role": "EVAL_ROLE",
+        "target_database": "DB", "target_schema": "AGENT_SCHEMA",
         "target_warehouse": "WH",
     }
     native = {
@@ -157,6 +163,7 @@ def test_build_plan_consumes_dbt_payload_without_reconstructing_identity(tmp_pat
     assert plan.agent_fqn == "DB.AGENT_SCHEMA.ORDERS_ASSISTANT_SANDBOX_EVAL"
     assert plan.table_fqn == "DB.EVAL.EVAL_ORDERS"
     assert plan.stage_fqn == "DB.AGENT_SCHEMA.EVAL_CONFIG_STAGE"
+    assert plan.target_role == "EVAL_ROLE"
     assert plan.thresholds == {"answer_correctness": 0.6, "tool_selection_accuracy": 0.8}
 
 
@@ -196,6 +203,23 @@ def test_build_plan_fails_closed_for_tampered_or_duplicate_refs(tmp_path):
         build_plan(
             _config(tmp_path / "duplicate", _manifest()), agent_name="orders_assistant",
             suite_name="core", plan_payload=_plan_payload(refs=["q1", "q1"]),
+        )
+
+
+def test_build_plan_requires_authoritative_target_role(tmp_path):
+    payload = _plan_payload()
+    payload["identity"]["target_role"] = None
+    signed = json.loads(payload["signature_material"])
+    signed["identity"]["target_role"] = None
+    payload["signature_material"] = json.dumps(signed, separators=(",", ":"))
+    payload["suite_signature"] = hashlib.md5(payload["signature_material"].encode()).hexdigest()
+
+    with pytest.raises(ValueError, match="target_role is required"):
+        build_plan(
+            _config(tmp_path, _manifest()),
+            agent_name="orders_assistant",
+            suite_name="core",
+            plan_payload=payload,
         )
 
 
@@ -349,6 +373,73 @@ def test_baseline_acceptance_never_accepts_failed_and_requires_force(tmp_path):
     assert accept_baseline(_result(), tmp_path, force=True) == target
 
 
+def _legacy_baseline():
+    return {
+        "agent": "orders_assistant",
+        "suite": "core",
+        "run_name": "legacy_run",
+        "timestamp": "20260731_120000",
+        "run_metadata": {"evaluated_version": "VERSION$4", "git_sha": "legacy-sha"},
+        "summary": {
+            "answer_correctness": {"avg": 0.8, "n": 2},
+            "tool_selection_accuracy": {"avg": 1.0, "n": 2},
+        },
+        "passed": True,
+        "total_records": 2,
+    }
+
+
+def test_legacy_baseline_migration_uses_current_plan_and_preserves_provenance(tmp_path):
+    plan = build_plan(
+        _config(tmp_path, _manifest()),
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(),
+    )
+    source = tmp_path / "legacy.json"
+    source.write_text(json.dumps(_legacy_baseline()))
+
+    baseline, target = migrate_legacy_baseline(source, plan, tmp_path / "new-baselines")
+
+    assert not target.exists()
+    assert baseline["schema_version"] == ARTIFACT_SCHEMA_VERSION
+    assert baseline["thresholds"] == plan.thresholds
+    assert baseline["regression_tolerances"] == plan.regression_tolerances
+    assert baseline["ordered_ground_truth_refs"] == plan.ordered_ground_truth_refs
+    assert baseline["suite_signature"] == plan.suite_signature
+    assert baseline["run_metadata"]["evaluated_version"] == "VERSION$4"
+    assert baseline["run_metadata"]["legacy_migration"]["run_metadata"]["git_sha"] == "legacy-sha"
+
+    _, written = migrate_legacy_baseline(
+        source, plan, tmp_path / "new-baselines", apply=True
+    )
+    assert load_result(written, "baseline")["summary"] == baseline["summary"]
+    assert migrate_legacy_baseline(source, plan, tmp_path / "new-baselines")[1] == written
+    with pytest.raises(FileExistsError):
+        migrate_legacy_baseline(source, plan, tmp_path / "new-baselines", apply=True)
+    assert migrate_legacy_baseline(
+        source, plan, tmp_path / "new-baselines", apply=True, force=True
+    )[1] == written
+
+
+def test_legacy_baseline_migration_rejects_unknown_shapes_and_policy_drift(tmp_path):
+    plan = build_plan(
+        _config(tmp_path, _manifest()),
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(),
+    )
+    wrong_metrics = _legacy_baseline()
+    wrong_metrics["summary"].pop("tool_selection_accuracy")
+    with pytest.raises(ValueError, match="metric set"):
+        build_migrated_baseline(wrong_metrics, plan, tmp_path / "legacy.json")
+
+    failed = _legacy_baseline()
+    failed["passed"] = False
+    with pytest.raises(ValueError, match="accepted passing baseline"):
+        build_migrated_baseline(failed, plan, tmp_path / "legacy.json")
+
+
 def test_artifacts_reject_legacy_schema_and_path_traversal(tmp_path):
     legacy = _result()
     legacy.pop("schema_version")
@@ -380,9 +471,11 @@ class LifecycleCursor:
         self.description = []
         self.rows = []
         self.starts = 0
+        self.calls = []
 
     def execute(self, sql, params=None):
         normalized = " ".join(sql.split()).upper()
+        self.calls.append(normalized)
         self.rows = []
         if normalized.startswith("DESCRIBE TABLE"):
             self.rows = [("INPUT_QUERY",), ("OUTPUT",)]
@@ -454,16 +547,53 @@ def test_apply_retries_once_and_persists_candidate(tmp_path):
         poll_attempts=1,
         poll_interval=0,
         transient_retries=1,
+        allowed_targets=["sandbox"],
+        allowed_databases=["DB"],
         connect=lambda _: connection,
         sleep=lambda _: None,
     )
 
     assert connection.cursor_value.starts == 2
+    assert connection.cursor_value.calls[:4] == [
+        "USE ROLE EVAL_ROLE",
+        "USE WAREHOUSE WH",
+        "USE DATABASE DB",
+        "USE SCHEMA AGENT_SCHEMA",
+    ]
     candidate = load_result(output)
     assert candidate["run_name"] == "candidate_run-r1"
     assert candidate["run_metadata"]["evaluated_version"] == "VERSION$9"
     assert candidate["ordered_ground_truth_refs"] == ["total_revenue"]
     assert output.parent.name == "core"
+
+
+def test_apply_rejects_unallowlisted_plan_before_connector_use(tmp_path):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(),
+    )
+
+    with pytest.raises(ValueError, match="allowed targets"):
+        run_evaluation(
+            config,
+            plan,
+            apply=True,
+            allowed_targets=[],
+            allowed_databases=["DB"],
+            connect=lambda _: pytest.fail("connector used before allowlist validation"),
+        )
+    with pytest.raises(ValueError, match="allowed databases"):
+        run_evaluation(
+            config,
+            plan,
+            apply=True,
+            allowed_targets=["sandbox"],
+            allowed_databases=[],
+            connect=lambda _: pytest.fail("connector used before allowlist validation"),
+        )
 
 
 def test_compare_rejects_candidate_tolerance_widening():

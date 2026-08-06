@@ -3,12 +3,12 @@ from __future__ import annotations
 import argparse
 
 from ..config import Config
-from ..eval.baseline import accept_baseline
+from ..eval.baseline import accept_baseline, migrate_legacy_baseline
 from ..eval.compare import compare_results
 from ..eval.gate import gate_candidate
 from ..eval.lifecycle import build_plan, run_evaluation
 from ..eval.results import load_result
-from .common import emit_json, require_explicit_connection
+from .common import add_allowlists, emit_json, require_explicit_connection
 
 
 def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentParser) -> None:
@@ -31,6 +31,7 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
     run.add_argument("--poll-attempts", type=int, default=60, help="maximum status polls (default: 60)")
     run.add_argument("--poll-interval", type=float, default=30, help="seconds between polls (default: 30)")
     run.add_argument("--transient-retries", type=int, default=1, help="retries for transient failures (default: 1)")
+    add_allowlists(run)
     run.add_argument("--apply", action="store_true", help="[PAID] start evaluation; default only renders the plan")
     run.set_defaults(handler=handle)
 
@@ -46,6 +47,19 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
     accept.add_argument("--apply", action="store_true", help="[MUTATION] write the baseline; default is preview")
     accept.add_argument("--force", action="store_true", help="overwrite an existing baseline when applying")
     accept.set_defaults(handler=handle)
+
+    migrate = commands.add_parser(
+        "migrate-baseline",
+        parents=[shared],
+        help="preview or migrate known legacy accepted evidence [MUTATION with --apply]",
+    )
+    migrate.add_argument("legacy", help="known legacy accepted artifact JSON")
+    migrate.add_argument("--agent", required=True, help="logical Agent name")
+    migrate.add_argument("--suite", required=True, help="evaluation suite name")
+    migrate.add_argument("--baseline-dir", required=True, help="requested new/current baseline directory")
+    migrate.add_argument("--apply", action="store_true", help="[MUTATION] write the migrated baseline; default is preview")
+    migrate.add_argument("--force", action="store_true", help="overwrite an existing migrated baseline when applying")
+    migrate.set_defaults(handler=handle)
 
     gate = commands.add_parser("gate", parents=[shared], help="gate a candidate against thresholds and baseline")
     gate.add_argument("candidate")
@@ -72,6 +86,7 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             "eval_model": plan.eval_model,
             "dataset": plan.table_fqn,
             "stage": plan.stage_fqn,
+            "target_role": plan.target_role,
             "metrics": plan.metric_names,
             "paid_apply": bool(args.apply),
         }
@@ -83,6 +98,8 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             poll_attempts=args.poll_attempts,
             poll_interval=args.poll_interval,
             transient_retries=args.transient_retries,
+            allowed_targets=args.allow_target,
+            allowed_databases=args.allow_database,
         )
         candidate = load_result(output) if output else None
         payload = {"command": "eval run", "plan": plan_payload, "candidate": str(output) if output else None, "passed": candidate.get("passed") if candidate else None}
@@ -125,6 +142,37 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             )
         else:
             print(f"Baseline: {target}")
+        return 0
+    if args.eval_command == "migrate-baseline":
+        if args.force and not args.apply:
+            raise ValueError("--force requires --apply")
+        plan = build_plan(
+            config,
+            agent_name=args.agent,
+            suite_name=args.suite,
+            parse=not args.no_parse,
+        )
+        baseline, target = migrate_legacy_baseline(
+            args.legacy,
+            plan,
+            args.baseline_dir,
+            apply=args.apply,
+            force=args.force,
+        )
+        payload = {
+            "command": "eval migrate-baseline",
+            "applied": bool(args.apply),
+            "agent": baseline["agent"],
+            "suite": baseline["suite"],
+            "legacy": str(args.legacy),
+            "baseline": str(target),
+        }
+        if args.json:
+            emit_json(payload)
+        elif args.apply:
+            print(f"Baseline: {target}")
+        else:
+            print(f"[DRY RUN] would migrate legacy baseline to {target}")
         return 0
     directory = args.baseline_dir or str(config.artifact_dir / "baselines")
     result = gate_candidate(

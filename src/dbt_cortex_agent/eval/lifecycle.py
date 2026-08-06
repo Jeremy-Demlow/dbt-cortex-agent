@@ -12,6 +12,7 @@ from typing import Any, Callable
 from ..config import Config
 from ..dbt_runner import CommandRunner, run_dbt_operation, run_dbt_parse
 from ..identifiers import fqn, identifier
+from ..skills import assert_apply_safety
 from .dataset import annotate_rows, validate_table
 from .results import build_candidate, write_candidate
 
@@ -42,6 +43,7 @@ class EvalPlan:
     agent_fqn: str
     stage_fqn: str
     target_name: str
+    target_role: str
     target_database: str
     target_schema: str
     target_warehouse: str | None
@@ -85,7 +87,8 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
         raise ValueError("Evaluation plan identity must be an object")
     required_identity = {
         "agent_name", "suite_name", "eval_model", "projection", "agent_fqn",
-        "dataset_fqn", "stage_fqn", "target_name", "target_database", "target_schema",
+        "dataset_fqn", "stage_fqn", "target_name", "target_role", "target_database",
+        "target_schema",
     }
     missing_identity = sorted(required_identity - identity.keys())
     if missing_identity:
@@ -130,6 +133,8 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
     filename_template = payload.get("config_filename_template")
     if not isinstance(token, str) or not token or not isinstance(filename_template, str):
         raise ValueError("Evaluation plan dataset token and config filename template are required")
+    if not identity.get("target_role"):
+        raise ValueError("Evaluation plan target_role is required")
     return EvalPlan(
         schema_version=PLAN_SCHEMA_VERSION,
         agent_name=agent_name,
@@ -140,6 +145,7 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
         agent_fqn=fqn(str(identity["agent_fqn"]), "Agent object"),
         stage_fqn=fqn(str(identity["stage_fqn"]), "evaluation stage"),
         target_name=str(identity["target_name"]),
+        target_role=identifier(str(identity["target_role"]), "target role"),
         target_database=identifier(str(identity["target_database"]), "target database"),
         target_schema=identifier(str(identity["target_schema"]), "target schema"),
         target_warehouse=(str(identity["target_warehouse"]) if identity.get("target_warehouse") else None),
@@ -318,6 +324,8 @@ def run_evaluation(
     poll_attempts: int = 60,
     poll_interval: float = 30,
     transient_retries: int = 1,
+    allowed_targets: list[str] | None = None,
+    allowed_databases: list[str] | None = None,
     connect: Callable[[str], Any] = _default_connect,
     sleep: Callable[[float], None] = time.sleep,
 ) -> Path | None:
@@ -325,6 +333,7 @@ def run_evaluation(
         return None
     if not config.connection_explicit or not config.connection or not config.warehouse:
         raise ValueError("Evaluation apply requires explicit --connection and --warehouse")
+    assert_apply_safety(config, allowed_targets or [], allowed_databases or [])
     if transient_retries < 0:
         raise ValueError("Transient retries must be non-negative")
     if config.database and identifier(config.database, "configured database") != plan.target_database:
@@ -343,6 +352,7 @@ def run_evaluation(
     conn = connect(config.connection)
     cursor = conn.cursor()
     try:
+        cursor.execute(f"USE ROLE {plan.target_role}")
         cursor.execute(f"USE WAREHOUSE {identifier(plan.target_warehouse or config.warehouse, 'warehouse')}")
         cursor.execute(f"USE DATABASE {plan.target_database}")
         cursor.execute(f"USE SCHEMA {plan.target_schema}")

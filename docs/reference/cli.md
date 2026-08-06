@@ -113,7 +113,9 @@ Render a plan or execute existing native prerequisites. Options: shared options,
 required `--agent`, required `--suite`, `--run-name`, `--poll-attempts` (60),
 `--poll-interval` (30), `--transient-retries` (1), and `--apply`. Applied
 execution requires `--connection` and the `runtime` extra.
-It also requires `--warehouse`.
+It also requires `--warehouse`, both repeatable allowlists, and a configured
+target/database matching the dbt-rendered plan. Applied execution sets the
+plan's authoritative target role before warehouse, database, and schema.
 
 ### `dbt-cortex-agent eval compare BASELINE CANDIDATE`
 
@@ -124,6 +126,14 @@ exit `1` when comparison fails.
 
 Preview or write a baseline. Options: shared options, `--baseline-dir`, `--apply`,
 and `--force`; `--force` requires `--apply`.
+
+### `dbt-cortex-agent eval migrate-baseline LEGACY` — MUTATION with `--apply`
+
+Preview or migrate a known legacy accepted artifact to baseline schema v2 using
+a fresh dbt-rendered execution plan. Required options: `--agent`, `--suite`, and
+`--baseline-dir`; shared plan options, `--apply`, and `--force` are supported.
+Preview writes nothing. Existing targets require both `--apply` and `--force`.
+No connector, live Snowflake operation, or paid evaluation is used.
 
 ### `dbt-cortex-agent eval gate CANDIDATE`
 

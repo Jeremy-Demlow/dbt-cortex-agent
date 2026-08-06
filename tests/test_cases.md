@@ -41,6 +41,10 @@
 7. Verify compare/gate reject suite-policy changes and always enforce baseline tolerances when candidate tolerances are wider.
 8. Verify missing eval dependencies and expected CLI errors are controlled and actionable.
 9. Run focused/full Python tests, package build, integration-consumer dbt parse, and macro structural/offline tests without live evaluation.
+10. Verify eval run exposes shared target/database allowlists and rejects missing or mismatched allowlists before connector construction.
+11. Verify the signed plan requires `target_role`, the CLI payload exposes it, and applied execution issues `USE ROLE` before warehouse/database/schema.
+12. Verify known legacy accepted evidence migrates using current plan metrics, thresholds, tolerances, ordered refs, and suite signature while preserving legacy summary/run provenance.
+13. Verify migration previews without writing, applies only to the requested baseline directory, rejects unknown/failed/mismatched evidence, and requires explicit force for existing targets.
 
 ## REQ-006: stable domain-oriented CLI
 

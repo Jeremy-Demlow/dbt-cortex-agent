@@ -17,6 +17,9 @@ versioning for documented public macros, metadata contracts, and rendered specs.
   PyPI after v0.3.0 publication, the dbt package installs from the matching public
   HTTPS `v0.3.0` Git tag, and an immutable commit supports source installation in
   environments with repository access before the release is published.
+- Hardened paid evaluation with explicit target/database allowlists and the
+  authoritative dbt-rendered role, and added preview-first migration of known
+  legacy accepted baselines to schema v2 without live evaluation.
 
 ## 0.2.0 — 2026-07-31
 

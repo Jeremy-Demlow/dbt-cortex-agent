@@ -132,6 +132,7 @@ def test_help(capsys):
         (["agent", "deploy", "--help"], "MUTATION"),
         (["eval", "run", "--help"], "PAID"),
         (["eval", "accept-baseline", "--help"], "MUTATION"),
+        (["eval", "migrate-baseline", "--help"], "MUTATION"),
     ],
 )
 def test_help_labels_apply_boundaries(argv, label, capsys):
@@ -150,6 +151,18 @@ def test_eval_run_is_paid_opt_in():
     assert args.apply is False
 
 
+def test_eval_run_exposes_shared_allowlists():
+    args = build_parser().parse_args(
+        [
+            "eval", "run", "--agent", "orders_assistant", "--suite", "core",
+            "--allow-target", "sandbox", "--allow-database", "DB",
+        ]
+    )
+
+    assert args.allow_target == ["sandbox"]
+    assert args.allow_database == ["DB"]
+
+
 def test_all_apply_commands_are_opt_in():
     parser = build_parser()
     commands = [
@@ -162,6 +175,10 @@ def test_all_apply_commands_are_opt_in():
         ["agent", "rollback", "--alias", "A", "--to-version", "VERSION$1"],
         ["eval", "run", "--agent", "a", "--suite", "s"],
         ["eval", "accept-baseline", "candidate.json"],
+        [
+            "eval", "migrate-baseline", "legacy.json", "--agent", "a",
+            "--suite", "s", "--baseline-dir", "baselines",
+        ],
     ]
 
     assert all(parser.parse_args(command).apply is False for command in commands)
@@ -338,6 +355,25 @@ def test_baseline_accept_is_preview_by_default(monkeypatch, tmp_path, capsys):
 
     assert main(["eval", "accept-baseline", "candidate.json", "--baseline-dir", str(tmp_path)]) == 0
     assert "[DRY RUN] would accept baseline" in capsys.readouterr().out
+
+
+def test_legacy_baseline_migration_is_preview_by_default(monkeypatch, tmp_path, capsys):
+    plan = type("Plan", (), {})()
+    monkeypatch.setattr("dbt_cortex_agent.commands.eval.build_plan", lambda *args, **kwargs: plan)
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.eval.migrate_legacy_baseline",
+        lambda *args, **kwargs: (
+            {"agent": "a", "suite": "s"},
+            tmp_path / "baselines" / "a" / "s.json",
+        ),
+    )
+
+    assert main([
+        "eval", "migrate-baseline", "legacy.json", "--project-dir", str(tmp_path),
+        "--no-parse", "--agent", "a", "--suite", "s",
+        "--baseline-dir", str(tmp_path / "baselines"),
+    ]) == 0
+    assert "[DRY RUN] would migrate legacy baseline" in capsys.readouterr().out
 
 
 def test_package_root_public_api_is_version_only():

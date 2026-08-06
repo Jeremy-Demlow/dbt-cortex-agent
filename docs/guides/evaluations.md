@@ -24,7 +24,10 @@ Snowflake dataset.
 only renders the authoritative plan. `--apply` uploads a generated JSON config,
 creates the stage if needed, starts Snowflake Agent Evaluation, and incurs Cortex
 and warehouse spend. Applied execution requires explicit `--connection` and
-`--warehouse`; `--database` and `--target`, when supplied, must match the plan.
+`--warehouse`, `--target`, `--database`, and matching repeatable `--allow-target`
+and `--allow-database` values. The plan target and database must match the
+configured context and both allowlists before the connector is loaded. The CLI
+then sets the dbt-rendered plan role before warehouse, database, and schema.
 
 ## Python client path
 
@@ -41,7 +44,8 @@ eval model, an approved paid run uses:
 ```bash
 dbt-cortex-agent eval run --project-dir . --target sandbox \
   --agent orders_assistant --suite core --connection sandbox \
-  --database ANALYTICS_DEV --warehouse EVAL_WH --apply --json
+  --database ANALYTICS_DEV --warehouse EVAL_WH \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --apply --json
 ```
 
 The CLI parses, calls `cortex_eval__execution_plan`, verifies plan identity and
@@ -63,6 +67,36 @@ dbt-cortex-agent eval accept-baseline candidate.json
 Baseline acceptance is preview-only until `--apply`; `--force` also requires
 `--apply`. A candidate cannot widen accepted baseline tolerances. A baseline move
 is a reviewed policy decision, never an automatic response to a failed gate.
+
+### Migrate known legacy accepted evidence
+
+Use the current dbt-rendered execution plan to migrate a known pre-schema or
+schema-v1 accepted baseline without paying for a new evaluation:
+
+```bash
+dbt-cortex-agent eval migrate-baseline legacy.json \
+  --project-dir . --target sandbox \
+  --agent orders_assistant --suite core \
+  --baseline-dir target/dbt_cortex_agent/baselines --json
+```
+
+The default is preview and writes nothing. Review the target, current metric
+contract, thresholds, regression tolerances, ordered refs, suite signature, and
+preserved `run_metadata.legacy_migration` provenance. Apply only to the requested
+baseline directory:
+
+```bash
+dbt-cortex-agent eval migrate-baseline legacy.json \
+  --project-dir . --target sandbox \
+  --agent orders_assistant --suite core \
+  --baseline-dir target/dbt_cortex_agent/baselines --apply
+```
+
+An existing target fails closed. `--force` is valid only with `--apply` and must
+be an explicit reviewed overwrite decision. Migration accepts only a passing
+legacy baseline whose Agent, suite, and complete summary metric set match the
+current plan; it never copies legacy policy into schema v2 and never connects to
+Snowflake.
 
 ## dbt macro path
 

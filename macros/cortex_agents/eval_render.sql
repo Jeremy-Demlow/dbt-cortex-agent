@@ -159,6 +159,7 @@
     'dataset_fqn': dataset_fqn,
     'stage_fqn': stage_fqn,
     'target_name': target.name,
+    'target_role': target.role,
     'target_database': (target.database | upper),
     'target_schema': (target.schema | upper),
     'target_warehouse': target.warehouse

@@ -65,9 +65,22 @@ rendered-spec change can mint a version when later applied.
 ## Migrate evaluation evidence
 
 The v0.3.0 CLI uses dbt-rendered plan identity and candidate artifact schema v2.
-Do not accept an old or incompatible baseline automatically. Produce a new paid
-candidate only after the native-eval Agent, eval table, and stage prerequisites
-exist; gate it, review policy/provenance, then accept it explicitly if approved.
+Do not accept an old or incompatible baseline automatically. Known passing
+pre-schema/schema-v1 accepted artifacts can be previewed with:
+
+```bash
+dbt-cortex-agent eval migrate-baseline legacy.json \
+  --project-dir . --target sandbox \
+  --agent orders_assistant --suite core \
+  --baseline-dir target/dbt_cortex_agent/baselines --json
+```
+
+The current dbt plan supplies all identity and policy fields; legacy summary and
+run provenance are retained. Add `--apply` only after review. Existing targets
+also require `--force`; no overwrite is implicit. Unknown shapes or metric-set
+mismatches fail closed. Alternatively, produce a new paid candidate only after
+the native-eval Agent, eval table, and stage prerequisites exist; gate it, review
+policy/provenance, then accept it explicitly if approved.
 
 ## Deploy deliberately
 
