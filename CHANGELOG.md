@@ -3,6 +3,21 @@
 All notable package changes are recorded here. The package follows semantic
 versioning for documented public macros, metadata contracts, and rendered specs.
 
+## Unreleased
+
+## 0.3.1 — 2026-08-07
+
+- Added explicit `canonical`/`native_eval` selection to Agent render and deploy,
+  with canonical defaults, macro validation, dbt-owned physical identity,
+  strict marked-output parsing, and deterministic contained render artifacts.
+- Native-eval CLI deploy retains the existing apply safety gates while skipping
+  canonical-only skill planning and upload.
+- Added skill-independent `agent smoke` preview and explicit runtime invocation,
+  with manifest-owned physical resolution, optional exact tool assertion, stable
+  structured output, existing SSE-client reuse, and pre-invocation safety gates.
+- General Agent smoke now selects `canonical` or `native_eval`, reports that
+  projection, and resolves native-eval physical identity through dbt rendering.
+
 ## 0.3.0 — 2026-08-06
 
 - Combined the dbt package and Python companion under one versioned product.
@@ -20,6 +35,15 @@ versioning for documented public macros, metadata contracts, and rendered specs.
 - Hardened paid evaluation with explicit target/database allowlists and the
   authoritative dbt-rendered role, and added preview-first migration of known
   legacy accepted baselines to schema v2 without live evaluation.
+- Corrected package guidance for the shipped v0.3.0 contract: init configures but
+  does not scaffold existing dbt projects, Snow CLI is a prerequisite, applied
+  canonical CLI deploy uploads declared skills, native-eval deployment uses the
+  public macro, and CLI/macro output, safety, artifact, and troubleshooting
+  boundaries are documented explicitly.
+- Added preview-first `init --starter orders` generation from packaged integration
+  fixtures, with exact structured actions, atomic collision validation,
+  idempotent identical files, `.dbtignore` append, and semantic-view dependency
+  preservation. Projection, render, deploy, and smoke behavior are unchanged.
 
 ## 0.2.0 — 2026-07-31
 

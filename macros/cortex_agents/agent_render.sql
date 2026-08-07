@@ -11,6 +11,7 @@
 {% endmacro %}
 
 {% macro cortex_agent__target_agent_name(agent, projection='canonical') %}
+  {% do cortex_agent__validate_projection(projection) %}
   {% set naming = agent.get('naming', {}) %}
   {% set explicit = naming.get(target.name) %}
   {% if explicit %}
@@ -219,8 +220,19 @@
 {% endmacro %}
 
 {% macro cortex_agent__render_spec(agent_name, projection='canonical') %}
+  {% do cortex_agent__validate_projection(projection) %}
+  {% set exposure = cortex_agent__get_agent(agent_name) %}
+  {% set agent = exposure.meta.get('cortex_agent', {}) %}
   {% set spec = cortex_agent__build_spec(agent_name, projection) %}
+  {% set payload = {
+    'agent': agent_name,
+    'physical_agent': cortex_agent__target_agent_fqn(agent, projection),
+    'projection': projection,
+    'spec': spec,
+    'target': target.name
+  } %}
   {% do log(tojson(spec), info=True) %}
+  {% do log('__DBT_CORTEX_AGENT_RENDER__=' ~ tojson(payload), info=True) %}
   {{ return(tojson(spec)) }}
 {% endmacro %}
 
@@ -233,6 +245,14 @@
   {% set deploy_alias = alias or cortex_agent__deploy_alias(agent) %}
   {% set deploy_alias = cortex_agent__unquoted_identifier(deploy_alias, 'deploy alias') %}
   {% set mcp_statements = cortex_agent__render_mcp_ddl(agent, agent_fqn, projection) %}
+  {% set payload = {
+    'agent': agent_name,
+    'physical_agent': agent_fqn,
+    'projection': projection,
+    'spec': spec,
+    'target': target.name
+  } %}
+  {% do log('__DBT_CORTEX_AGENT_RENDER__=' ~ tojson(payload), info=True) %}
 
   {% if '$$' in spec_json %}
     {{ exceptions.raise_compiler_error("Rendered agent spec contains '$$' delimiter") }}
@@ -508,6 +528,7 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {# One-command orchestrator: deploy every enabled cortex_agent exposure. Each
      deploy is idempotent and sandbox-guarded, so this is safe to re-run. Pass
      dry_run=false to apply. #}
+  {% do cortex_agent__validate_projection(projection) %}
   {% set deployed = [] %}
   {% for exposure in graph.exposures.values() %}
     {% set ca = exposure.meta.get('cortex_agent', {}) %}

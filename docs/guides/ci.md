@@ -7,7 +7,7 @@ distinct jobs. Never make `--apply` or evaluation spend an unlabeled PR default.
 
 Run without live mutation or paid evaluation:
 
-1. install pinned dbt and Python 0.3.0 surfaces;
+1. install pinned dbt and Python 0.3.1 surfaces;
 2. `dbt deps` and `dbt parse`;
 3. run package/consumer tests and compile where credentials permit;
 4. `dbt-cortex-agent doctor --json`;

@@ -1,6 +1,6 @@
 # End-to-end architecture flow
 
-`dbt_cortex_agent` 0.3.0 has two shipped surfaces and one metadata authority:
+`dbt_cortex_agent` 0.3.1 has two shipped surfaces and one metadata authority:
 
 - **dbt package:** Agent/eval contracts, graph resolution, deterministic renders,
   lifecycle DDL, versioning, grants, and native evaluation macros;
@@ -56,14 +56,19 @@ manifest. It is not an operational performance switch.
 
 ## Canonical lifecycle
 
-The installed CLI and public macros expose the same deploy semantics. For skills,
-the operator plans and uploads local directories before canonical deploy. The
-macro independently verifies staged `SKILL.md`, hashes final spec plus staged
+The installed CLI and public macros reach the same canonical deploy macro, but
+their orchestration safety differs. Applied CLI deploy plans and uploads declared
+local skills first, then delegates with fresh-manifest, explicit-connection,
+resolved-database, and CLI allowlist gates. A direct macro call performs none of
+that local orchestration and relies on dbt profile context plus package safety
+vars. The macro independently verifies staged `SKILL.md`, hashes final spec plus staged
 skill state, skips unchanged versions, or modifies LIVE and commits an immutable
 version. Alias movement, grants, MCP attachment, and smoke are explicit concerns.
 
 The CLI does not implement Agent DDL. It delegates lifecycle changes to public
-dbt macros with selected Agents and explicit dry-run/apply arguments.
+dbt macros with selected Agents and explicit dry-run/apply arguments. Render
+parses one dbt-owned marked payload and saves only the returned specification at
+`target/dbt_cortex_agent/renders/<target>/<agent>/<projection>.json`.
 
 ## Native evaluation
 

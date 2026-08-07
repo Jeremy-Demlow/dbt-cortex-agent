@@ -38,8 +38,24 @@ dbt-cortex-agent eval run --project-dir . --target sandbox \
   --agent orders_assistant --suite core --json
 ```
 
-After separately deploying the native-eval Agent and materializing/testing the
-eval model, an approved paid run uses:
+Render and preview deployment of the required native-eval projection through
+the CLI:
+
+```bash
+dbt-cortex-agent agent render --project-dir . --target sandbox \
+  --agent orders_assistant --projection native_eval --json
+dbt-cortex-agent agent deploy --project-dir . --target sandbox \
+  --agent orders_assistant --projection native_eval \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --json
+```
+
+After review, repeat deploy with explicit `--connection`, matching `--database`,
+and `--apply`. Native-eval CLI deploy retains all normal mutation gates but skips
+skill planning and upload because native-eval omits skills and MCP connectors by
+design.
+
+After deploying that Agent and materializing/testing the eval model, an approved
+paid run uses:
 
 ```bash
 dbt-cortex-agent eval run --project-dir . --target sandbox \
@@ -53,6 +69,21 @@ signature, validates live table rows, records the pre-run DEFAULT Agent version,
 starts/polls the evaluation with bounded transient retry, records post-run
 provenance, and writes a candidate JSON under `target/dbt_cortex_agent` unless
 `--artifact-dir` overrides it. DEFAULT drift makes the result indeterminate.
+
+The default artifact root is resolved relative to `--project-dir`. An applied
+run writes
+`target/dbt_cortex_agent/candidates/<agent>/<suite>/<run_name>.json`. Accepted
+baselines default to
+`target/dbt_cortex_agent/baselines/<agent>/<suite>.json`; `--artifact-dir` moves
+both defaults, while `--baseline-dir` overrides the baseline root for the
+baseline command being run.
+
+With `--json`, preview returns one object containing `command`, `plan`, a null
+`candidate`, and `passed: null`; applied execution replaces `candidate` with the
+written path and reports its pass state. Without `--json`, `eval run` still
+prints the plan as JSON for review and prints `Candidate: <path>` after an
+applied run. dbt parse and macro details remain in dbt output/logs; candidate and
+baseline files are the durable evaluation evidence.
 
 Candidate schema v2 includes plan/suite signatures, ordered ground-truth refs,
 metrics, thresholds, regression tolerances, row evidence, and pre/post version
@@ -112,6 +143,8 @@ dbt run-operation cortex_eval__run --target sandbox \
 `cortex_eval__run` can render, start, poll, write Snowflake result rows, and apply
 declared threshold gates. It is an on-demand native macro path; it does not write
 the CLI's durable candidate/baseline artifacts or apply accepted-baseline policy.
+Direct macro calls also rely on dbt's profile and package safety vars rather than
+the CLI's explicit connection, resolved-database, and duplicate allowlist gates.
 
 ## Ground-truth rules
 

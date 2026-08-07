@@ -1,6 +1,6 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` 0.3.0 is a Snowflake-only dbt package and Python CLI for
+`dbt_cortex_agent` 0.3.1 is a Snowflake-only dbt package and Python CLI for
 defining, validating, rendering, versioning, and evaluating Cortex Agents from
 dbt metadata. Agents are dbt exposures; semantic views and evaluation datasets
 remain dbt models. dbt owns the specification and lifecycle macros, while the
@@ -9,38 +9,58 @@ and manages local files, runtime clients, and evaluation artifacts.
 
 ## Install one immutable version on two surfaces
 
-After v0.3.0 is published to PyPI, install the Python CLI and runtime support in
+After v0.3.1 is published to PyPI, install the Python CLI and runtime support in
 an isolated environment:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.3.0'
+pipx install 'dbt-cortex-agent[runtime]==0.3.1'
 ```
 
 For a managed Python environment, use
-`python -m pip install 'dbt-cortex-agent[runtime]==0.3.0'`. Before publication,
-environments that can access the repository can install the current source
-snapshot pinned to commit `7027d45613423e90a522a8e1ec283c6ce56f33bc`:
+`python -m pip install 'dbt-cortex-agent[runtime]==0.3.1'`. Before publication,
+release operators can install the reviewed candidate directly from its clean
+local checkout:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime] @ git+https://github.com/Jeremy-Demlow/dbt-cortex-agent.git@7027d45613423e90a522a8e1ec283c6ce56f33bc'
+pipx install '/absolute/path/to/dbt-cortex-agent[runtime]'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
-public HTTPS `v0.3.0` Git tag in `packages.yml`:
+public HTTPS `v0.3.1` Git tag in `packages.yml`:
 
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.3.0
+    revision: v0.3.1
 ```
 
-The PyPI version `0.3.0` and Git tag `v0.3.0` identify the same immutable
+The PyPI version `0.3.1` and Git tag `v0.3.1` identify the same immutable
 release across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
 declared dbt dependency, and installed dbt package versions align. The supported
 runtime is Python `>=3.10,<4`, dbt
 `>=1.10,<2.0`, and `dbt-snowflake`; see [compatibility](docs/reference/compatibility.md)
 and [installation](docs/getting-started/installation.md).
+
+The CLI also requires the Snowflake CLI (`snow`) on `PATH`; `doctor` checks both
+the `dbt` and `snow` executables. By default, `dbt-cortex-agent init` configures an existing
+dbt project by appending missing dependency and safety-variable entries. It does
+not create a dbt project or scaffold Agent exposures, semantic views, evaluation
+models, seeds, or skill files.
+
+For the fixed synthetic tutorial, preview the package-owned Orders starter in an
+existing dbt project:
+
+```bash
+dbt-cortex-agent init --project-dir . --starter orders \
+  --package-source https://github.com/Jeremy-Demlow/dbt-cortex-agent.git --json
+```
+
+The preview reports the exact seed, semantic-view, Agent, eval, dependency, and
+`.dbtignore` actions without writing. After review, add `--apply`. The command
+validates every destination before writing, keeps identical files unchanged,
+and fails closed if any generated file already has different content. It has no
+force mode and is not a generic project or Agent wizard.
 
 ## Five-minute non-mutating quickstart
 
@@ -49,7 +69,8 @@ From a consumer dbt project with an Agent exposure:
 ```bash
 dbt-cortex-agent doctor --project-dir . --target sandbox --json
 dbt-cortex-agent manifest validate --project-dir . --target sandbox --json
-dbt-cortex-agent agent render --project-dir . --target sandbox --agent orders_assistant --json
+dbt-cortex-agent agent render --project-dir . --target sandbox --agent orders_assistant \
+  --projection canonical --json
 dbt-cortex-agent agent deploy --project-dir . --target sandbox --agent orders_assistant \
   --allow-target sandbox --allow-database ANALYTICS_DEV --json
 ```
@@ -69,9 +90,17 @@ dbt-cortex-agent agent deploy --project-dir . --target sandbox \
   --allow-target sandbox --allow-database ANALYTICS_DEV --apply
 ```
 
-`--apply` requires an explicit `--connection`; the configured database must
+Both render and deploy accept `--projection canonical|native_eval` and default
+to `canonical`. Render writes the exact specification to
+`target/dbt_cortex_agent/renders/<target>/<agent>/<projection>.json` and returns
+the specification, logical Agent, physical Agent, projection, target, and
+artifact path in JSON. `--apply` requires an explicit `--connection`; the configured database must
 match dbt's resolved target, and the target/database must pass both CLI and dbt
-allowlists. Deployment updates LIVE, commits `VERSION$N`, and may move an alias.
+allowlists. Canonical CLI deploy also plans and uploads every declared local
+stage-backed skill before invoking the deploy macro; a failed upload prevents
+deployment. Native-eval deploy retains the same apply gates but skips skill
+planning and upload because that projection excludes skills. Deployment updates
+LIVE, commits `VERSION$N`, and may move an alias.
 Read [lifecycle](docs/guides/lifecycle.md) and [Snowflake setup](docs/getting-started/snowflake-setup.md)
 before crossing this boundary.
 
@@ -81,8 +110,9 @@ before crossing this boundary.
 |---|---|---|
 | Diagnose a project | `doctor` | — |
 | Validate resolved metadata | `manifest validate` | `cortex_agent__validate` |
-| Render canonical specs | `agent render` | `cortex_agent__render_spec` |
+| Render canonical/native-eval specs | `agent render --projection ...` | `cortex_agent__render_spec` |
 | Deploy/version an Agent | `agent deploy` | `cortex_agent__deploy` |
+| Preview/invoke any Agent | `agent smoke` | — |
 | Grant, promote, roll back | `agent grant/promote/rollback` | lifecycle macros |
 | Plan/upload/smoke skills | `skill plan/upload/smoke` | deploy validates staged skills |
 | Render/run native evaluation | `eval run` | `cortex_eval__execution_plan`, `cortex_eval__run` |
@@ -91,7 +121,11 @@ before crossing this boundary.
 Use macros inside dbt-native automation. Use the CLI when local file upload,
 stable process exits/JSON, connector clients, or durable evaluation artifacts
 are required. Both paths consume the same dbt metadata; Python does not own a
-second Agent DDL implementation.
+second Agent DDL implementation. The CLI adds fresh-parse, explicit-connection,
+resolved-database, and CLI allowlist gates around applied operations. Direct
+`dbt run-operation` calls do not add those CLI gates or upload local skills; they
+rely on the package macro's dbt target/database allowlists and staged-skill
+readiness checks.
 
 ## Lifecycle and evaluation
 

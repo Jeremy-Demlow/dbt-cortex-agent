@@ -32,7 +32,9 @@ dbt-cortex-agent doctor --project-dir . --target sandbox --json
 dbt-cortex-agent manifest validate --project-dir . --target sandbox \
   --agent orders_assistant --json
 dbt-cortex-agent agent render --project-dir . --target sandbox \
-  --agent orders_assistant --json
+  --agent orders_assistant --projection canonical --json
+dbt-cortex-agent agent render --project-dir . --target sandbox \
+  --agent orders_assistant --projection native_eval --json
 dbt-cortex-agent agent deploy --project-dir . --target sandbox \
   --agent orders_assistant --allow-target sandbox \
   --allow-database AM_SKI_RESORT_DBT_FOCUS --json
@@ -42,7 +44,10 @@ dbt-cortex-agent eval run --project-dir . --target sandbox \
 
 No command above applies mutation or starts evaluation spend. `dbt compile` and
 model execution require a valid Snowflake profile; do not treat an offline parse
-as proof of live relation or privilege behavior.
+as proof of live relation or privilege behavior. The checked-in fixture explicitly
+allowlists `AM_SKI_RESORT_DBT_FOCUS` so its documented `doctor` command validates
+the complete fail-closed safety contract; changing the sandbox database requires
+changing that allowlist deliberately.
 
 ## Optional sandbox configuration
 

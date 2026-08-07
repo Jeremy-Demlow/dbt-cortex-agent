@@ -35,6 +35,13 @@
   {{ return(matches[0]) }}
 {% endmacro %}
 
+{% macro cortex_agent__validate_projection(projection) %}
+  {% if projection not in ['canonical', 'native_eval'] %}
+    {{ exceptions.raise_compiler_error("projection must be 'canonical' or 'native_eval', got '" ~ projection ~ "'") }}
+  {% endif %}
+  {{ return(projection) }}
+{% endmacro %}
+
 {% macro cortex_agent__semantic_view_fqn(model_name) %}
   {% set node = cortex_agent__get_model_node(model_name) %}
   {% set materialized = node.config.get('materialized') %}
@@ -50,6 +57,7 @@
 {% endmacro %}
 
 {% macro cortex_agent__validate(agent_name, projection='canonical') %}
+  {% do cortex_agent__validate_projection(projection) %}
   {% set exposure = cortex_agent__get_agent(agent_name) %}
   {% set agent = exposure.meta.get('cortex_agent', {}) %}
   {% set tools = agent.get('tools', []) %}

@@ -1,6 +1,6 @@
 # Compatibility
 
-This matrix applies to `dbt_cortex_agent` 0.3.0 on both install surfaces.
+This matrix applies to `dbt_cortex_agent` 0.3.1 on both install surfaces.
 
 ## Required
 

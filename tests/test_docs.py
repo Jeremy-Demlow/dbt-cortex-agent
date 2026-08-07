@@ -30,6 +30,7 @@ POLICY_FILES = [
     ROOT / ".github/PULL_REQUEST_TEMPLATE.md",
     ROOT / ".github/CODEOWNERS",
 ]
+REQ_011 = ROOT / "requirements/REQ-011_tutorial_product_readiness.md"
 
 
 def _parser_contract() -> tuple[set[str], set[str]]:
@@ -132,7 +133,59 @@ def test_project_policy_retains_license_security_and_support_contracts() -> None
     assert "MAINTAINERS.md" not in codeowners
 
 
-def test_current_release_surfaces_identify_v030() -> None:
+def test_req_011_contracts_additive_tutorial_product_readiness() -> None:
+    text = REQ_011.read_text(encoding="utf-8").lower()
+    headings = (
+        "## summary",
+        "## business context",
+        "## objective",
+        "## acceptance criteria",
+        "## user stories",
+        "## dependencies",
+        "## out of scope",
+        "## notes",
+    )
+    required = (
+        "documentation defects",
+        "deterministic orders starter",
+        "not a generic project or agent wizard",
+        "projection-aware",
+        "general agent smoke",
+        "backward-compatibility",
+        "non-mutating by default",
+        "package completion gate",
+        "skill for the tutorial is deferred",
+        "no snowflake connection",
+        "explicit operator opt-in",
+    )
+
+    assert all(heading in text for heading in headings)
+    assert all(phrase in text for phrase in required)
+    assert "implementation begins" in text
+
+
+def test_general_agent_smoke_contract_is_documented() -> None:
+    cli = CLI_REFERENCE.read_text(encoding="utf-8")
+    lifecycle = (ROOT / "docs/guides/lifecycle.md").read_text(encoding="utf-8")
+
+    for phrase in (
+        "agent smoke",
+        "--question",
+        "--projection canonical|native_eval",
+        "--expect-tool",
+        "--agent-object",
+        "--endpoint",
+        "does not construct a connector or invoke the Agent",
+        "preview sets the final two fields to\n`null`",
+        "failures exit `2`",
+    ):
+        assert phrase in cli
+    assert "General smoke is separate from skill smoke" in lifecycle
+    assert "custom evaluation suffix is never guessed" in lifecycle
+    assert "reuses the existing invocation/SSE client" in lifecycle
+
+
+def test_current_release_surfaces_identify_v031() -> None:
     for path in (
         README,
         ROOT / "pyproject.toml",
@@ -141,7 +194,7 @@ def test_current_release_surfaces_identify_v030() -> None:
         CLI_REFERENCE,
         ROOT / "UPGRADING.md",
     ):
-        assert "0.3.0" in path.read_text(encoding="utf-8"), path
+        assert "0.3.1" in path.read_text(encoding="utf-8"), path
 
 
 def test_public_dual_surface_install_contract() -> None:
@@ -151,19 +204,17 @@ def test_public_dual_surface_install_contract() -> None:
     metadata = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     combined = "\n".join((readme, installation, upgrading))
     public_source = "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    primary_install = "pipx install 'dbt-cortex-agent[runtime]==0.3.0'"
-    source_snapshot = f"{public_source}@7027d45613423e90a522a8e1ec283c6ce56f33bc"
+    primary_install = "pipx install 'dbt-cortex-agent[runtime]==0.3.1'"
 
     assert all(public_source in text for text in (readme, installation, upgrading, metadata))
     assert all(primary_install in text for text in (readme, installation, upgrading))
-    assert "python -m pip install 'dbt-cortex-agent[runtime]==0.3.0'" in combined
+    assert "python -m pip install 'dbt-cortex-agent[runtime]==0.3.1'" in combined
     assert "dbt deps` does not install" in combined
     assert "same immutable" in combined
     assert "doctor" in combined and "align" in combined
-    assert "after v0.3.0 is published to pypi" in combined.lower()
-    assert all(source_snapshot in text for text in (readme, installation, upgrading))
-    assert "source snapshot" in combined.lower()
-    assert "environments that can access the repository" in combined.lower()
+    assert "after v0.3.1 is published to pypi" in combined.lower()
+    assert all("/absolute/path/to/dbt-cortex-agent[runtime]" in text for text in (readme, installation, upgrading))
+    assert "clean local checkout" in combined.lower()
 
 
 def test_adopter_and_fixture_surfaces_reject_private_install_references() -> None:
@@ -244,3 +295,26 @@ def test_evaluation_prerequisites_are_explicit() -> None:
         assert phrase in text
     assert "does not create these prerequisites" in text
     assert "explicit `--connection` and\n`--warehouse`" in text
+
+
+def test_v030_docs_state_current_scaffolding_deploy_and_output_boundaries() -> None:
+    installation = (ROOT / "docs/getting-started/installation.md").read_text(encoding="utf-8")
+    lifecycle = (ROOT / "docs/guides/lifecycle.md").read_text(encoding="utf-8")
+    evaluations = (ROOT / "docs/guides/evaluations.md").read_text(encoding="utf-8")
+    troubleshooting = (ROOT / "docs/troubleshooting.md").read_text(encoding="utf-8")
+
+    assert "Install Snow CLI" in installation
+    assert "does not\ncreate Agent exposure YAML" in installation
+    assert "uploads them with Snow CLI\nbefore it invokes `cortex_agent__deploy`" in lifecycle
+    assert "returns\nthe actual specification" in lifecycle
+    assert "<artifact-dir>/renders/<target>/<agent>/<projection>.json" in lifecycle
+    assert "--agent orders_assistant --projection native_eval" in evaluations
+    assert "retains all normal mutation gates" in evaluations
+    assert "candidates/<agent>/<suite>/<run_name>.json" in evaluations
+    assert "baselines/<agent>/<suite>.json" in evaluations
+    assert "Use this sequence" in troubleshooting
+
+
+def test_integration_fixture_has_explicit_database_allowlist() -> None:
+    project = yaml.safe_load((ROOT / "integration_tests/dbt_project.yml").read_text(encoding="utf-8"))
+    assert project["vars"]["cortex_agent_allowed_databases"] == ["AM_SKI_RESORT_DBT_FOCUS"]

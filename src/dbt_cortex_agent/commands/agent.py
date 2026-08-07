@@ -1,18 +1,21 @@
 from __future__ import annotations
 
 import argparse
+import json
 
 from ..config import Config
 from ..deploy import deploy_agents, lifecycle_macro, render_agents
-from ..identifiers import identifier, version
-from ..manifest import assert_config_database
+from ..identifiers import fqn, identifier, version
+from ..invoke import invoke_agent
+from ..manifest import assert_config_database, physical_agent_name, select_agents
+from ..skills import assert_apply_safety
 from .common import add_allowlists, emit_json, fresh_manifest, require_explicit_connection
 
 
 def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentParser) -> None:
     parser = subparsers.add_parser(
         "agent",
-        help="run canonical Agent lifecycle macros",
+        help="run Agent lifecycle macros",
         description="Render or dry-run Agent lifecycle macros; mutations require explicit --apply.",
         epilog=(
             "Examples:\n"
@@ -22,15 +25,32 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     commands = parser.add_subparsers(dest="agent_command", required=True)
-    render = commands.add_parser("render", parents=[shared], help="render canonical Agent specifications")
+    render = commands.add_parser("render", parents=[shared], help="render Agent specifications")
     render.add_argument("--agent", action="append", dest="agents", help="logical Agent name; repeatable")
+    _add_projection(render)
     render.set_defaults(handler=handle)
 
     deploy = commands.add_parser("deploy", parents=[shared], help="dry-run or deploy Agents [MUTATION with --apply]")
     deploy.add_argument("--agent", action="append", dest="agents", help="logical Agent name; repeatable")
+    _add_projection(deploy)
     deploy.add_argument("--alias", help="alias assigned by the deploy macro")
     _add_apply(deploy)
     deploy.set_defaults(handler=handle)
+
+    smoke = commands.add_parser(
+        "smoke",
+        parents=[shared],
+        help="preview or invoke one Agent [RUNTIME with --apply]",
+    )
+    smoke.add_argument("--agent", required=True, help="logical Agent name")
+    smoke.add_argument("--question", required=True, help="question sent to the Agent")
+    _add_projection(smoke)
+    smoke.add_argument("--expect-tool", help="exact tool name required in the response")
+    smoke.add_argument("--agent-object", help="physical Agent override")
+    smoke.add_argument("--endpoint", help="HTTPS Snowflake Agent endpoint override")
+    smoke.add_argument("--apply", action="store_true", help="[RUNTIME] invoke the Agent; default is preview")
+    add_allowlists(smoke)
+    smoke.set_defaults(handler=handle)
 
     grant = commands.add_parser("grant", parents=[shared], help="dry-run or grant Agent usage [MUTATION with --apply]")
     grant.add_argument("--agent", action="append", dest="agents", help="logical Agent name; repeatable")
@@ -57,8 +77,86 @@ def _add_apply(parser: argparse.ArgumentParser) -> None:
     add_allowlists(parser)
 
 
+def _add_projection(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--projection",
+        choices=("canonical", "native_eval"),
+        default="canonical",
+        help="Agent projection; default: canonical",
+    )
+
+
+def _nonblank(value: str | None, option: str) -> str:
+    if value is None or not value.strip():
+        raise ValueError(f"{option} must be nonblank")
+    return value
+
+
+def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> int:
+    logical_agent = _nonblank(args.agent, "--agent")
+    question = _nonblank(args.question, "--question")
+    expected_tool = (
+        _nonblank(args.expect_tool, "--expect-tool") if args.expect_tool is not None else None
+    )
+    selected = select_agents(manifest, [logical_agent])[0]
+    if args.agent_object is not None:
+        agent_object = identifier(args.agent_object, "Agent object override")
+    elif args.projection == "canonical":
+        agent_object = physical_agent_name(selected, config.target)
+    else:
+        rendered = render_agents(config, [logical_agent], projection=args.projection).renders[0]
+        agent_object = identifier(
+            fqn(rendered["physical_agent"], "rendered physical Agent").rsplit(".", 1)[1],
+            "rendered Agent object",
+        )
+    response = None
+    passed = None
+    if args.apply:
+        require_explicit_connection(config, "Agent smoke")
+        database = assert_config_database(manifest, config.database)
+        assert_apply_safety(config, args.allow_target, args.allow_database)
+        if not config.schema:
+            raise ValueError("Agent smoke requires --schema or SNOWFLAKE_SCHEMA")
+        response = invoke_agent(
+            database,
+            config.schema,
+            agent_object,
+            question,
+            str(config.connection),
+            args.endpoint,
+        )
+        passed = expected_tool is None or any(
+            item.get("name") == expected_tool for item in response.get("tool_uses", [])
+        )
+        if not passed:
+            raise RuntimeError(
+                f"Agent smoke failed: expected tool {expected_tool!r} was not selected"
+            )
+    payload = {
+        "command": "agent smoke",
+        "applied": bool(args.apply),
+        "agent": logical_agent,
+        "projection": args.projection,
+        "agent_object": agent_object,
+        "question": question,
+        "expected_tool": expected_tool,
+        "passed": passed,
+        "response": response,
+    }
+    if args.json:
+        emit_json(payload)
+    elif args.apply:
+        print(f"PASS {logical_agent} via {agent_object}")
+        print(json.dumps(response, indent=2, sort_keys=True))
+    else:
+        print(f"[DRY RUN] would smoke {logical_agent} via {agent_object}: {question}")
+    return 0
+
+
 def handle(args: argparse.Namespace, config: Config) -> int:
     manifest = fresh_manifest(config, no_parse=args.no_parse)
+    if args.agent_command == "smoke":
+        return _handle_smoke(args, config, manifest)
     if args.agent_command == "deploy" and args.alias:
         args.alias = identifier(args.alias, "alias")
     elif args.agent_command == "promote":
@@ -72,7 +170,7 @@ def handle(args: argparse.Namespace, config: Config) -> int:
         require_explicit_connection(config, f"Agent {args.agent_command}")
         assert_config_database(manifest, config.database)
     if args.agent_command == "render":
-        result = render_agents(config, args.agents)
+        result = render_agents(config, args.agents, projection=args.projection)
     elif args.agent_command == "deploy":
         result = deploy_agents(
             config,
@@ -80,6 +178,7 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             apply=apply,
             allowed_targets=args.allow_target,
             allowed_databases=args.allow_database,
+            projection=args.projection,
             alias=args.alias,
         )
     else:
@@ -101,8 +200,20 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             allowed_databases=args.allow_database,
         )
     payload = {"command": f"agent {args.agent_command}", "applied": apply, "agents": list(result.agents)}
+    if args.agent_command in {"render", "deploy"}:
+        payload["projection"] = args.projection
+        payload["renders"] = list(result.renders)
     if args.json:
         emit_json(payload)
     else:
         print(f"Processed Agents: {', '.join(result.agents) or 'none'}")
+        for rendered in getattr(result, "renders", ()):
+            artifact = (
+                f"\nArtifact: {rendered['artifact']}" if rendered.get("artifact") else ""
+            )
+            print(
+                f"Rendered {rendered['agent']} ({rendered['projection']}) -> "
+                f"{rendered['physical_agent']}{artifact}\n"
+                f"{json.dumps(rendered['spec'], indent=2, sort_keys=True)}"
+            )
     return 0

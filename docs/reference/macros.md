@@ -1,6 +1,8 @@
 # Public macro reference
 
 Public macros default to non-mutating behavior where applicable.
+Projection-aware macros accept only `canonical` and `native_eval`; every other
+value fails compilation.
 
 ## Agent lifecycle
 

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
+from .artifacts import contained_path
 from .config import Config
 from .dbt_runner import CommandRunner
 from .manifest import assert_config_database, load_manifest, select_agents
@@ -13,6 +15,10 @@ from .skills import assert_apply_safety, build_upload_plan, upload_skills
 class LifecycleResult:
     agents: tuple[str, ...]
     commands: tuple[tuple[str, ...], ...]
+    renders: tuple[dict[str, object], ...] = ()
+
+
+RENDER_MARKER = "__DBT_CORTEX_AGENT_RENDER__="
 
 
 def run_operation(
@@ -22,6 +28,17 @@ def run_operation(
     runner: CommandRunner | None = None,
     variables: dict | None = None,
 ) -> tuple[str, ...]:
+    command, _ = _run_operation_result(config, macro, arguments, runner, variables)
+    return command
+
+
+def _run_operation_result(
+    config: Config,
+    macro: str,
+    arguments: dict,
+    runner: CommandRunner | None = None,
+    variables: dict | None = None,
+) -> tuple[tuple[str, ...], object]:
     command = [
         config.dbt_executable,
         "run-operation",
@@ -40,7 +57,57 @@ def run_operation(
     result = (runner or CommandRunner()).run(command, cwd=config.project_dir)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"dbt macro failed: {macro}")
-    return tuple(command)
+    return tuple(command), result
+
+
+def _parse_render_output(stdout: str, expected_agent: str, expected_projection: str) -> dict:
+    marker_count = stdout.count(RENDER_MARKER)
+    if marker_count != 1:
+        raise ValueError(
+            f"Expected exactly one {RENDER_MARKER[:-1]} marker for Agent "
+            f"{expected_agent!r}; found {marker_count}"
+        )
+    marked = [
+        line.split(RENDER_MARKER, 1)[1].strip()
+        for line in stdout.splitlines()
+        if RENDER_MARKER in line
+    ]
+    try:
+        payload = json.loads(marked[0])
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Malformed render marker JSON for Agent {expected_agent!r}: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Render marker for Agent {expected_agent!r} must contain a JSON object")
+    if payload.get("agent") != expected_agent:
+        raise ValueError(f"Render marker Agent does not match requested Agent {expected_agent!r}")
+    if payload.get("projection") != expected_projection:
+        raise ValueError(
+            f"Render marker projection does not match requested projection {expected_projection!r}"
+        )
+    for key in ("target", "physical_agent"):
+        if not isinstance(payload.get(key), str) or not payload[key]:
+            raise ValueError(f"Render marker field {key!r} must be a non-empty string")
+    if not isinstance(payload.get("spec"), dict):
+        raise ValueError(f"Render marker spec for Agent {expected_agent!r} must be a JSON object")
+    return payload
+
+
+def _write_render_artifact(config: Config, payload: dict) -> Path:
+    path = contained_path(
+        config.artifact_dir,
+        "renders",
+        payload["target"],
+        payload["agent"],
+        f"{payload['projection']}.json",
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload["spec"], indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return path
 
 
 def _allowlist_variables(
@@ -74,19 +141,29 @@ def _selected(config: Config, agent_names: list[str] | None):
 
 
 def render_agents(
-    config: Config, agent_names: list[str] | None, runner: CommandRunner | None = None
+    config: Config,
+    agent_names: list[str] | None,
+    runner: CommandRunner | None = None,
+    projection: str = "canonical",
 ) -> LifecycleResult:
     _, agents = _selected(config, agent_names)
-    commands = [
-        run_operation(
+    command_runner = runner or CommandRunner()
+    commands = []
+    renders = []
+    for agent in agents:
+        command, result = _run_operation_result(
             config,
             "cortex_agent__render_spec",
-            {"agent_name": agent["name"], "projection": "canonical"},
-            runner,
+            {"agent_name": agent["name"], "projection": projection},
+            command_runner,
         )
-        for agent in agents
-    ]
-    return LifecycleResult(tuple(agent["name"] for agent in agents), tuple(commands))
+        payload = _parse_render_output(result.stdout, agent["name"], projection)
+        artifact = _write_render_artifact(config, payload)
+        renders.append({**payload, "artifact": str(artifact)})
+        commands.append(command)
+    return LifecycleResult(
+        tuple(agent["name"] for agent in agents), tuple(commands), tuple(renders)
+    )
 
 
 def deploy_agents(
@@ -96,38 +173,45 @@ def deploy_agents(
     apply: bool,
     allowed_targets: list[str],
     allowed_databases: list[str],
+    projection: str = "canonical",
     alias: str | None = None,
     runner: CommandRunner | None = None,
 ) -> LifecycleResult:
     command_runner = runner or CommandRunner()
     manifest, agents = _selected(config, agent_names)
     selected_names = [agent["name"] for agent in agents]
-    plan = build_upload_plan(manifest, config.project_dir, selected_names)
+    plan = (
+        build_upload_plan(manifest, config.project_dir, selected_names)
+        if projection == "canonical"
+        else None
+    )
     if apply:
         assert_config_database(manifest, config.database)
         validate_deploy_context(
             config, allowed_targets, allowed_databases, command_runner
         )
-        upload_skills(plan, config, command_runner)
+        if plan is not None:
+            upload_skills(plan, config, command_runner)
     commands = []
+    renders = []
     for agent in agents:
         arguments = {
             "agent_name": agent["name"],
-            "projection": "canonical",
+            "projection": projection,
             "dry_run": not apply,
         }
         if alias:
             arguments["alias"] = alias
-        commands.append(
-            run_operation(
-                config,
-                "cortex_agent__deploy",
-                arguments,
-                command_runner,
-                _allowlist_variables(allowed_targets, allowed_databases) if apply else None,
-            )
+        command, result = _run_operation_result(
+            config,
+            "cortex_agent__deploy",
+            arguments,
+            command_runner,
+            _allowlist_variables(allowed_targets, allowed_databases) if apply else None,
         )
-    return LifecycleResult(tuple(selected_names), tuple(commands))
+        commands.append(command)
+        renders.append(_parse_render_output(result.stdout, agent["name"], projection))
+    return LifecycleResult(tuple(selected_names), tuple(commands), tuple(renders))
 
 
 def lifecycle_macro(

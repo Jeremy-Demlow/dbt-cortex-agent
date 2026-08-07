@@ -101,6 +101,7 @@ def test_init_exposes_explicit_bootstrap_options():
             "--allow-database", "AUDIT",
             "--agent-schema", "AGENTS",
             "--eval-schema", "EVAL",
+            "--starter", "orders",
         ]
     )
 
@@ -110,6 +111,55 @@ def test_init_exposes_explicit_bootstrap_options():
     assert args.allow_database == ["DB", "AUDIT"]
     assert args.agent_schema == "AGENTS"
     assert args.eval_schema == "EVAL"
+    assert args.starter == "orders"
+
+
+def test_orders_starter_json_preview_is_structured(tmp_path, capsys):
+    (tmp_path / "dbt_project.yml").write_text(
+        "name: consumer\nversion: 1.0.0\nconfig-version: 2\n"
+    )
+
+    assert main([
+        "init", "--project-dir", str(tmp_path), "--starter", "orders",
+        "--package-source", "https://example.invalid/repo.git", "--json",
+    ]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["command"] == "init"
+    assert payload["starter"] == "orders"
+    assert payload["applied"] is False
+    assert payload["changed_files"] == []
+    assert {Path(item["path"]).relative_to(tmp_path).as_posix() for item in payload["actions"]} == {
+        "packages.yml",
+        "models/semantic/sem_orders.sql",
+        "models/agents/orders_assistant/agent.yml",
+        "models/agents/orders_assistant/evals/eval_orders_assistant__core.sql",
+        "models/agents/orders_assistant/evals/core.yml",
+        "seeds/orders.csv",
+        "seeds/orders.yml",
+        ".dbtignore",
+    }
+    assert not (tmp_path / "models").exists()
+
+
+def test_orders_starter_json_apply_reports_written_paths(tmp_path, capsys):
+    (tmp_path / "dbt_project.yml").write_text(
+        "name: consumer\nversion: 1.0.0\nconfig-version: 2\n"
+    )
+
+    assert main([
+        "init", "--project-dir", str(tmp_path), "--starter", "orders",
+        "--package-source", "https://example.invalid/repo.git", "--apply", "--json",
+    ]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["applied"] is True
+    assert {Path(path).relative_to(tmp_path).as_posix() for path in payload["changed_files"]} == {
+        item["path"].removeprefix(f"{tmp_path}/")
+        for item in payload["actions"]
+        if item["action"] != "unchanged"
+    }
+    assert all(Path(path).is_file() for path in payload["changed_files"])
 
 
 def test_help(capsys):
@@ -129,6 +179,7 @@ def test_help(capsys):
         (["init", "--help"], "MUTATION"),
         (["skill", "upload", "--help"], "MUTATION"),
         (["skill", "smoke", "--help"], "RUNTIME"),
+        (["agent", "smoke", "--help"], "RUNTIME"),
         (["agent", "deploy", "--help"], "MUTATION"),
         (["eval", "run", "--help"], "PAID"),
         (["eval", "accept-baseline", "--help"], "MUTATION"),
@@ -151,6 +202,318 @@ def test_eval_run_is_paid_opt_in():
     assert args.apply is False
 
 
+def test_agent_render_and_deploy_projection_defaults_and_choices():
+    parser = build_parser()
+
+    assert parser.parse_args(["agent", "render"]).projection == "canonical"
+    assert parser.parse_args(["agent", "deploy"]).projection == "canonical"
+    assert parser.parse_args(
+        ["agent", "smoke", "--agent", "a", "--question", "q"]
+    ).projection == "canonical"
+    assert (
+        parser.parse_args(
+            ["agent", "render", "--projection", "native_eval"]
+        ).projection
+        == "native_eval"
+    )
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args(["agent", "deploy", "--projection", "unsupported"])
+    assert exc.value.code == 2
+    with pytest.raises(SystemExit) as exc:
+        parser.parse_args([
+            "agent", "smoke", "--agent", "a", "--question", "q",
+            "--projection", "unsupported",
+        ])
+    assert exc.value.code == 2
+
+
+def test_agent_smoke_requires_agent_and_question():
+    parser = build_parser()
+
+    with pytest.raises(SystemExit) as missing_agent:
+        parser.parse_args(["agent", "smoke", "--question", "hello"])
+    with pytest.raises(SystemExit) as missing_question:
+        parser.parse_args(["agent", "smoke", "--agent", "orders_assistant"])
+
+    assert missing_agent.value.code == 2
+    assert missing_question.value.code == 2
+
+
+def test_agent_smoke_preview_is_structured_and_does_not_invoke(
+    monkeypatch, capsys, tmp_path
+):
+    manifest = {
+        "exposures": {
+            "exposure.fixture.orders_assistant": {
+                "name": "orders_assistant",
+                "meta": {
+                    "cortex_agent": {
+                        "enabled": True,
+                        "naming": {"sandbox": "ORDERS_SANDBOX"},
+                    }
+                },
+            }
+        }
+    }
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.fresh_manifest", lambda *args, **kwargs: manifest
+    )
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.invoke_agent",
+        lambda *args, **kwargs: pytest.fail("Agent invoked during preview"),
+    )
+
+    assert main([
+        "agent", "smoke", "--project-dir", str(tmp_path), "--no-parse",
+        "--target", "sandbox", "--agent", "orders_assistant",
+        "--question", " How many orders? ", "--expect-tool", " analyst ",
+        "--agent-object", "ORDERS_OVERRIDE", "--endpoint",
+        "https://example.snowflakecomputing.com", "--json",
+    ]) == 0
+
+    assert json.loads(capsys.readouterr().out) == {
+        "command": "agent smoke",
+        "applied": False,
+        "agent": "orders_assistant",
+        "projection": "canonical",
+        "agent_object": "ORDERS_OVERRIDE",
+        "question": " How many orders? ",
+        "expected_tool": " analyst ",
+        "passed": None,
+        "response": None,
+    }
+
+
+def test_agent_smoke_native_eval_uses_dbt_rendered_physical_identity(
+    monkeypatch, capsys, tmp_path
+):
+    manifest = {
+        "exposures": {
+            "exposure.fixture.orders_assistant": {
+                "name": "orders_assistant",
+                "meta": {"cortex_agent": {"enabled": True}},
+            }
+        }
+    }
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.fresh_manifest", lambda *args, **kwargs: manifest
+    )
+    calls = []
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.render_agents",
+        lambda config, names, projection: calls.append((names, projection))
+        or type(
+            "Result",
+            (),
+            {"renders": ({"physical_agent": "DB.AGENTS.CUSTOM_EVAL_AGENT"},)},
+        )(),
+    )
+
+    assert main([
+        "agent", "smoke", "--project-dir", str(tmp_path), "--no-parse",
+        "--target", "sandbox", "--agent", "orders_assistant",
+        "--question", "question", "--projection", "native_eval", "--json",
+    ]) == 0
+
+    payload = json.loads(capsys.readouterr().out)
+    assert calls == [(["orders_assistant"], "native_eval")]
+    assert payload["projection"] == "native_eval"
+    assert payload["agent_object"] == "CUSTOM_EVAL_AGENT"
+
+
+@pytest.mark.parametrize(("option", "value"), [("--agent", "   "), ("--question", "\t")])
+def test_agent_smoke_rejects_blank_required_values(monkeypatch, tmp_path, option, value):
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.fresh_manifest", lambda *args, **kwargs: {}
+    )
+    argv = [
+        "agent", "smoke", "--project-dir", str(tmp_path), "--no-parse",
+        "--agent", "orders_assistant", "--question", "question",
+    ]
+    argv[argv.index(option) + 1] = value
+
+    assert main(argv) == 2
+
+
+def test_agent_smoke_apply_reuses_invoker_and_exact_tool_assertion(
+    monkeypatch, capsys, tmp_path
+):
+    manifest = {
+        "metadata": {"project_name": "fixture"},
+        "nodes": {
+            "model.fixture.orders": {
+                "name": "orders",
+                "database": "DB",
+                "schema": "DATA",
+                "resource_type": "model",
+                "package_name": "fixture",
+            }
+        },
+        "exposures": {
+            "exposure.fixture.orders_assistant": {
+                "name": "orders_assistant",
+                "meta": {
+                    "cortex_agent": {
+                        "enabled": True,
+                        "naming": {"sandbox": "ORDERS_SANDBOX"},
+                    }
+                },
+            }
+        },
+    }
+    calls = []
+    response = {
+        "answer": "42",
+        "tool_uses": [{"name": "analyst", "input": {}}],
+        "tool_results": [],
+    }
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.fresh_manifest", lambda *args, **kwargs: manifest
+    )
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.invoke_agent",
+        lambda *args: calls.append(args) or response,
+    )
+
+    argv = [
+        "agent", "smoke", "--project-dir", str(tmp_path), "--no-parse",
+        "--target", "sandbox", "--connection", "conn", "--database", "DB",
+        "--schema", "AGENTS", "--allow-target", "sandbox",
+        "--allow-database", "DB", "--agent", "orders_assistant",
+        "--question", "How many orders?", "--expect-tool", "analyst",
+        "--endpoint", "https://example.snowflakecomputing.com", "--apply", "--json",
+    ]
+    assert main(argv) == 0
+
+    assert calls == [(
+        "DB", "AGENTS", "ORDERS_SANDBOX", "How many orders?", "conn",
+        "https://example.snowflakecomputing.com",
+    )]
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["passed"] is True
+    assert payload["response"] == response
+
+    argv[argv.index("analyst")] = "Analyst"
+    assert main(argv) == 2
+    assert "expected tool 'Analyst' was not selected" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--target", "sandbox", "--database", "DB", "--schema", "AGENTS"],
+        ["--target", "sandbox", "--connection", "conn", "--schema", "AGENTS"],
+        [
+            "--target", "sandbox", "--connection", "conn", "--database", "OTHER",
+            "--schema", "AGENTS", "--allow-target", "sandbox", "--allow-database", "OTHER",
+        ],
+        [
+            "--target", "sandbox", "--connection", "conn", "--database", "DB",
+            "--schema", "AGENTS", "--allow-database", "DB",
+        ],
+        [
+            "--target", "sandbox", "--connection", "conn", "--database", "DB",
+            "--schema", "AGENTS", "--allow-target", "sandbox",
+        ],
+        [
+            "--target", "sandbox", "--connection", "conn", "--database", "DB",
+            "--allow-target", "sandbox", "--allow-database", "DB",
+        ],
+    ],
+)
+def test_agent_smoke_apply_gates_before_invocation(monkeypatch, tmp_path, args):
+    manifest = {
+        "metadata": {"project_name": "fixture"},
+        "nodes": {
+            "model.fixture.orders": {
+                "name": "orders",
+                "database": "DB",
+                "schema": "DATA",
+                "resource_type": "model",
+                "package_name": "fixture",
+            }
+        },
+        "exposures": {
+            "exposure.fixture.orders_assistant": {
+                "name": "orders_assistant",
+                "meta": {
+                    "cortex_agent": {
+                        "enabled": True,
+                        "naming": {"sandbox": "ORDERS_SANDBOX"},
+                    }
+                },
+            }
+        }
+    }
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.fresh_manifest", lambda *args, **kwargs: manifest
+    )
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.invoke_agent",
+        lambda *args: pytest.fail("Agent invoked before safety gates completed"),
+    )
+
+    assert main([
+        "agent", "smoke", "--project-dir", str(tmp_path), "--no-parse",
+        *args, "--agent", "orders_assistant", "--question", "question", "--apply",
+    ]) == 2
+
+
+def test_agent_smoke_rejects_unsafe_physical_override(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.fresh_manifest",
+        lambda *args, **kwargs: {
+            "exposures": {
+                "exposure.fixture.orders_assistant": {
+                    "name": "orders_assistant",
+                    "meta": {"cortex_agent": {"enabled": True}},
+                }
+            }
+        },
+    )
+
+    assert main([
+        "agent", "smoke", "--project-dir", str(tmp_path), "--no-parse",
+        "--agent", "orders_assistant", "--agent-object", "BAD;DROP",
+        "--question", "question",
+    ]) == 2
+
+
+def test_agent_deploy_human_output_does_not_require_render_artifact(
+    monkeypatch, capsys, tmp_path
+):
+    result = type(
+        "Result",
+        (),
+        {
+            "agents": ("agent",),
+            "renders": (
+                {
+                    "agent": "agent",
+                    "physical_agent": "DB.AGENTS.AGENT_EVAL",
+                    "projection": "native_eval",
+                    "spec": {"tools": []},
+                    "target": "sandbox",
+                },
+            ),
+        },
+    )()
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.fresh_manifest", lambda *args, **kwargs: {}
+    )
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.deploy_agents", lambda *args, **kwargs: result
+    )
+
+    assert main([
+        "agent", "deploy", "--project-dir", str(tmp_path), "--no-parse",
+        "--agent", "agent", "--projection", "native_eval",
+    ]) == 0
+    output = capsys.readouterr().out
+    assert "DB.AGENTS.AGENT_EVAL" in output
+    assert "Artifact:" not in output
+
+
 def test_eval_run_exposes_shared_allowlists():
     args = build_parser().parse_args(
         [
@@ -169,6 +532,7 @@ def test_all_apply_commands_are_opt_in():
         ["init"],
         ["skill", "upload"],
         ["skill", "smoke"],
+        ["agent", "smoke", "--agent", "a", "--question", "q"],
         ["agent", "deploy"],
         ["agent", "grant"],
         ["agent", "promote", "--from-alias", "A", "--to-alias", "B"],
@@ -401,7 +765,7 @@ def test_cli_module_is_thin_domain_dispatcher():
         assert (root / f"src/dbt_cortex_agent/commands/{module}.py").is_file()
 
 
-def test_v030_identity_is_consistent_and_v020_history_is_preserved():
+def test_v031_identity_is_consistent_and_release_history_is_preserved():
     root = Path(__file__).parents[1]
     project = yaml.safe_load((root / "dbt_project.yml").read_text(encoding="utf-8"))
     citation = yaml.safe_load((root / "CITATION.cff").read_text(encoding="utf-8"))
@@ -411,13 +775,14 @@ def test_v030_identity_is_consistent_and_v020_history_is_preserved():
     installation = (root / "docs/getting-started/installation.md").read_text(encoding="utf-8")
     changelog = (root / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert project["version"] == "0.3.0"
-    assert package["project"]["version"] == "0.3.0"
-    assert citation["version"] == "0.3.0"
-    assert __version__ == "0.3.0"
+    assert project["version"] == "0.3.1"
+    assert package["project"]["version"] == "0.3.1"
+    assert citation["version"] == "0.3.1"
+    assert __version__ == "0.3.1"
     assert DEFAULT_REVISION == f"v{__version__}"
-    assert 'name = "dbt-cortex-agent"\nversion = "0.3.0"' in lock
-    assert "public HTTPS `v0.3.0` Git tag" in readme
-    assert "revision: v0.3.0" in installation
+    assert 'name = "dbt-cortex-agent"\nversion = "0.3.1"' in lock
+    assert "public HTTPS `v0.3.1` Git tag" in readme
+    assert "revision: v0.3.1" in installation
+    assert "## 0.3.1 — 2026-08-07" in changelog
     assert "## 0.3.0 — 2026-08-06" in changelog
     assert "## 0.2.0 — 2026-07-31" in changelog

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from argparse import Namespace
+from pathlib import Path
 
 import pytest
 import yaml
@@ -9,7 +10,7 @@ import yaml
 from dbt_cortex_agent import __version__
 from dbt_cortex_agent.config import resolve_config
 from dbt_cortex_agent.dbt_runner import CommandRunner
-from dbt_cortex_agent.init import DEFAULT_REVISION, initialize
+from dbt_cortex_agent.init import DEFAULT_REVISION, STARTER_PATHS, initialize
 
 
 def _config(project_dir, target=None):
@@ -247,3 +248,122 @@ def test_dbt_deps_runs_only_when_explicit(tmp_path):
         runner=runner,
     )
     assert commands[0][0] == ["custom-dbt", "deps", "--project-dir", str(tmp_path)]
+
+
+def test_orders_starter_preview_reports_exact_paths_without_writing(tmp_path):
+    config = _project(tmp_path)
+
+    result = initialize(
+        config,
+        package_source="https://example.invalid/repo.git",
+        starter="orders",
+    )
+
+    assert result.changed_files == ()
+    assert [(action.path.relative_to(tmp_path).as_posix(), action.action) for action in result.actions] == [
+        ("packages.yml", "create"),
+        *((path, "create") for path in STARTER_PATHS),
+        (".dbtignore", "create"),
+    ]
+    assert not any((tmp_path / path).exists() for path in STARTER_PATHS)
+
+
+def test_orders_starter_apply_is_deterministic_and_idempotent(tmp_path):
+    config = _project(tmp_path)
+    source = "https://example.invalid/repo.git"
+
+    first = initialize(config, package_source=source, starter="orders", apply=True)
+    first_contents = {
+        path: (tmp_path / path).read_bytes() for path in (*STARTER_PATHS, "packages.yml", ".dbtignore")
+    }
+    second = initialize(config, package_source=source, starter="orders", apply=True)
+
+    assert {path.relative_to(tmp_path).as_posix() for path in first.changed_files} == {
+        *STARTER_PATHS,
+        "packages.yml",
+        ".dbtignore",
+    }
+    assert second.changed_files == ()
+    assert all(action.action == "unchanged" for action in second.actions)
+    assert first_contents == {
+        path: (tmp_path / path).read_bytes() for path in (*STARTER_PATHS, "packages.yml", ".dbtignore")
+    }
+    packages = yaml.safe_load((tmp_path / "packages.yml").read_text())
+    assert packages["packages"] == [
+        {"git": source, "revision": DEFAULT_REVISION},
+        {"package": "Snowflake-Labs/dbt_semantic_view", "version": "1.0.5"},
+    ]
+    assert (tmp_path / ".dbtignore").read_text() == "models/agents/*/skills/**\n"
+
+
+def test_orders_starter_preserves_semantic_dependency_and_appends_dbtignore(tmp_path):
+    config = _project(tmp_path)
+    packages_text = (
+        "packages:\n"
+        "  - local: ../dbt_cortex_agent\n"
+        "  - package: Snowflake-Labs/dbt_semantic_view\n"
+        "    version: 9.9.9\n"
+    )
+    ignore_text = "target/**\n"
+    (tmp_path / "packages.yml").write_text(packages_text)
+    (tmp_path / ".dbtignore").write_text(ignore_text)
+
+    initialize(config, starter="orders", apply=True)
+
+    assert (tmp_path / "packages.yml").read_text() == packages_text
+    assert (tmp_path / ".dbtignore").read_text() == (
+        f"{ignore_text}models/agents/*/skills/**\n"
+    )
+
+
+def test_orders_starter_validates_all_collisions_before_writes(tmp_path):
+    config = _project(tmp_path)
+    collision = tmp_path / STARTER_PATHS[-1]
+    collision.parent.mkdir(parents=True)
+    collision.write_text("different\n")
+    original_project = (tmp_path / "dbt_project.yml").read_bytes()
+
+    with pytest.raises(FileExistsError, match="existing content differs"):
+        initialize(
+            config,
+            package_source="https://example.invalid/repo.git",
+            target="safe",
+            allowed_databases=["DB"],
+            starter="orders",
+            apply=True,
+        )
+
+    assert (tmp_path / "dbt_project.yml").read_bytes() == original_project
+    assert not (tmp_path / "packages.yml").exists()
+    assert not (tmp_path / STARTER_PATHS[0]).exists()
+    assert not (tmp_path / ".dbtignore").exists()
+
+
+def test_orders_starter_validates_parent_collisions_before_writes(tmp_path):
+    config = _project(tmp_path)
+    (tmp_path / "models").write_text("not a directory\n")
+
+    with pytest.raises(FileExistsError, match="expected a directory"):
+        initialize(
+            config,
+            package_source="https://example.invalid/repo.git",
+            starter="orders",
+            apply=True,
+        )
+
+    assert not (tmp_path / "packages.yml").exists()
+    assert not (tmp_path / ".dbtignore").exists()
+
+
+def test_orders_starter_templates_match_integration_fixture(tmp_path):
+    config = _project(tmp_path)
+    initialize(
+        config,
+        package_source="https://example.invalid/repo.git",
+        starter="orders",
+        apply=True,
+    )
+    root = Path(__file__).parents[1]
+
+    for path in STARTER_PATHS:
+        assert (tmp_path / path).read_bytes() == (root / "integration_tests" / path).read_bytes()

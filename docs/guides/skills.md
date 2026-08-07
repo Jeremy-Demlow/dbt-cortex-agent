@@ -32,14 +32,17 @@ dbt-cortex-agent skill upload --project-dir . --target sandbox \
   --agent orders_assistant --json
 ```
 
-Both commands are non-mutating as shown. To upload, repeat `skill upload` with an
+Both commands are non-mutating as shown. To upload independently, repeat
+`skill upload` with an
 explicit connection/database, both allowlists, and `--apply`. The CLI validates
 the complete plan, deduplicates shared stage paths, and invokes Snow CLI only
 after planning succeeds. A failure prevents subsequent deployment.
 
-After upload, run `agent deploy`; mutating canonical deploy independently checks
-that each declared stage-backed skill contains `SKILL.md` and includes staged
-file state in the idempotency hash.
+Canonical `agent deploy --apply` performs this same declared-skill planning and
+upload implicitly before invoking the deploy macro, so a separate upload command
+is optional. The macro then independently checks that each declared stage-backed
+skill contains `SKILL.md` and includes staged file state in the idempotency hash.
+Direct `dbt run-operation cortex_agent__deploy` does not upload local files.
 
 Skill smoke is a subsequent live runtime check, not a deploy prerequisite:
 

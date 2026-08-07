@@ -116,3 +116,10 @@ public dbt macros without encountering stale or contradictory instructions.
   `v0.3.0` tag remain intentionally unchanged; those links become public release surfaces
   only when the repository/tag are published. No workflow, visibility, Snowflake state,
   package publication, or git commit was changed.
+- Documentation correction on 2026-08-07: the shipped v0.3.0 guidance now states
+  that init configures existing dbt projects without scaffolding resources, Snow CLI
+  is required, canonical CLI deploy uploads declared skills before macro deploy,
+  native-eval deployment is a direct guarded macro prerequisite, CLI and direct-macro
+  safety/output behavior differ, and candidate/baseline paths plus troubleshooting
+  order are explicit. The integration fixture now uses its documented sandbox database
+  as a non-empty allowlist so doctor validates rather than intentionally fails.

@@ -1,5 +1,5 @@
 name: 'dbt_cortex_agent'
-version: '0.3.0'
+version: '0.3.1'
 config-version: 2
 
 # Installable dbt package: Cortex Agent + eval macros and the generic

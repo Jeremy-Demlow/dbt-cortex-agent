@@ -4,7 +4,7 @@ This path proves installation, configuration, manifest discovery, rendering, and
 the deploy plan locally. It does not upload skills, invoke an Agent, mutate
 Snowflake, commit a version, or start a paid evaluation.
 
-## 1. Confirm the two 0.3.0 surfaces
+## 1. Confirm the two 0.3.1 surfaces
 
 ```bash
 dbt deps
@@ -13,7 +13,8 @@ dbt-cortex-agent --version
 
 ## 2. Preview explicit safety configuration
 
-If the project is not configured, preview bootstrap additions:
+If the existing dbt project is not configured, preview dependency and safety-var
+additions:
 
 ```bash
 dbt-cortex-agent init --project-dir . --target sandbox \
@@ -22,7 +23,22 @@ dbt-cortex-agent init --project-dir . --target sandbox \
 
 An existing package dependency is preserved. If none exists, add
 `--package-source https://github.com/Jeremy-Demlow/dbt-cortex-agent.git` and
-`--revision v0.3.0`. Do not add `--apply` in this quickstart.
+`--revision v0.3.1`. By default, `init` does not create a dbt project or scaffold Agent,
+semantic-view, evaluation, seed, or skill files. Do not add `--apply` in this
+quickstart.
+
+The one explicit exception is the curated Orders tutorial. Preview its exact
+package-owned files and configuration edits with:
+
+```bash
+dbt-cortex-agent init --project-dir . --starter orders \
+  --package-source https://github.com/Jeremy-Demlow/dbt-cortex-agent.git --json
+```
+
+The starter writes only after `--apply`, adds the pinned semantic-view dependency
+when absent, preserves an existing declaration, appends the skill exclusion to
+`.dbtignore`, leaves identical files unchanged, and rejects differing files
+before any write. There is no force option or generic wizard.
 
 ## 3. Define one Agent exposure
 

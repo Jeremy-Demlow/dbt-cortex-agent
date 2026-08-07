@@ -62,3 +62,11 @@
 - As a package consumer, I can trust that the PyPI and dbt Git versions identify the same release.
 - As a security reviewer, I can prove that OIDC permission is isolated to the protected publish job and cannot be reached from push, pull request, or manual runs.
 - As a maintainer, I can run the exact release preflight and artifact checks before publication.
+
+## REQ-011
+
+- As a new adopter, I can create the same synthetic Orders starter every time and prove both Agent projections locally before deciding whether to connect to Snowflake.
+- As an Agent operator, I can explicitly render, preview deployment, and smoke the projection I intend to operate without requiring the Agent to have a skill.
+- As an existing v0.3.0 consumer, I retain canonical defaults and current metadata, lifecycle, evaluation, and skill-smoke behavior until I opt into an additive v0.3.1 surface.
+- As a security or cost reviewer, I can prove that starter, render, deploy preview, and smoke preview do not connect, mutate state, invoke a runtime, or spend credits implicitly.
+- As a release operator, I can block tutorial-skill work until the package itself passes one complete, credential-free product gate.

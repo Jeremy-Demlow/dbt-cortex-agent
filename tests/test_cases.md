@@ -104,3 +104,31 @@
 6. Simulate a clean tagged v0.3.0 repository and verify preflight success; verify dirty, malformed/missing tag, mismatched Python/dbt versions, and unreleased/undated changelog states fail closed.
 7. Verify release documentation covers owner setup, GitHub environment protection, PyPI trusted-publisher fields, release checklist/tag ordering, build-only validation, and post-publication checks.
 8. Run YAML parsing, focused/full tests, build, Twine, wheel inventory, and v0.3.0 preflight simulation without commit, tag, release, publication, visibility change, or Snowflake mutation.
+
+## REQ-011: additive v0.3.1 tutorial product readiness
+
+1. Verify README and adopter docs use consistent v0.3.1 identity, parseable CLI examples, package-owned Orders names/paths, explicit projection and smoke semantics, and accurate preview/apply/spend boundaries.
+2. Generate the Orders starter twice from the same package version and explicit inputs in clean destinations; verify identical tracked content and manifest-owned Agent/eval metadata, synthetic-only data, no connection attempt, and fail-closed preservation unless overwrite is explicit.
+3. Verify the starter surface exposes only the curated Orders tutorial and contains no generic wizard prompts, arbitrary-domain/schema inference, open-ended instruction generation, or reusable custom-starter framework.
+4. Verify Agent render and deploy accept only `canonical` and `native_eval`, pass the selected projection unchanged to dbt macros, report its logical and physical identity, and preserve byte-equivalent v0.3.0 canonical behavior when projection is omitted.
+5. Verify general Agent smoke preview resolves logical Agent, projection, physical Agent, request, and safety context without constructing a connector and works for Agents with no skills.
+6. Verify applied general Agent smoke fails closed without the runtime extra, explicit connection, matching dbt-resolved database, target/database allowlists, and explicit apply; verify controlled human/JSON success and failure contracts when those inputs are faked.
+7. Verify existing exposure/eval metadata, macro defaults, lifecycle/versioning behavior, artifact schemas, canonical outputs, and skill smoke remain compatible with v0.3.0 fixtures.
+8. Verify starter, render, deploy, and smoke default paths contain no connection, upload, Snowflake DDL, commit, alias, grant, invocation, eval, baseline, or spend side effect.
+9. Run the package completion gate: version/docs alignment; starter regeneration; docs/policy and focused projection/deploy/smoke/compatibility tests; full Python tests; supported dbt dependency resolution and offline parse; canonical/native-eval render parity; build, Twine, wheel inventory, clean installed-wheel smoke, and residue checks without credentials or Snowflake calls.
+10. Verify no companion Cortex Code/catalog tutorial skill is created, published, installed, or required before the package completion gate passes.
+11. For the deterministic Orders starter slice, verify exact generated paths, structured preview/apply
+    actions, `.dbtignore` append/preservation, semantic-view dependency addition/preservation,
+    identical-file no-ops, full collision validation before writes, and fail-closed differing files
+    without force or a generic wizard.
+12. For the projection/render/deploy slice, verify CLI and macro projection rejection/defaults,
+    exact macro argument forwarding, one strict marked render envelope, actual spec exposure,
+    deterministic contained artifacts, canonical skill orchestration compatibility, and native-eval
+    skill-plan/upload omission with every existing apply safety gate retained.
+13. For the general Agent smoke slice, verify required single logical Agent and nonblank question,
+    optional exact expected-tool assertion, validated physical override and endpoint forwarding,
+    stable structured preview/apply output, null preview result fields, and no preview invocation.
+14. Verify applied general Agent smoke completes fresh manifest, explicit connection,
+    manifest-database match, CLI target/database allowlists, and schema checks before reusing the
+    existing invocation/SSE client; controlled assertion and runtime failures exit 2, and skill
+    smoke behavior remains unchanged.

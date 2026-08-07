@@ -104,9 +104,9 @@ def test_current_product_versions_and_project_names_align():
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
 
     assert package["project"]["name"].replace("-", "_") == project["name"]
-    assert package["project"]["version"] == project["version"] == citation["version"] == "0.3.0"
-    assert '__version__ = "0.3.0"' in init_source
-    assert 'name = "dbt-cortex-agent"\nversion = "0.3.0"' in lock
+    assert package["project"]["version"] == project["version"] == citation["version"] == "0.3.1"
+    assert '__version__ = "0.3.1"' in init_source
+    assert 'name = "dbt-cortex-agent"\nversion = "0.3.1"' in lock
 
 
 def test_generated_residue_is_ignored_or_cleaned_by_workflow():
