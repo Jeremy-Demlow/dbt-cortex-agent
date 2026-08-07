@@ -144,3 +144,4 @@
 7. Evaluate deterministic positive, near-miss, and negative prompt corpora against the frontmatter trigger contract; positive prompts select the skill and near-miss/negative prompts do not.
 8. Verify README, adopter docs, compatibility, and changelog describe the project-local, non-published, script-free 0.3.1 guidance without implying live proof.
 9. Run focused/full tests, build, wheel inventory, offline integration dependency/parse, and non-mutating starter/render/deploy/eval previews without Snowflake, spend, baseline movement, commit, or push.
+10. Verify doctor accepts a full immutable Git SHA only when the installed dbt package metadata matches the CLI version, while semantic version mismatches still fail.

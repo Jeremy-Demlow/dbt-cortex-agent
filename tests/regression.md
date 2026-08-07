@@ -89,3 +89,9 @@
 - Root cause: the deterministic frontmatter trigger list named adoption, migration, project, and Orders intents but omitted the independent dbt evaluation-authoring route; Stop 1 also lacked the exact boundary-packet and one-scope resume language required of every approval boundary.
 - Fix summary: the trigger contract now includes manifest-owned dbt Agent evaluation authoring, and the local-write stop presents objective, paths, changes, commands, proof, risks, and a single approved-plan resume condition that resets on any scope change.
 - Verification: project-skill tests cover expanded positive/near-miss/negative prompts, all fenced shell commands, four exact approval packets/resume conditions, and deterministic transcript routes for Orders, semantic-view adoption, Agent migration, and eval authoring.
+
+## REQ-012: immutable SHA package pins failed doctor version alignment
+
+- Root cause: doctor compared every dependency revision string directly to the semantic CLI version, so a full immutable Git SHA failed even when dbt installed package version 0.3.1 from that exact commit.
+- Fix summary: full 40-character Git SHAs defer semantic alignment to installed dbt package metadata; semantic version pins continue to require an exact direct match.
+- Verification: doctor tests cover a matching installed dbt package with an immutable SHA and retain the semantic-version mismatch regression.

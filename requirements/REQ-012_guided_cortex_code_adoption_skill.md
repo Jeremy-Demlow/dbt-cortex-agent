@@ -50,6 +50,8 @@ evaluation-spend, and baseline-policy decision deliberately.
     integration dependency/parse proof, and supported non-mutating starter/render/deploy/eval
     previews. It does not call Snowflake, invoke an Agent, spend credits, move a baseline, commit,
     push, or implement an article.
+11. Doctor accepts an immutable full Git SHA when the installed dbt package metadata matches the
+    companion CLI version; semantic version pins still require an exact direct match.
 
 ## User stories
 
@@ -97,3 +99,5 @@ evaluation-spend, and baseline-policy decision deliberately.
   environments, unsupported commands, authority drift, and collapsed approval boundaries.
 - Verifier: full offline package and integration proof is mandatory because command examples and
   project behavior are affected; no live substitute is permitted or needed.
+- Adopter verification decision: a 40-character Git SHA identifies immutable source rather than a
+  semantic package version, so doctor proves its version through the installed dbt package metadata.

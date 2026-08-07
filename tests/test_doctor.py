@@ -139,3 +139,23 @@ def test_doctor_detects_consumer_version_mismatch(tmp_path):
     check = next(item for item in diagnostics if item.name == "consumer package version")
     assert check.status == "FAIL"
     assert "0.1.0" in check.detail
+
+
+def test_doctor_accepts_immutable_sha_when_installed_dbt_version_matches(tmp_path):
+    config = _config(tmp_path)
+    (tmp_path / "packages.yml").write_text(
+        "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
+        "    revision: 8e8df8e9754a0089532fffea3dd7005242866c59\n"
+    )
+    installed = tmp_path / "dbt_packages/dbt_cortex_agent/dbt_project.yml"
+    installed.parent.mkdir(parents=True)
+    installed.write_text("name: dbt_cortex_agent\nversion: 0.3.1\nconfig-version: 2\n")
+
+    diagnostics = run_doctor(
+        config,
+        CommandRunner(lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "ok", "")),
+    )
+
+    check = next(item for item in diagnostics if item.name == "consumer package version")
+    assert check.status == "PASS"
+    assert "8e8df8e9754a0089532fffea3dd7005242866c59" in check.detail

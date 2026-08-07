@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,9 @@ from .config import Config, load_yaml_mapping
 from .dbt_runner import CommandRunner, executable_version
 from .manifest import cortex_agents, cortex_evals, load_manifest, skill_declarations
 from .snow import connection_test
+
+
+_FULL_GIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 @dataclass(frozen=True)
@@ -81,7 +85,14 @@ def run_doctor(config: Config, runner: CommandRunner | None = None) -> list[Diag
 
     revisions = _declared_revisions(config.project_dir)
     if revisions:
-        mismatches = sorted({version for version in revisions if version != __version__})
+        mismatches = sorted(
+            {
+                version
+                for version in revisions
+                if version != __version__
+                and not (_FULL_GIT_SHA.fullmatch(version) and __version__ in dbt_package_versions)
+            }
+        )
         diagnostics.append(
             Diagnostic(
                 "consumer package version",
