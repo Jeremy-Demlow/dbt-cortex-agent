@@ -5,6 +5,12 @@ versioning for documented public macros, metadata contracts, and rendered specs.
 
 ## Unreleased
 
+- Added a project-local, script-free Cortex Code adoption skill for dbt-owned
+  Agents. It supports existing semantic views, the fixed Orders starter,
+  existing-Agent migration, and optional eval authoring with manual 0.3.1
+  command parity and separate local-write, Snowflake, paid-eval, and baseline
+  approval boundaries.
+
 ## 0.3.1 — 2026-08-07
 
 - Added explicit `canonical`/`native_eval` selection to Agent render and deploy,

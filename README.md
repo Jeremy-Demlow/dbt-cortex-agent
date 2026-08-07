@@ -80,6 +80,15 @@ renders the controlled deploy path without mutating Snowflake. Follow the
 [quickstart](docs/getting-started/quickstart.md) to create the metadata and
 bootstrap explicit allowlists.
 
+For Cortex Code-guided adoption, use the project-local
+[`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
+It discovers an existing dbt project, establishes objective/levers/data/proof,
+and guides an existing semantic view, the fixed Orders starter, or an existing
+Agent into dbt-owned metadata. It is script-free, shows manual 0.3.1 command
+parity, and stops separately before local writes, Snowflake mutation/runtime,
+paid evaluation, and baseline movement. The checked-in skill is not a claim of
+catalog publication or live Snowflake verification.
+
 ## Controlled deploy
 
 Review the dry run, use an isolated target/database, then opt in explicitly:

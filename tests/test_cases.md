@@ -132,3 +132,15 @@
     manifest-database match, CLI target/database allowlists, and schema checks before reusing the
     existing invocation/SSE client; controlled assertion and runtime failures exit 2, and skill
     smoke behavior remains unchanged.
+
+## REQ-012: guided Cortex Code adoption skill
+
+1. Verify exactly one project skill exists at `.cortex/skills/dbt-cortex-agent-project/SKILL.md`, is script-free, has valid frontmatter and required workflow/stopping/output sections, and is under 500 lines.
+2. Verify the skill covers project discovery, objective/levers/data/proof, existing semantic-view adoption, the fixed Orders starter, existing-Agent migration, optional eval authoring, and manual command parity.
+3. Verify every fenced `dbt-cortex-agent` command parses through the shipped 0.3.1 parser after deterministic placeholder substitution and none uses `--no-parse`.
+4. Verify the skill contains no fixed sandbox, database, `dbt_focus`, connection, schema, warehouse, role, Agent, or evaluation environment value and does not duplicate lifecycle scripts or Agent DDL.
+5. Verify explicit stops precede local writes, Snowflake mutation/runtime, paid eval, and baseline movement, with previews unable to satisfy a later approval.
+6. Verify dbt Core/dbt-snowflake is authoritative and Fusion/fdbt is advisory.
+7. Evaluate deterministic positive, near-miss, and negative prompt corpora against the frontmatter trigger contract; positive prompts select the skill and near-miss/negative prompts do not.
+8. Verify README, adopter docs, compatibility, and changelog describe the project-local, non-published, script-free 0.3.1 guidance without implying live proof.
+9. Run focused/full tests, build, wheel inventory, offline integration dependency/parse, and non-mutating starter/render/deploy/eval previews without Snowflake, spend, baseline movement, commit, or push.

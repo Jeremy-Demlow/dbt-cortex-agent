@@ -83,3 +83,9 @@
 - Root cause: the only public smoke command discovered stage-backed skills and generated skill-specific questions, so an operator could not preview or invoke a general manifest-owned Agent with an arbitrary question.
 - Fix summary: additive `agent smoke` resolves one logical Agent, defaults to canonical manifest-owned physical identity, uses dbt's offline render authority for explicit native-eval identity, previews without invocation, and reuses the existing bounded SSE client only after explicit connection, database/schema, manifest-match, and CLI allowlist gates; optional expected-tool checks use exact tool names.
 - Verification: focused parser/CLI/invocation tests cover projection defaults/rejection, dbt-owned native-eval identity, required and blank inputs, physical overrides, preview non-invocation and null fields, apply gate ordering, endpoint forwarding, exact tool assertions, structured success, and controlled exit 2 failures while existing skill smoke remains unchanged.
+
+## REQ-012: eval authoring undertriggered and local-write approval was underspecified
+
+- Root cause: the deterministic frontmatter trigger list named adoption, migration, project, and Orders intents but omitted the independent dbt evaluation-authoring route; Stop 1 also lacked the exact boundary-packet and one-scope resume language required of every approval boundary.
+- Fix summary: the trigger contract now includes manifest-owned dbt Agent evaluation authoring, and the local-write stop presents objective, paths, changes, commands, proof, risks, and a single approved-plan resume condition that resets on any scope change.
+- Verification: project-skill tests cover expanded positive/near-miss/negative prompts, all fenced shell commands, four exact approval packets/resume conditions, and deterministic transcript routes for Orders, semantic-view adoption, Agent migration, and eval authoring.

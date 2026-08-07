@@ -70,3 +70,10 @@
 - As an existing v0.3.0 consumer, I retain canonical defaults and current metadata, lifecycle, evaluation, and skill-smoke behavior until I opt into an additive v0.3.1 surface.
 - As a security or cost reviewer, I can prove that starter, render, deploy preview, and smoke preview do not connect, mutate state, invoke a runtime, or spend credits implicitly.
 - As a release operator, I can block tutorial-skill work until the package itself passes one complete, credential-free product gate.
+
+## REQ-012
+
+- As a new adopter, I can use Cortex Code to choose between an existing semantic view and the fixed Orders starter, with manual command parity before local writes.
+- As an existing Agent owner, I can migrate its definition into a dbt-owned exposure and prove the rendered specification without copied lifecycle code.
+- As an evaluation author, I can add optional manifest-owned ground truth while paid execution and baseline movement remain separate decisions.
+- As a platform or cost owner, I can verify that local writes, Snowflake mutation/runtime, paid evaluation, and baseline policy each require explicit approval.
