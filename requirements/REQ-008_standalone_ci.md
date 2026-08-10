@@ -86,6 +86,10 @@ incompatible or unsafe release artifact using only deterministic local evidence.
 - Critic: blocking findings were corrected for a secret-scan contract false positive,
   repository-clean timing before build cleanup, SBOM omission of the built wheel, Python
   3.10 test incompatibility, and an unsupported dbt 1.9 floor. No blocking finding remains.
+- External-cwd hardening (2026-08-10): the tracked-file scan now resolves every relative
+  path from `GITHUB_WORKSPACE`, so copying the workflow command into another checkout cannot
+  scan same-named files from the caller repository. This preserves all real package findings
+  and adds no detector, baseline, file, or path exclusion.
 - Verification on 2026-08-04: 179 tests passed on Python 3.10, 3.11, and 3.13;
   Python 3.12 was unavailable locally and remains CI-matrix proof. dbt Core 1.10.22 with
   dbt-snowflake 1.10.3 and dbt Core 1.11.11 with dbt-snowflake 1.11.4 completed offline

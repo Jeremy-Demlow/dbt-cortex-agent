@@ -189,3 +189,5 @@
 10. Run the local verifier, focused/full tests, build, Twine, wheel inventory, workflow YAML parse, and patch hygiene without Snowflake, consumer edits, commit, or push.
 11. Run the exact tracked non-lock-file secret scan from the repository root and verify synthetic
     immutable Git SHA fixtures use only line-scoped allowlists, with no broad file or detector exclusion.
+12. Run the workflow tracked-file scan and the absolute-path documentation test from outside the
+    repository; verify both remain anchored to the package checkout and report no false self-findings.

@@ -292,7 +292,7 @@ def test_adopter_and_fixture_surfaces_reject_private_install_references() -> Non
         ROOT / "UPGRADING.md",
         ROOT / "pyproject.toml",
         *sorted((ROOT / "docs").rglob("*.md")),
-        *(path for path in sorted((ROOT / "tests").glob("*.py")) if path != Path(__file__)),
+        *(path for path in sorted((ROOT / "tests").glob("*.py")) if path.resolve() != Path(__file__).resolve()),
     ]
     text = "\n".join(path.read_text(encoding="utf-8").lower() for path in paths)
     forbidden = (
