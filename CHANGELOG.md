@@ -5,14 +5,7 @@ versioning for documented public macros, metadata contracts, and rendered specs.
 
 ## Unreleased
 
-- Replaced the evaluation-specific duplicate Agent contract with one full
-  Agent per enabled exposure and target. Optional suites evaluate that same Agent
-  and never deploy or mutate a second object.
-- Updated the Orders starter, project-local Cortex Code skill, active docs, and
-  package tests for Agent-only and Agent-plus-eval adoption. Historical `_EVAL`
-  evidence remains auditable but is explicitly superseded.
-- The Python 0.3.1 distribution is not yet published to PyPI; active install
-  guidance uses a reviewed clean local checkout until publication is verified.
+- No changes yet.
 
 ## 0.3.1 — 2026-08-07
 
@@ -36,6 +29,14 @@ versioning for documented public macros, metadata contracts, and rendered specs.
   mismatched installed metadata, and semantic-version mismatches fail closed.
 - Evaluation metadata is optional and targets the same deployed Agent; it does
   not create, deploy, clone, suffix, or filter a second Agent.
+- Replaced the evaluation-specific duplicate Agent contract with one full
+  Agent per enabled exposure and target. Optional suites evaluate that same Agent and
+  never deploy or mutate a second object.
+- Updated the Orders starter, project-local Cortex Code skill, active docs, and
+  package tests for Agent-only and Agent-plus-eval adoption. Historical `_EVAL`
+  evidence remains auditable but is explicitly superseded.
+- The Python 0.3.1 distribution is not yet published to PyPI; active install
+  guidance uses a reviewed clean local checkout until publication is verified.
 
 ## 0.3.0 — 2026-08-06
 

@@ -9,6 +9,9 @@ from dbt_cortex_agent.dbt_runner import CommandRunner
 from dbt_cortex_agent.doctor import run_doctor
 
 
+SYNTHETIC_COMMIT_SHA = "8e8df8e9754a0089532fffea3dd7005242866c59"  # pragma: allowlist secret
+
+
 def _manifest():
     return {
         "metadata": {"dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"},
@@ -145,7 +148,7 @@ def test_doctor_accepts_immutable_sha_when_installed_dbt_version_matches(tmp_pat
     config = _config(tmp_path)
     (tmp_path / "packages.yml").write_text(
         "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
-        "    revision: 8e8df8e9754a0089532fffea3dd7005242866c59\n"
+        f"    revision: {SYNTHETIC_COMMIT_SHA}\n"
     )
     installed = tmp_path / "dbt_packages/dbt_cortex_agent/dbt_project.yml"
     installed.parent.mkdir(parents=True)
@@ -158,14 +161,14 @@ def test_doctor_accepts_immutable_sha_when_installed_dbt_version_matches(tmp_pat
 
     check = next(item for item in diagnostics if item.name == "consumer package version")
     assert check.status == "PASS"
-    assert "8e8df8e9754a0089532fffea3dd7005242866c59" in check.detail
+    assert SYNTHETIC_COMMIT_SHA in check.detail
 
 
 def test_doctor_rejects_immutable_sha_without_installed_dbt_package(tmp_path):
     config = _config(tmp_path)
     (tmp_path / "packages.yml").write_text(
         "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
-        "    revision: 8e8df8e9754a0089532fffea3dd7005242866c59\n"
+        f"    revision: {SYNTHETIC_COMMIT_SHA}\n"
     )
 
     diagnostics = run_doctor(
@@ -203,7 +206,7 @@ def test_doctor_rejects_immutable_sha_when_installed_dbt_version_mismatches(tmp_
     config = _config(tmp_path)
     (tmp_path / "packages.yml").write_text(
         "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
-        "    revision: 8e8df8e9754a0089532fffea3dd7005242866c59\n"
+        f"    revision: {SYNTHETIC_COMMIT_SHA}\n"
     )
     installed = tmp_path / "dbt_packages/dbt_cortex_agent/dbt_project.yml"
     installed.parent.mkdir(parents=True)

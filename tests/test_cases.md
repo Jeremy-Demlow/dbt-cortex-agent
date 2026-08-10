@@ -131,6 +131,8 @@
     manifest-database match, CLI target/database allowlists, and schema checks before reusing the
     existing invocation/SSE client; controlled assertion and runtime failures exit 2, and skill
     smoke behavior remains unchanged.
+15. Verify the requirements index and REQ-011 status identify projection behavior as historical
+    and superseded by REQ-013 rather than presenting it as the active v0.3.1 topology.
 
 ## REQ-013: single physical Agent evaluation
 
@@ -185,3 +187,5 @@
 8. Verify package CI keeps Python 3.10-3.13 and dbt 1.10/1.11 matrices and runs the installed-wheel verifier in both dbt matrix entries.
 9. Verify release workflow publication triggers, permissions, protected environment, and OIDC-only publish job remain unchanged and safe.
 10. Run the local verifier, focused/full tests, build, Twine, wheel inventory, workflow YAML parse, and patch hygiene without Snowflake, consumer edits, commit, or push.
+11. Run the exact tracked non-lock-file secret scan from the repository root and verify synthetic
+    immutable Git SHA fixtures use only line-scoped allowlists, with no broad file or detector exclusion.

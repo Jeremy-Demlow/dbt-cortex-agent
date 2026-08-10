@@ -131,3 +131,9 @@
 - Root cause: evaluation treated an empty `DESCRIBE AGENT` result as an Agent with no DEFAULT, while the installed-wheel command guard allowed any command containing `init` to carry `--apply`; package CI cleanup also used folded YAML that joined two cleanup commands incorrectly.
 - Fix summary: empty Agent descriptions now fail explicitly before stage upload or START, installed-wheel `--apply` is restricted to the exact `dbt-cortex-agent init` command and direct Snow CLI execution is rejected, and CI cleanup is one valid residue-removal command.
 - Verification: focused eval and installed-wheel safety tests cover empty descriptions, non-CLI `init --apply`, direct `snow`, and mutation-command rejection; workflow YAML parsing and the full verification matrix cover the corrected cleanup step.
+
+## REQ-008/014: Tracked-secret scan rejected a synthetic immutable Git SHA
+
+- Root cause: the immutable-SHA doctor regression asserted a realistic 40-character hexadecimal commit fixture without the scanner's line-scoped test-data annotation, so `detect-secrets==1.5.0` classified the assertion at `tests/test_doctor.py:161` as a high-entropy secret.
+- Fix summary: the synthetic SHA now has one line-scoped `pragma: allowlist secret` annotation at its test-fixture constant and every test reuses that constant; no detector, file, or path exclusion was added. Single-Agent release notes were also moved from `Unreleased` into the dated 0.3.1 section, and REQ-011 is indexed as historical projection evidence superseded by REQ-013.
+- Verification: `tests/test_ci.py::test_synthetic_immutable_sha_is_narrowly_allowlisted`, documentation contracts, and the exact repository-root tracked non-lock-file scan pin the exception and require zero findings.

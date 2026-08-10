@@ -2,7 +2,9 @@
 
 ## Status
 
-Complete
+Complete historical record. Its projection-specific topology is superseded by
+REQ-013; current v0.3.1 behavior uses one physical Agent per enabled exposure
+and target.
 
 ## Summary
 

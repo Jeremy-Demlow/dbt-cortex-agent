@@ -166,6 +166,15 @@ def test_req_011_contracts_additive_tutorial_product_readiness() -> None:
     assert "implementation begins" in text
 
 
+def test_req_011_is_indexed_as_superseded_historical_projection_evidence() -> None:
+    requirement = REQ_011.read_text(encoding="utf-8").lower()
+    index = (ROOT / "requirements/README.md").read_text(encoding="utf-8").lower()
+
+    assert "complete historical record" in requirement
+    assert "projection-specific topology is superseded by\nreq-013" in requirement
+    assert "complete historical record; projection topology superseded by req-013" in index
+
+
 def test_general_agent_smoke_contract_is_documented() -> None:
     cli = CLI_REFERENCE.read_text(encoding="utf-8")
     lifecycle = (ROOT / "docs/guides/lifecycle.md").read_text(encoding="utf-8")

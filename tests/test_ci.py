@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 try:
     import tomllib
 except ModuleNotFoundError:
@@ -142,6 +143,20 @@ def test_secret_scan_is_limited_to_tracked_non_lock_files():
     text = _workflow_text()
     assert "git ls-files -z -- ':!:*lock*'" in text
     assert "detect-secrets scan --all-files" not in text
+
+
+def test_synthetic_immutable_sha_is_narrowly_allowlisted():
+    source = (ROOT / "tests/test_doctor.py").read_text(encoding="utf-8")
+    matching_lines = [
+        line
+        for line in source.splitlines()
+        if "pragma: allowlist secret" in line
+    ]
+
+    assert len(matching_lines) == 1
+    assert re.search(r'^SYNTHETIC_COMMIT_SHA = "[0-9a-f]{40}"', matching_lines[0])
+    fixture_value = re.search(r'"([0-9a-f]{40})"', matching_lines[0]).group(1)
+    assert source.count(fixture_value) == 1
 
 
 def test_release_workflow_builds_and_checks_artifacts_before_upload():

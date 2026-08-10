@@ -15,7 +15,7 @@ the provenance of the current package; current release scope is v0.3.1.
 | [REQ-008](REQ-008_standalone_ci.md) | Standalone package verification | Complete |
 | [REQ-009](REQ-009_simple_maintainer_policy.md) | Simple maintainer-led policy | Complete |
 | [REQ-010](REQ-010_trusted_pypi_publishing.md) | Trusted PyPI publishing path | Complete (automation only; no publication performed) |
-| [REQ-011](REQ-011_tutorial_product_readiness.md) | Orders starter, projection render/deploy, and Agent smoke | Complete (v0.3.1) |
+| [REQ-011](REQ-011_tutorial_product_readiness.md) | Historical Orders starter, projection render/deploy, and Agent smoke contract | Complete historical record; projection topology superseded by REQ-013 |
 | [REQ-012](REQ-012_guided_cortex_code_adoption_skill.md) | Guided Cortex Code adoption and immutable-SHA doctor | Complete (v0.3.1) |
 | [REQ-013](REQ-013_single_physical_agent_evaluation.md) | One physical Agent per enabled exposure and target, with optional same-Agent evaluations | Complete |
 | [REQ-014](REQ-014_installed_wheel_single_agent_verifier.md) | Installed-wheel Agent-only and optional-eval end-to-end verification | Complete |
