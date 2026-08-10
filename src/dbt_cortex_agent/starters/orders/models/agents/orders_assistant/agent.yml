@@ -39,7 +39,6 @@ exposures:
               semantic_view_model: sem_orders
               warehouse: "{{ target.warehouse }}"
               query_timeout: 60
-              evaluation_supported: true
               description: >
                 Analyzes governed order revenue, count, average value, dates, and
                 regions. Use for aggregate order questions and comparisons. Not

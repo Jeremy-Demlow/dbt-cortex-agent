@@ -1,5 +1,9 @@
 # REQ-012: guided Cortex Code adoption skill
 
+## Status
+
+Complete
+
 ## Summary
 
 Ship one canonical, script-free project skill that guides Cortex Code through adopting
@@ -50,8 +54,10 @@ evaluation-spend, and baseline-policy decision deliberately.
     integration dependency/parse proof, and supported non-mutating starter/render/deploy/eval
     previews. It does not call Snowflake, invoke an Agent, spend credits, move a baseline, commit,
     push, or implement an article.
-11. Doctor accepts an immutable full Git SHA when the installed dbt package metadata matches the
-    companion CLI version; semantic version pins still require an exact direct match.
+11. Doctor accepts an immutable full Git SHA only when actual installed consumer dbt package
+    metadata under `dbt_packages/dbt_cortex_agent/dbt_project.yml` matches the companion CLI
+    version. The package source root `dbt_project.yml` is never installation evidence; semantic
+    version pins still require an exact direct match.
 
 ## User stories
 
@@ -85,6 +91,10 @@ evaluation-spend, and baseline-policy decision deliberately.
 
 ## Notes
 
+- Superseded projection assumption (2026-08-10): REQ-013 supersedes guidance that treats optional
+  evaluation authoring as targeting a separate physical `native_eval` Agent. The 0.3.1 guidance and
+  approval-boundary facts remain historical; future guidance must use the enabled exposure's single
+  target-resolved Agent FQN.
 - Objective lever: sequence existing package contracts behind explicit human approvals rather than
   add another implementation layer.
 - Data proof: REQ-011 already provides the fixed Orders fixture, canonical/native-eval rendering,
@@ -101,3 +111,16 @@ evaluation-spend, and baseline-policy decision deliberately.
   project behavior are affected; no live substitute is permitted or needed.
 - Adopter verification decision: a 40-character Git SHA identifies immutable source rather than a
   semantic package version, so doctor proves its version through the installed dbt package metadata.
+- Maker record (2026-08-07): shipped one project-local, script-free Cortex Code skill with four
+  routes and four independent approval boundaries, then hardened doctor so immutable-SHA acceptance
+  is based only on installed consumer package metadata while semantic pins retain direct matching.
+- Critic record (2026-08-07): reviewed criteria 1-11 for duplicated lifecycle logic, inferred
+  environments, collapsed approvals, unsupported commands, trigger overreach, publication claims,
+  and false immutable-SHA evidence. The package-source-root fallback in doctor was a blocking defect;
+  it was removed and negative coverage was added for missing, branch, and mismatched installed
+  package metadata. No blocking finding remains.
+- Verifier record (2026-08-07): reproducible current verification passed project-skill and doctor
+  tests, the full Python suite, offline integration dependency/parse proof, non-mutating starter,
+  render, deploy, smoke, and eval previews, package build, Twine metadata checks, wheel inventory,
+  installed-wheel smoke, and repository hooks. No Snowflake call, spend, baseline movement, commit,
+  tag, release, or push occurred.

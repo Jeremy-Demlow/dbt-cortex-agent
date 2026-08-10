@@ -27,7 +27,7 @@ public dbt macros without encountering stale or contradictory instructions.
    project policies.
 2. Installation and upgrade guidance covers the public HTTPS-tagged dbt Git package plus the
    Python distribution, the single `runtime` extra, compatibility, source-install fallback,
-   and migration from v0.2.0/former extras. PyPI commands are explicitly post-publication.
+   and migration from pre-v0.3 releases/former extras. PyPI commands are explicitly post-publication.
 3. A standalone quickstart uses the shipped CLI, fresh manifest behavior, explicit target
    and database allowlists, and no `--apply`, Agent commit, live runtime call, or paid eval.
 4. Configuration documentation defines exposure and eval metadata, dbt vars, CLI flags,
@@ -60,7 +60,7 @@ public dbt macros without encountering stale or contradictory instructions.
   before granting access or running automation.
 - As an automation author, I can rely on documented commands, outputs, and exit codes that
   are checked against the shipped parser.
-- As an upgrader, I can move from v0.2.0 without retaining copied tooling or retired extras.
+- As an upgrader from a pre-v0.3 release, I can remove copied tooling and retired extras.
 - As an installer, I can distinguish commands available after PyPI publication from the public
   tagged source fallback available now.
 

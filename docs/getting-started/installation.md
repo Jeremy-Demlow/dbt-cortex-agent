@@ -44,36 +44,35 @@ selected with `--snow-executable` or `SNOW_EXECUTABLE`.
 
 ## 3. Install the Python CLI
 
-After v0.3.1 is published to PyPI, install the CLI and its connector-backed
-runtime support with `pipx`:
+Version 0.3.1 is not published to PyPI yet. Install the reviewed CLI and its
+connector-backed runtime support from a clean local checkout:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.3.1'
+pipx install '/absolute/path/to/dbt-cortex-agent[runtime]'
 dbt-cortex-agent --version
 ```
 
 For a managed Python environment, the pip equivalent is:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.3.1'
+python -m pip install '/absolute/path/to/dbt-cortex-agent[runtime]'
 ```
 
-The PyPI commands above become available only after the v0.3.1 publication.
-Before publication, release operators can install the reviewed candidate from
-its clean local checkout:
-
-```bash
-pipx install '/absolute/path/to/dbt-cortex-agent[runtime]'
-```
+Do not use a PyPI command until release publication is verified.
 
 The base distribution can omit `[runtime]` when connector-backed skill smoke and
 paid evaluation are not needed. `runtime` is the only connector extra; the
 former `invoke` and `eval` extras no longer exist; both map to `runtime`.
 
-The PyPI version `0.3.1` and Git tag `v0.3.1` identify the same immutable
+The future PyPI version `0.3.1` and Git tag `v0.3.1` will identify the same immutable
 release. After `dbt deps`, run `dbt-cortex-agent doctor --project-dir . --json`.
 `doctor` compares the CLI version with the declared dependency revision and the
-installed dbt package version so mixed releases fail visibly.
+installed consumer dbt package version so mixed releases fail visibly. A full
+40-character Git SHA is accepted only when
+`dbt_packages/dbt_cortex_agent/dbt_project.yml` reports version `0.3.1`; the
+package source root is not installation evidence. Branch revisions and missing
+or mismatched installed metadata fail closed. A semantic `v0.3.1` declaration
+continues to match the CLI version directly.
 
 ## 4. Configure an existing dbt project
 

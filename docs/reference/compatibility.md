@@ -6,6 +6,9 @@ The project-local Cortex Code adoption skill uses the same 0.3.1 CLI/parser and
 metadata contracts. dbt Core with `dbt-snowflake` remains authoritative for its
 proof steps; Fusion/fdbt output is advisory. The skill adds no runtime dependency,
 is script-free, and adds no global installation or live-verification claim.
+It ships in the same v0.3.1 release scope as the Orders starter,
+single-Agent render/deploy, general Agent smoke, and immutable-SHA doctor
+validation.
 
 ## Required
 
@@ -34,14 +37,14 @@ infer that every accepted patch has live lifecycle coverage.
 
 Fusion can qualify dependency resolution, graph/metadata construction, package
 macro resolution, and compilation. dbt Core/Snowflake remains authoritative until
-normalized metadata, dependency edges, render output, and manifest compatibility
+normalized metadata, dependency edges, full-spec render output, and manifest compatibility
 are demonstrated. Live `run_query`, Agent DDL, stage operations, and evaluations
 remain Snowflake execution concerns.
 
 ### 2026-07-31 qualification result
 
 The independent starter passed Fusion dependency resolution, parse, compile, the
-package-qualified generic-test discovery, Agent canonical/native-eval rendering,
+package-qualified generic-test discovery, Agent rendering,
 and structural eval validation. Fusion produced manifest schema v12, which the
 strict `agent_management.dbt_manifest` adapter accepted unchanged.
 
@@ -52,7 +55,7 @@ Normalized parity with dbt Core 1.11.11/dbt-snowflake 1.11.4 passed for:
 - database, schema, and alias resolution,
 - generic-test discovery,
 - compiled semantic-view and eval models,
-- canonical/native-eval Agent JSON.
+- full Agent JSON and optional eval-plan identity.
 
 One relevant difference remains: Fusion omitted
 `macro.dbt_cortex_agent.cortex_eval__assemble` from the eval model's manifest

@@ -88,6 +88,8 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             "stage": plan.stage_fqn,
             "target_role": plan.target_role,
             "metrics": plan.metric_names,
+            "plan_identity": plan.plan_identity,
+            "suite_signature": plan.suite_signature,
             "paid_apply": bool(args.apply),
         }
         output = run_evaluation(

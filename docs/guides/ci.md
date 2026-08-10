@@ -37,7 +37,7 @@ credentialed integration job.
 
 Use a protected job/environment and an isolated database. Require operator
 approval, an explicit connection/database, repeatable CLI allowlists, matching
-dbt vars, and `--apply`. Upload selected skills before canonical deploy; deploy
+dbt vars, and `--apply`. Upload selected skills before Agent deploy; deploy
 and grant only selected Agents. Run live skill smoke afterward as a separate
 runtime check.
 
@@ -48,7 +48,7 @@ gate. Promotion beyond sandbox is a separate approved lifecycle operation.
 
 Run only after the sandbox job has separately:
 
-- deployed the native-eval Agent,
+- deployed the normal Agent selected by the exposure,
 - materialized and tested the eval table,
 - provisioned/accessed `EVAL_CONFIG_STAGE`,
 - selected an evaluation warehouse and cost controls.

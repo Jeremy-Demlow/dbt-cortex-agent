@@ -36,7 +36,6 @@ are preview/dry-run by default and require `--apply`.
 | `--allow-target` | Repeatable mutation/runtime target gate. |
 | `--allow-database` | Repeatable mutation/runtime database gate. |
 | `--apply` | Cross the command's labeled mutation/runtime/paid boundary. |
-| `--projection` | Agent render/deploy projection: `canonical` (default) or `native_eval`. |
 
 Precedence is CLI option, then environment variable, then built-in default.
 
@@ -89,36 +88,29 @@ Applied smoke requires `--connection`, database, schema, and the `runtime` extra
 
 ### `dbt-cortex-agent agent render`
 
-Render Agent specs. Options: shared options, repeatable `--agent`, and
-`--projection canonical|native_eval` (default `canonical`). Human and JSON output
-include the exact specification plus logical Agent, physical Agent, projection,
-target, and deterministic artifact path. Each specification is saved at
-`<artifact-dir>/renders/<target>/<agent>/<projection>.json`.
+Render Agent specs. Options: shared options and repeatable `--agent`. Human and
+JSON output include the exact full specification plus logical Agent, physical
+Agent, `single_agent` lifecycle marker, target, and deterministic artifact path.
+Each specification is saved at `<artifact-dir>/renders/<target>/<agent>/spec.json`.
 
 ### `dbt-cortex-agent agent deploy` — MUTATION with `--apply`
 
 Dry-run or deploy/version. Options: shared options, repeatable `--agent`,
-`--projection canonical|native_eval` (default `canonical`), `--alias`, both
-allowlists, and `--apply`. Output identifies the selected projection and
-dbt-resolved physical Agent. Applied canonical deploy plans and uploads all
-declared local skills before invoking the deploy macro. Native-eval apply keeps
-the explicit connection, manifest, resolved-database, CLI allowlist, and macro
-safety gates but skips skill planning/upload. Direct macro calls do not perform
-local uploads.
+`--alias`, both allowlists, and `--apply`. Output identifies the dbt-resolved
+physical Agent. Applied deploy plans and uploads all declared local skills before
+invoking the deploy macro. Direct macro calls do not perform local uploads.
 
 ### `dbt-cortex-agent agent smoke` — RUNTIME with `--apply`
 
 Preview or invoke one manifest-owned Agent without requiring a skill declaration.
 Required options are one logical `--agent` and a nonblank `--question`. Optional
 options are `--expect-tool` for an exact returned tool-name assertion,
-`--projection canonical|native_eval` (default `canonical`), `--agent-object` for
-a physical Agent override, `--endpoint`, both repeatable
+`--agent-object` for a physical Agent override, `--endpoint`, both repeatable
 allowlists, and `--apply`.
 
-Preview resolves canonical physical identity from manifest target naming and
-native-eval identity from the offline dbt render authority, or validates the
+Preview resolves physical identity from manifest target naming or validates the
 explicit override. It does not construct a connector or invoke the Agent. JSON
-always contains `command`, `applied`, `agent`, `projection`, `agent_object`, `question`,
+always contains `command`, `applied`, `agent`, `agent_object`, `question`,
 `expected_tool`, `passed`, and `response`; preview sets the final two fields to
 `null`. Apply requires a fresh manifest, explicit `--connection`, database/schema,
 the configured database matching dbt's resolved database, and CLI target/database
@@ -152,7 +144,7 @@ execution requires `--connection` and the `runtime` extra.
 It also requires `--warehouse`, both repeatable allowlists, and a configured
 target/database matching the dbt-rendered plan. Applied execution sets the
 plan's authoritative target role before warehouse, database, and schema.
-The command does not deploy the native-eval Agent or materialize the eval model.
+The command does not deploy or alter the Agent and does not materialize the eval model.
 Applied candidates default to
 `<artifact-dir>/candidates/<agent>/<suite>/<run_name>.json`.
 

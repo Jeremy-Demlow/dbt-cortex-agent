@@ -1,4 +1,4 @@
-{% macro cortex_agent__grant_usage(agent_name, projection='canonical', dry_run=True) %}
+{% macro cortex_agent__grant_usage(agent_name, dry_run=True) %}
   {# Render (and, on the sandbox-guarded apply path, execute) USAGE grants for a
      deployed Cortex Agent. Access is declared in meta.cortex_agent.access.usage_roles
      (a flat list of role names). Grants are DDL, not part of the agent spec, so this
@@ -9,7 +9,7 @@
      sandbox guard and execute each grant. Returns the list of rendered statements. #}
   {% set exposure = cortex_agent__get_agent(agent_name) %}
   {% set agent = exposure.meta.get('cortex_agent', {}) %}
-  {% set agent_fqn = cortex_agent__target_agent_fqn(agent, projection) %}
+  {% set agent_fqn = cortex_agent__target_agent_fqn(agent) %}
   {% set usage_roles = agent.get('access', {}).get('usage_roles', []) %}
 
   {% set statements = [] %}

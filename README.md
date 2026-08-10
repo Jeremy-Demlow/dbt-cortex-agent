@@ -9,20 +9,17 @@ and manages local files, runtime clients, and evaluation artifacts.
 
 ## Install one immutable version on two surfaces
 
-After v0.3.1 is published to PyPI, install the Python CLI and runtime support in
-an isolated environment:
-
-```bash
-pipx install 'dbt-cortex-agent[runtime]==0.3.1'
-```
-
-For a managed Python environment, use
-`python -m pip install 'dbt-cortex-agent[runtime]==0.3.1'`. Before publication,
-release operators can install the reviewed candidate directly from its clean
-local checkout:
+Version 0.3.1 is not published to PyPI yet. Install the reviewed Python CLI and
+runtime support from a clean local checkout:
 
 ```bash
 pipx install '/absolute/path/to/dbt-cortex-agent[runtime]'
+```
+
+For a managed Python environment, use:
+
+```bash
+python -m pip install '/absolute/path/to/dbt-cortex-agent[runtime]'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
@@ -34,10 +31,13 @@ packages:
     revision: v0.3.1
 ```
 
-The PyPI version `0.3.1` and Git tag `v0.3.1` identify the same immutable
+The future PyPI version `0.3.1` and Git tag `v0.3.1` will identify the same immutable
 release across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
-declared dbt dependency, and installed dbt package versions align. The supported
+declared dbt dependency, and installed consumer dbt package versions align. A
+full immutable Git SHA is accepted only when actual installed package metadata
+under `dbt_packages/dbt_cortex_agent` reports the matching version; a source
+checkout's root `dbt_project.yml` is not installation evidence. The supported
 runtime is Python `>=3.10,<4`, dbt
 `>=1.10,<2.0`, and `dbt-snowflake`; see [compatibility](docs/reference/compatibility.md)
 and [installation](docs/getting-started/installation.md).
@@ -56,7 +56,7 @@ dbt-cortex-agent init --project-dir . --starter orders \
   --package-source https://github.com/Jeremy-Demlow/dbt-cortex-agent.git --json
 ```
 
-The preview reports the exact seed, semantic-view, Agent, eval, dependency, and
+The preview reports the exact seed, semantic-view, Agent, optional eval, dependency, and
 `.dbtignore` actions without writing. After review, add `--apply`. The command
 validates every destination before writing, keeps identical files unchanged,
 and fails closed if any generated file already has different content. It has no
@@ -69,8 +69,7 @@ From a consumer dbt project with an Agent exposure:
 ```bash
 dbt-cortex-agent doctor --project-dir . --target sandbox --json
 dbt-cortex-agent manifest validate --project-dir . --target sandbox --json
-dbt-cortex-agent agent render --project-dir . --target sandbox --agent orders_assistant \
-  --projection canonical --json
+dbt-cortex-agent agent render --project-dir . --target sandbox --agent orders_assistant --json
 dbt-cortex-agent agent deploy --project-dir . --target sandbox --agent orders_assistant \
   --allow-target sandbox --allow-database ANALYTICS_DEV --json
 ```
@@ -99,16 +98,15 @@ dbt-cortex-agent agent deploy --project-dir . --target sandbox \
   --allow-target sandbox --allow-database ANALYTICS_DEV --apply
 ```
 
-Both render and deploy accept `--projection canonical|native_eval` and default
-to `canonical`. Render writes the exact specification to
-`target/dbt_cortex_agent/renders/<target>/<agent>/<projection>.json` and returns
-the specification, logical Agent, physical Agent, projection, target, and
+Render and deploy resolve the exposure's one physical Agent and complete
+specification. Render writes it to
+`target/dbt_cortex_agent/renders/<target>/<agent>/spec.json` and returns
+the specification, logical Agent, physical Agent, lifecycle marker, target, and
 artifact path in JSON. `--apply` requires an explicit `--connection`; the configured database must
 match dbt's resolved target, and the target/database must pass both CLI and dbt
-allowlists. Canonical CLI deploy also plans and uploads every declared local
+allowlists. CLI deploy also plans and uploads every declared local
 stage-backed skill before invoking the deploy macro; a failed upload prevents
-deployment. Native-eval deploy retains the same apply gates but skips skill
-planning and upload because that projection excludes skills. Deployment updates
+deployment. Deployment updates
 LIVE, commits `VERSION$N`, and may move an alias.
 Read [lifecycle](docs/guides/lifecycle.md) and [Snowflake setup](docs/getting-started/snowflake-setup.md)
 before crossing this boundary.
@@ -119,12 +117,12 @@ before crossing this boundary.
 |---|---|---|
 | Diagnose a project | `doctor` | — |
 | Validate resolved metadata | `manifest validate` | `cortex_agent__validate` |
-| Render canonical/native-eval specs | `agent render --projection ...` | `cortex_agent__render_spec` |
+| Render the full Agent spec | `agent render` | `cortex_agent__render_spec` |
 | Deploy/version an Agent | `agent deploy` | `cortex_agent__deploy` |
 | Preview/invoke any Agent | `agent smoke` | — |
 | Grant, promote, roll back | `agent grant/promote/rollback` | lifecycle macros |
 | Plan/upload/smoke skills | `skill plan/upload/smoke` | deploy validates staged skills |
-| Render/run native evaluation | `eval run` | `cortex_eval__execution_plan`, `cortex_eval__run` |
+| Render/run optional evaluation | `eval run` | `cortex_eval__execution_plan`, `cortex_eval__run` |
 | Compare/gate/accept artifacts | `eval compare/gate/accept-baseline` | threshold macros only |
 
 Use macros inside dbt-native automation. Use the CLI when local file upload,
@@ -138,15 +136,15 @@ readiness checks.
 
 ## Lifecycle and evaluation
 
-Canonical deploy validates and hashes the rendered spec plus staged skills,
+Agent deploy validates and hashes the rendered spec plus staged skills,
 skips unchanged versions, modifies LIVE, commits an immutable version, and
 applies the requested alias. Promotion, rollback, grants, MCP attachment, and
 skill smoke remain explicit operations.
 
-Native evaluation uses a separate suffixed Agent rendered from the same exposure
-without unsupported skills or MCP connectors. `eval run` is a client for an
-already deployed native-eval Agent, materialized eval table, and evaluation
-stage; `--apply` incurs Cortex spend. It writes candidate JSON with plan identity,
+Evaluation is optional and targets the same Agent selected by the exposure and
+target. `eval run` is a client for that already deployed Agent, a materialized
+eval table, and an evaluation stage; `--apply` incurs Cortex spend. It never
+deploys or changes an Agent. It writes candidate JSON with plan identity,
 ordered ground-truth refs, policy, and pre/post DEFAULT provenance for threshold
 and accepted-baseline gates. See [evaluations](docs/guides/evaluations.md).
 
@@ -156,7 +154,7 @@ and accepted-baseline gates. See [evaluations](docs/guides/evaluations.md).
 - Configure: [configuration model](docs/guides/configuration-model.md), [Agent metadata](docs/reference/agent-metadata.md), [eval metadata](docs/reference/eval-metadata.md), [variables](docs/reference/variables.md)
 - Operate: [lifecycle](docs/guides/lifecycle.md), [skills](docs/guides/skills.md), [evaluations](docs/guides/evaluations.md), [CI](docs/guides/ci.md), [releasing](docs/guides/releasing.md)
 - Reference: [CLI](docs/reference/cli.md), [macros](docs/reference/macros.md), [compatibility](docs/reference/compatibility.md), [architecture](docs/concepts/end-to-end-flow.md), [troubleshooting](docs/troubleshooting.md)
-- Change: [upgrade from v0.2.0](UPGRADING.md), [changelog](CHANGELOG.md)
+- Change: [upgrade to v0.3.1](UPGRADING.md), [changelog](CHANGELOG.md)
 
 ## Limitations and policies
 

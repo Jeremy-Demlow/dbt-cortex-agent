@@ -8,7 +8,7 @@ manifest. All lifecycle CLI commands are dry-run unless `--apply` is present.
 
 ```bash
 dbt-cortex-agent agent render --project-dir . --target sandbox \
-  --agent orders_assistant --projection canonical --json
+  --agent orders_assistant --json
 dbt-cortex-agent agent deploy --project-dir . --target sandbox \
   --agent orders_assistant --allow-target sandbox \
   --allow-database ANALYTICS_DEV --json
@@ -18,15 +18,15 @@ The equivalent dbt macro path is:
 
 ```bash
 dbt run-operation cortex_agent__validate --target sandbox \
-  --args '{"agent_name":"orders_assistant","projection":"canonical"}'
+  --args '{"agent_name":"orders_assistant"}'
 dbt run-operation cortex_agent__deploy --target sandbox \
-  --args '{"agent_name":"orders_assistant","projection":"canonical","dry_run":true}'
+  --args '{"agent_name":"orders_assistant","dry_run":true}'
 ```
 
-Render and deploy accept `--projection canonical|native_eval` and default to the
-v0.3.0 canonical behavior. Render parses one dbt-owned machine marker, returns
-the actual specification and logical/physical identity in human or JSON output,
-and writes `<artifact-dir>/renders/<target>/<agent>/<projection>.json`. Missing,
+Render and deploy resolve one full specification and target-selected physical
+Agent. Render parses one dbt-owned machine marker, returns the actual specification
+and logical/physical identity in human or JSON output, and writes
+`<artifact-dir>/renders/<target>/<agent>/spec.json`. Missing,
 duplicate, malformed, or non-object marker payloads fail closed.
 
 ## Preview and run a general Agent smoke
@@ -35,14 +35,12 @@ General smoke is separate from skill smoke and works for an Agent with no skills
 
 ```bash
 dbt-cortex-agent agent smoke --project-dir . --target sandbox \
-  --agent orders_assistant --projection canonical \
+  --agent orders_assistant \
   --question "How many orders are in the dataset?" --json
 ```
 
-The default canonical preview resolves manifest-owned physical identity. An
-explicit `--projection native_eval` uses the offline dbt render authority so a
-custom evaluation suffix is never guessed. Both report the selected projection
-and request without connecting or invoking. To run either, repeat the command with
+The preview resolves manifest-owned physical identity and reports the request
+without connecting or invoking. To run it, repeat the command with
 `--connection`, `--database`, `--schema`, both CLI allowlists, and `--apply`.
 `--agent-object` can override the physical object, `--endpoint` can override the
 Snowflake endpoint, and `--expect-tool NAME` requires an exact match among the
@@ -65,7 +63,7 @@ Apply requires all of the following:
 - the selected target and database in CLI allowlists,
 - the dbt target in `cortex_agent_allowed_targets`,
 - the target database in `cortex_agent_allowed_databases`,
-- staged `SKILL.md` files for canonical stage-backed skills unless the explicit
+- staged `SKILL.md` files for stage-backed skills unless the explicit
   readiness escape hatch is reviewed and disabled.
 
 For `agent deploy --apply`, the CLI discovers all declared skills for the
@@ -73,10 +71,6 @@ selected Agents, validates the full upload plan, and uploads them with Snow CLI
 before it invokes `cortex_agent__deploy`. Operators do not need a separate
 `skill upload --apply` first. The standalone skill command remains useful for
 previewing or performing uploads independently.
-
-For `--projection native_eval`, the CLI retains every connection, manifest,
-database, allowlist, and macro mutation gate but does not plan or upload skills;
-the native-eval specification excludes skills by contract.
 
 The direct macro path is intentionally narrower. It does not run a fresh parse,
 require the CLI's explicit `--connection`/resolved-database checks, enforce CLI
@@ -87,9 +81,9 @@ context, and capture of dbt logs.
 
 ## Deployment sequence
 
-For a changed canonical specification, `cortex_agent__deploy`:
+For a changed full specification, `cortex_agent__deploy`:
 
-1. validates metadata, projection, target, database, and skill readiness;
+1. validates metadata, target, database, and skill readiness;
 2. renders the deterministic specification and hashes it with staged skill state;
 3. modifies the LIVE draft;
 4. commits an immutable `VERSION$N`;

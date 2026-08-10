@@ -26,6 +26,9 @@ Use the minimal exposure in the [configuration model](../guides/configuration-mo
 Include the semantic-view `ref()` in `depends_on` and use that model's name in
 `semantic_view_model`.
 
+At this point the project has an Agent-only path. Evaluation metadata and an eval
+table are optional and do not change the Agent specification or deployment.
+
 ## 3. Configure the deployment boundary
 
 ```yaml

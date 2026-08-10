@@ -42,8 +42,8 @@ before any write. There is no force option or generic wizard.
 
 ## 3. Define one Agent exposure
 
-Use the minimal exposure and eval examples in the
-[configuration model](../guides/configuration-model.md). The independent
+Use the Agent-only example first, then add the optional eval example only when
+ground truth exists, in the [configuration model](../guides/configuration-model.md). The independent
 [`integration_tests`](../../integration_tests/README.md) project is an executable
 fixture if a consumer project is not ready.
 
@@ -55,7 +55,10 @@ dbt-cortex-agent manifest validate --project-dir . --target sandbox --agent orde
 ```
 
 Both commands run a fresh `dbt parse` before reading `target/manifest.json`.
-Resolve every doctor failure before continuing.
+Resolve every doctor failure before continuing. For an immutable SHA dependency,
+doctor requires the matching installed consumer package metadata produced by
+`dbt deps`; it does not accept this package repository's root metadata as a
+substitute.
 
 ## 5. Render and dry-run deployment
 

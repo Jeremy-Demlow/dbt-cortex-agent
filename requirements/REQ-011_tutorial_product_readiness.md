@@ -1,5 +1,9 @@
 # REQ-011: additive v0.3.1 tutorial product readiness
 
+## Status
+
+Complete
+
 ## Summary
 
 Make the v0.3.1 adopter path complete and reproducible by correcting tutorial defects, shipping one
@@ -61,9 +65,9 @@ while an existing v0.3.0 consumer continues to receive canonical, non-mutating b
    dbt dependency resolution and offline parse; canonical and native-eval render parity; package
    build, Twine, wheel inventory, and clean installed-wheel smoke; and no generated residue. The gate
    must pass without credentials, Snowflake calls, live runtime invocation, mutation, or paid eval.
-9. A companion Cortex Code/catalog skill for the tutorial is deferred until the package completion
-   gate in criterion 8 passes. v0.3.1 package readiness must not depend on that skill, and this slice
-   does not create, publish, install, or document the skill as available.
+9. A companion Cortex Code/catalog skill for the tutorial remains a separate, additive requirement
+   until the package completion gate in criterion 8 passes. v0.3.1 package readiness does not depend
+   on that skill, and REQ-011 does not publish or install it.
 10. Requirements, user stories, test cases, and focused docs/policy contracts capture criteria 1-9
     before product implementation begins.
 
@@ -102,6 +106,10 @@ while an existing v0.3.0 consumer continues to receive canonical, non-mutating b
 
 ## Notes
 
+- Superseded projection assumption (2026-08-10): REQ-013 supersedes the physical
+  `canonical`/`native_eval` Agent split as a future product contract. This requirement remains the
+  historical record of v0.3.1 projection behavior and its verification; it is not the baseline for
+  the next implementation slice.
 - Objective lever: turn the existing package-owned Orders fixture and projection macros into one
   explicit adopter contract, then separate general Agent runtime proof from skill-specific proof.
 - Data proof: the repository already contains synthetic Orders seed data, one semantic view, one
@@ -170,3 +178,18 @@ while an existing v0.3.0 consumer continues to receive canonical, non-mutating b
 - Verifier: this slice requires focused/full Python tests, byte compilation, package build, Twine,
   wheel inventory, installed-wheel CLI smoke, and offline integration-consumer dbt parse. Live Agent
   or Snowflake calls are prohibited.
+- Maker record (2026-08-07): implemented the fixed Orders starter, projection-aware render/deploy,
+  and skill-independent Agent smoke as additive v0.3.1 surfaces. The starter reuses packaged
+  synthetic fixtures; render/deploy continue through dbt-owned macros; smoke reuses the existing
+  invocation client only after explicit runtime gates.
+- Critic record (2026-08-07): reviewed criteria 1-10 for partial writes, generic-wizard scope,
+  projection ambiguity, render-envelope compatibility, native-eval skill orchestration, preview
+  side effects, runtime gate ordering, and v0.3.0 compatibility. Blocking findings were fixed by
+  validating all starter collisions before writes, preserving the legacy raw-spec output before
+  the marked envelope, omitting skills only for native-eval deploy, and separating general smoke
+  from skill smoke. No blocking finding remains.
+- Verifier record (2026-08-07): reproducible current verification passed the focused and full Python
+  suites, offline integration dependency/parse proof, canonical/native-eval render and deploy
+  previews, package build, Twine metadata checks, wheel inventory, installed-wheel smoke, and
+  repository hooks. Verification used no Snowflake credentials, mutation, runtime invocation,
+  evaluation spend, baseline movement, commit, tag, release, or push.

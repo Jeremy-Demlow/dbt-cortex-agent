@@ -84,10 +84,100 @@
   {{ return(names) }}
 {% endmacro %}
 
+{% macro cortex_eval__native_supported_tool_names(agent_name) %}
+  {% set exposure = cortex_agent__get_agent(agent_name) %}
+  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set supported = [] %}
+  {% for tool in agent.get('tools', []) %}
+    {% if tool.get('type') in ['cortex_analyst_text_to_sql', 'cortex_search', 'generic'] %}
+      {% do supported.append(tool.get('name')) %}
+    {% endif %}
+  {% endfor %}
+  {% if agent.get('capabilities', {}).get('web_search', {}).get('enabled') %}
+    {% do supported.append('web_search') %}
+  {% endif %}
+  {{ return(supported) }}
+{% endmacro %}
+
+{% macro cortex_eval__unsupported_native_tool_claims(agent_name) %}
+  {% set exposure = cortex_agent__get_agent(agent_name) %}
+  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set capabilities = agent.get('capabilities', {}) %}
+  {% set unsupported = {} %}
+  {% for skill in capabilities.get('skills', []) %}
+    {% do unsupported.update({skill.get('name'): 'skill'}) %}
+  {% endfor %}
+  {% for connector in capabilities.get('mcp_connectors', []) %}
+    {% if connector.get('enabled') %}
+      {% do unsupported.update({connector.get('name'): 'MCP connector'}) %}
+    {% endif %}
+  {% endfor %}
+  {% if capabilities.get('code_execution', {}).get('enabled') %}
+    {% do unsupported.update({'code_execution': 'code execution'}) %}
+  {% endif %}
+  {% if capabilities.get('data_to_chart', {}).get('enabled') %}
+    {% do unsupported.update({'data_to_chart': 'data-to-chart capability'}) %}
+  {% endif %}
+  {{ return(unsupported) }}
+{% endmacro %}
+
+{% macro cortex_eval__capability_evidence(agent_name, invoked_tools=[], evaluation_completed=false) %}
+  {% set exposure = cortex_agent__get_agent(agent_name) %}
+  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set capabilities = agent.get('capabilities', {}) %}
+  {% set spec = cortex_agent__build_spec(agent_name) %}
+  {% set evidence = [] %}
+  {% set rendered_names = [] %}
+  {% for tool in spec.get('tools', []) %}
+    {% set name = tool.get('tool_spec', {}).get('name') %}
+    {% do rendered_names.append(name) %}
+    {% do evidence.append({
+      'capability': 'tool',
+      'name': name,
+      'classification': 'invoked' if name in invoked_tools else ('completed_with_attachment' if evaluation_completed else 'attached')
+    }) %}
+  {% endfor %}
+  {% for skill in spec.get('skills', []) %}
+    {% set name = skill.get('name') %}
+    {% set classification = 'invoked' if name in invoked_tools else ('completed_with_attachment' if evaluation_completed else 'attached') %}
+    {% do evidence.append({'capability': 'skill', 'name': name, 'classification': classification}) %}
+  {% endfor %}
+  {% if spec.get('skills', []) | length == 0 %}
+    {% do evidence.append({'capability': 'skills', 'name': 'skills', 'classification': 'absent'}) %}
+  {% endif %}
+  {% set code_classification = 'invoked' if 'code_execution' in invoked_tools else (('completed_with_attachment' if evaluation_completed else 'attached') if 'code_execution' in rendered_names else 'absent') %}
+  {% do evidence.append({'capability': 'code_execution', 'name': 'code_execution', 'classification': code_classification}) %}
+  {% set enabled_mcp = [] %}
+  {% for connector in capabilities.get('mcp_connectors', []) %}
+    {% if connector.get('enabled') %}
+      {% do enabled_mcp.append(connector) %}
+    {% endif %}
+  {% endfor %}
+  {% if enabled_mcp | length == 0 %}
+    {% do evidence.append({'capability': 'mcp', 'name': 'mcp', 'classification': 'absent'}) %}
+  {% else %}
+    {% for connector in enabled_mcp %}
+      {% set name = connector.get('name') %}
+      {% do evidence.append({'capability': 'mcp', 'name': name, 'classification': 'invoked' if name in invoked_tools else 'indeterminate'}) %}
+    {% endfor %}
+  {% endif %}
+  {{ return(evidence) }}
+{% endmacro %}
+
+{% macro cortex_eval__render_capability_evidence(agent_name, invoked_tools=[], evaluation_completed=false) %}
+  {% set evidence = cortex_eval__capability_evidence(agent_name, invoked_tools, evaluation_completed) %}
+  {% do log('CORTEX_AGENT_CAPABILITY_EVIDENCE=' ~ tojson(evidence), info=True) %}
+  {{ return(evidence) }}
+{% endmacro %}
+
 {% macro cortex_eval__validate(model_name, execute_checks=false) %}
   {% set node = cortex_eval__get_eval(model_name) %}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
-  {% set required = ['name', 'agent', 'projection', 'metrics', 'questions'] %}
+  {% set required = ['name', 'agent', 'metrics', 'questions'] %}
+
+  {% if eval_meta.get('projection') is not none %}
+    {{ exceptions.raise_compiler_error("Eval model '" ~ model_name ~ "' must not define config.meta.cortex_eval.projection; evaluations use the exposure's normal Agent FQN") }}
+  {% endif %}
 
   {% for field in required %}
     {% if eval_meta.get(field) is none %}
@@ -97,7 +187,6 @@
 
   {% set agent_exposure = cortex_agent__get_agent(eval_meta.get('agent')) %}
   {% set agent = agent_exposure.meta.get('cortex_agent', {}) %}
-  {% set projection = eval_meta.get('projection', 'native_eval') %}
   {% set metrics = eval_meta.get('metrics', []) %}
   {% set questions = eval_meta.get('questions', []) %}
   {% set metric_names = cortex_eval__metric_names(metrics) %}
@@ -142,29 +231,25 @@
     {% do ground_truth_refs.append(question.get('ground_truth_ref')) %}
   {% endfor %}
 
-  {% set spec = cortex_agent__build_spec(eval_meta.get('agent'), projection) %}
-  {% set rendered_tool_names = [] %}
-  {% for tool in spec.get('tools', []) %}
-    {% do rendered_tool_names.append(tool.get('tool_spec', {}).get('name')) %}
-  {% endfor %}
+  {% set native_supported_tool_names = cortex_eval__native_supported_tool_names(eval_meta.get('agent')) %}
+  {% set unsupported_native_tool_claims = cortex_eval__unsupported_native_tool_claims(eval_meta.get('agent')) %}
   {% for question in questions %}
-    {% for expected_tool in question.get('expected_tools', []) %}
-      {% if expected_tool not in rendered_tool_names %}
-        {% set render_label = 'native-eval projection' if projection == 'native_eval' else 'canonical render' %}
-        {{ exceptions.raise_compiler_error("Eval question '" ~ question.get('id') ~ "' expects tool '" ~ expected_tool ~ "', but the " ~ render_label ~ " renders only: " ~ (rendered_tool_names | join(', '))) }}
+    {% set expected_tools = question.get('expected_tools', []) %}
+    {% if expected_tools is string or expected_tools is not sequence %}
+      {{ exceptions.raise_compiler_error("Eval question '" ~ question.get('id') ~ "' expected_tools must be a list of tool names") }}
+    {% endif %}
+    {% for expected_tool in expected_tools %}
+      {% if expected_tool is not string or not expected_tool | trim %}
+        {{ exceptions.raise_compiler_error("Eval question '" ~ question.get('id') ~ "' expected_tools entries must be non-empty strings") }}
+      {% endif %}
+      {% if expected_tool in native_supported_tool_names %}
+      {% elif unsupported_native_tool_claims.get(expected_tool) %}
+        {{ exceptions.raise_compiler_error("Eval question '" ~ question.get('id') ~ "' cannot claim native coverage for " ~ unsupported_native_tool_claims.get(expected_tool) ~ " '" ~ expected_tool ~ "'; use smoke, integration, or other capability-specific proof") }}
+      {% else %}
+        {{ exceptions.raise_compiler_error("Eval question '" ~ question.get('id') ~ "' expects undeclared or unsupported native tool '" ~ expected_tool ~ "'; declared native-supported tools are: " ~ (native_supported_tool_names | join(', '))) }}
       {% endif %}
     {% endfor %}
   {% endfor %}
-
-  {% set enabled_mcp = [] %}
-  {% for connector in agent.get('capabilities', {}).get('mcp_connectors', []) %}
-    {% if connector.get('enabled') %}
-      {% do enabled_mcp.append(connector.get('name', '<unnamed>')) %}
-    {% endif %}
-  {% endfor %}
-  {% if projection == 'canonical' and enabled_mcp | length > 0 %}
-    {{ exceptions.raise_compiler_error("Built-in Cortex Agent Evaluations do not support MCP connectors in the canonical render: " ~ (enabled_mcp | join(', ')) ~ ". Use the native-eval projection.") }}
-  {% endif %}
 
   {% do cortex_eval__dataset_fqn(model_name) %}
 
@@ -212,7 +297,6 @@
     {% endfor %}
   {% endif %}
 
-  {% set render_label = 'native-eval projection' if projection == 'native_eval' else 'canonical render' %}
-  {% do log("Validated cortex eval model: " ~ model_name ~ " (" ~ render_label ~ ")", info=True) %}
+  {% do log("Validated cortex eval model: " ~ model_name ~ " (single deployed Agent)", info=True) %}
   {{ return(True) }}
 {% endmacro %}

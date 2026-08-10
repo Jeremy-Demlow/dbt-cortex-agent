@@ -2,8 +2,8 @@
 
 This independent dbt project is the release proof fixture for an adopter outside
 the package source tree. It contains one seed-backed table, one semantic view,
-one Agent exposure with an Analyst tool, and one three-row eval suite covering
-in-scope, out-of-scope, and negative behavior.
+one Agent exposure with an Analyst tool, and one optional three-row eval suite
+covering in-scope, out-of-scope, and negative behavior.
 
 ## Proof boundary
 
@@ -13,7 +13,7 @@ The default local path proves:
 - dbt parse and manifest-owned Agent/eval metadata;
 - semantic-view/eval compilation when adapter authentication is available;
 - package-qualified macros and generic eval coverage tests;
-- non-mutating canonical and native-eval rendering/execution plans;
+- non-mutating full-Agent rendering and optional evaluation plans;
 - installed CLI discovery against this consumer project.
 
 It does not prove live Agent create/alter/commit, aliases/grants, stage upload,
@@ -32,15 +32,18 @@ dbt-cortex-agent doctor --project-dir . --target sandbox --json
 dbt-cortex-agent manifest validate --project-dir . --target sandbox \
   --agent orders_assistant --json
 dbt-cortex-agent agent render --project-dir . --target sandbox \
-  --agent orders_assistant --projection canonical --json
-dbt-cortex-agent agent render --project-dir . --target sandbox \
-  --agent orders_assistant --projection native_eval --json
+  --agent orders_assistant --json
 dbt-cortex-agent agent deploy --project-dir . --target sandbox \
   --agent orders_assistant --allow-target sandbox \
   --allow-database AM_SKI_RESORT_DBT_FOCUS --json
 dbt-cortex-agent eval run --project-dir . --target sandbox \
   --agent orders_assistant --suite core --json
 ```
+
+The Agent-only proof stops after deploy preview and does not require the two
+files under `models/agents/orders_assistant/evals/`. The final `eval run` command
+is the Agent-plus-eval example; it targets the same physical Agent and does not
+deploy another one.
 
 No command above applies mutation or starts evaluation spend. `dbt compile` and
 model execution require a valid Snowflake profile; do not treat an offline parse

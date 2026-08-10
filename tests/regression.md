@@ -57,7 +57,7 @@
 ## REQ-007: v0.3.0 documentation overstated and omitted shipped behavior
 
 - Root cause: adopter docs implied init could bootstrap resources, omitted Snow CLI and native-eval deployment prerequisites, described skill upload as separate from canonical CLI deploy, and did not distinguish captured CLI output and safety gates from direct macro behavior; the integration fixture also documented a passing doctor path while checking in an empty database allowlist.
-- Fix summary: docs now describe the current v0.3.0 boundaries, artifact paths, and troubleshooting order, and the fixture explicitly allowlists only its documented sandbox database.
+- Fix summary: docs were corrected for the v0.3.0 release boundaries, artifact paths, and troubleshooting order, and the fixture explicitly allowlists only its documented sandbox database. This is historical verification superseded by the active v0.3.1 docs.
 - Verification: parser-backed docs tests assert scaffolding, skill-upload, native-eval, output, artifact-path, troubleshooting, and fixture-allowlist contracts.
 
 ## REQ-011: starter scaffolding could partially overwrite adopter projects
@@ -93,5 +93,41 @@
 ## REQ-012: immutable SHA package pins failed doctor version alignment
 
 - Root cause: doctor compared every dependency revision string directly to the semantic CLI version, so a full immutable Git SHA failed even when dbt installed package version 0.3.1 from that exact commit.
-- Fix summary: full 40-character Git SHAs defer semantic alignment to installed dbt package metadata; semantic version pins continue to require an exact direct match.
-- Verification: doctor tests cover a matching installed dbt package with an immutable SHA and retain the semantic-version mismatch regression.
+- Fix summary: full 40-character Git SHAs defer semantic alignment only to actual installed consumer dbt package metadata; package source-root metadata is not accepted as installation evidence, and semantic version pins continue to require an exact direct match.
+- Verification: doctor tests cover a matching installed dbt package, missing installed metadata, a branch revision, mismatched installed metadata, and matching/mismatched semantic revisions.
+
+## REQ-013: Agent lifecycle created evaluation-specific physical projections
+
+- Root cause: public Agent lifecycle APIs accepted canonical/native-eval projections, target naming appended a configurable `_EVAL` suffix, and native-eval deployment filtered the specification while bypassing skill upload and validation.
+- Fix summary: Agent render, deploy, smoke, grant, version, and alias paths now resolve one target FQN and always use the full specification; stable render artifacts use `spec.json`, while skills, MCP attachment, guards, and lifecycle semantics remain intact.
+- Verification: focused deploy/CLI/macro tests assert removed interfaces, one physical identity, stable artifacts, full skill orchestration, and fixed eval compatibility targeting; offline dbt parse confirms macro compilation without Snowflake mutation.
+
+## REQ-013: Evaluation evidence retained projection identity and accepted `_EVAL` history
+
+- Root cause: eval metadata, the signed plan, Python `EvalPlan`, candidates, baselines, and native result metadata retained projection fields after Agent lifecycle converged on one physical object; legacy migration also accepted the plan's former physical eval identity.
+- Fix summary: optional eval metadata now resolves the normal Agent FQN directly, signed plans and schema-v2 artifacts omit projection, applied runs prove Agent existence/DEFAULT before upload and fail on version drift, and `_EVAL` baseline identity is rejected as historical-only evidence.
+- Verification: focused eval/baseline/CLI/macro/schema/docs tests plus credential-free integration dbt parse; no Agent lifecycle macro, Snowflake mutation, paid evaluation, consumer edit, commit, or push.
+
+## REQ-013: Full-spec tool presence was mistaken for native evaluation coverage
+
+- Root cause: eval validation accepted every rendered tool name, while obsolete `evaluation_supported` metadata implied deploy-time filtering; this let expected-tool metadata overstate native coverage for skills, MCP, code execution, and other capability tools.
+- Fix summary: deployment always renders the full Agent independently of evaluation metadata; native `expected_tools` now resolve only to declared Analyst, Cortex Search, `web_search`, or generic custom tools, and general capability evidence preserves the five REQ-013 proof classifications without promoting attachment to invocation.
+- Verification: focused macro contracts cover supported custom/Search/web/Analyst names, fail-closed unsupported capability claims, evidence classifications, removed starter metadata, and render independence; focused eval/render tests and offline dbt parse run without consumer or Snowflake changes.
+
+## REQ-013: Active adoption guidance retained the superseded projection model
+
+- Root cause: starter naming, the project-local skill, and adopter/reference docs still taught canonical/native-eval deployment, `_EVAL` prerequisites, and projection-specific commands after lifecycle and evaluation code converged on one physical Agent.
+- Fix summary: the Orders suite model is optional and unsuffixed, guided/manual paths operate one Agent, active docs describe Agent-only and Agent-plus-eval adoption, and unpublished 0.3.1 install guidance uses a reviewed local checkout.
+- Verification: docs/project-skill/starter/init/CLI contracts, offline dbt parse, package build/Twine/wheel inventory, full tests where feasible, and hooks; historical references remain only as explicitly superseded evidence.
+
+## REQ-014: Installed-wheel smoke did not prove the adopter lifecycle
+
+- Root cause: distribution CI installed the wheel and checked help/version plus an init preview, but never resolved a consumer dbt package or exercised doctor, manifest, render, deploy preview, smoke preview, or optional eval planning from the installed CLI.
+- Fix summary: a deterministic external-workspace verifier now installs the exact wheel, constructs isolated Agent-only and Agent-plus-eval projects, executes the complete credential-free preview sequence, and asserts one unchanged physical Agent identity with no eval lifecycle action.
+- Verification: script unit tests, static package/release workflow contracts, both supported dbt lines in package CI, local installed-wheel execution, full tests, build/Twine/inventory, YAML parsing, and patch hygiene run without Snowflake or paid actions.
+
+## REQ-013/014: Empty Agent proof and verifier command safety gaps
+
+- Root cause: evaluation treated an empty `DESCRIBE AGENT` result as an Agent with no DEFAULT, while the installed-wheel command guard allowed any command containing `init` to carry `--apply`; package CI cleanup also used folded YAML that joined two cleanup commands incorrectly.
+- Fix summary: empty Agent descriptions now fail explicitly before stage upload or START, installed-wheel `--apply` is restricted to the exact `dbt-cortex-agent init` command and direct Snow CLI execution is rejected, and CI cleanup is one valid residue-removal command.
+- Verification: focused eval and installed-wheel safety tests cover empty descriptions, non-CLI `init --apply`, direct `snow`, and mutation-command rejection; workflow YAML parsing and the full verification matrix cover the corrected cleanup step.

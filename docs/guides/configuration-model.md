@@ -3,7 +3,7 @@
 dbt metadata is authoritative. The CLI runs `dbt parse` and consumes the resolved
 `target/manifest.json`; it does not parse source YAML into a second model.
 
-## Agent exposure
+## Agent-only example
 
 Store Agent metadata at `exposures[].config.meta.cortex_agent`:
 
@@ -41,21 +41,23 @@ exposures:
 must resolve uniquely to a `semantic_view` relation. See the full
 [Agent metadata reference](../reference/agent-metadata.md).
 
-## Evaluation model
+This exposure is sufficient for validation, rendering, deployment, versioning,
+grants, and smoke. An evaluation model is not required.
+
+## Agent-plus-eval example
 
 Store suite metadata at `models[].config.meta.cortex_eval` on a table model:
 
 ```yaml
 version: 2
 models:
-  - name: eval_orders_assistant__core
+  - name: orders_assistant_core
     config:
       materialized: table
       meta:
         cortex_eval:
           name: core
           agent: orders_assistant
-          projection: native_eval
           metrics: [answer_correctness, tool_selection_accuracy]
           thresholds:
             answer_correctness: 0.8
@@ -68,7 +70,8 @@ models:
               ground_truth_ref: revenue_last_month
 ```
 
-The table must expose `INPUT_QUERY` and one `OUTPUT` VARIANT containing
+The optional table targets the same `orders_assistant` exposure and never creates
+or deploys another Agent. It must expose `INPUT_QUERY` and one `OUTPUT` VARIANT containing
 `ground_truth_output`, `ground_truth_invocations`, and stable custom criteria.
 See [eval metadata](../reference/eval-metadata.md).
 
@@ -90,7 +93,7 @@ The deploy target defaults internally to `dbt_focus` for backward compatibility,
 but adoption must set it explicitly. The allowed-target list defaults to the
 deploy target; the allowed-database list defaults empty and blocks mutation.
 Schemas and the skill stage name are conventions, not grants or object creation.
-Native evaluation uses `<target.database>.<cortex_agent_schema>.EVAL_CONFIG_STAGE`.
+Built-in evaluation uses `<target.database>.<cortex_agent_schema>.EVAL_CONFIG_STAGE`.
 See
 [variables](../reference/variables.md).
 

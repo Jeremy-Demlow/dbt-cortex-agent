@@ -50,14 +50,14 @@
   {{ return('TIMEOUT') }}
 {% endmacro %}
 
-{% macro cortex_eval__results(model_name, run_name, projection='native_eval') %}
+{% macro cortex_eval__results(model_name, run_name) %}
   {# Materialize the run's metric rows into a real EVAL table, stamped with a
      run_metadata VARIANT (evaluated DEFAULT version, alias map, spec hash,
      dataset FQN, account, git sha, invocation) for auditability. #}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
   {% set exposure = cortex_agent__get_agent(eval_meta.get('agent')) %}
   {% set agent = exposure.meta.get('cortex_agent', {}) %}
-  {% set agent_fqn = cortex_agent__target_agent_fqn(agent, projection) %}
+  {% set agent_fqn = cortex_agent__target_agent_fqn(agent) %}
   {% set parts = agent_fqn.split('.') %}
   {% set aliases = cortex_agent__describe_aliases(agent_fqn) %}
   {% set evaluated_version = aliases.get('DEFAULT', '') %}
@@ -79,7 +79,6 @@
     OBJECT_CONSTRUCT(
       'run_name', '{{ q_run_name }}',
       'agent_fqn', '{{ agent_fqn }}',
-      'projection', '{{ projection }}',
       'evaluated_version', '{{ evaluated_version }}',
       'aliases', PARSE_JSON('{{ tojson(aliases) }}'),
       'spec_md5', '{{ spec_hash }}',
@@ -164,7 +163,6 @@
      Fully dbt-native; run_eval.py stays the Python parity path for local-dataset
      YAML configs. Sandbox-guarded; dry_run previews without mutating. #}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
-  {% set projection = eval_meta.get('projection', 'native_eval') %}
   {% set invocation_slug = invocation_id | replace('-', '') %}
   {% set eval_run_name = run_name or (eval_meta.get('agent') ~ '_' ~ eval_meta.get('name') ~ '_eval_' ~ invocation_slug[:12]) %}
   {% set config_url = '@' ~ cortex_eval__default_stage_fqn() ~ '/' ~ cortex_eval__config_filename(model_name) %}
@@ -183,7 +181,7 @@
   {% if status != 'COMPLETED' %}
     {{ exceptions.raise_compiler_error("Eval run " ~ eval_run_name ~ " did not complete: " ~ status) }}
   {% endif %}
-  {% set results_fqn = cortex_eval__results(model_name, eval_run_name, projection) %}
+  {% set results_fqn = cortex_eval__results(model_name, eval_run_name) %}
   {% do cortex_eval__gate(model_name, results_fqn) %}
   {% do log("Eval run complete: " ~ eval_run_name ~ " -> " ~ results_fqn, info=True) %}
   {{ return(results_fqn) }}

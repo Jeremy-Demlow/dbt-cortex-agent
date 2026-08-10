@@ -12,8 +12,9 @@ Use synthetic fixtures and a sanitized reproduction. Remove credentials, custome
 account identifiers, private object names, query results, and private URLs. Report suspected
 vulnerabilities through [SECURITY.md](SECURITY.md), not an issue or pull request.
 
-For package changes, run `dbt deps`, `dbt parse`, `dbt compile`, contract tests, and canonical
-plus native-eval render/dry-run checks as applicable. Do not hand-edit generated golden files.
+For package changes, run `dbt deps`, `dbt parse`, `dbt compile`, contract tests,
+full-Agent render/dry-run checks, and optional eval-plan checks as applicable. Do
+not hand-edit generated golden files.
 
 Maintainers review contributions for scope, correctness, security, licensing, and test evidence
 before merging. Follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).

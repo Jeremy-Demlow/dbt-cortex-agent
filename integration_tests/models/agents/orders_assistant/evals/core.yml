@@ -1,8 +1,8 @@
 version: 2
 
 models:
-  - name: eval_orders_assistant__core
-    description: Minimal native-eval dataset for Orders Assistant.
+  - name: orders_assistant_core
+    description: Minimal evaluation dataset for Orders Assistant.
     config:
       materialized: table
       schema: eval
@@ -10,7 +10,6 @@ models:
         cortex_eval:
           name: core
           agent: orders_assistant
-          projection: native_eval
           description: Core routing, correctness, and boundary checks.
           metrics:
             - answer_correctness

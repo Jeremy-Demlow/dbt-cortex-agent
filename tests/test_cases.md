@@ -2,7 +2,7 @@
 
 ## REQ-002: v0.3.0 identity and Python ownership
 
-1. Verify package metadata, runtime version, lock data, bootstrap default, citation, and current installation docs identify v0.3.0 while the v0.2.0 changelog remains historical.
+1. Verify the historical v0.3.0 identity and ownership boundary remains the foundation of the current package while active release surfaces identify v0.3.1.
 2. Verify Python deploy and lifecycle commands invoke the public dbt Agent macros with the expected arguments.
 3. Scan Python source and fail if mutating `CREATE AGENT`, `ALTER AGENT`, or `DROP AGENT` DDL appears.
 4. Verify the CLI imports internal eval modules successfully while `dbt_cortex_agent.eval` exposes no lifecycle convenience API.
@@ -60,17 +60,17 @@
 
 ## REQ-007: complete adopter documentation
 
-1. Verify the root README contains product identity, two v0.3.0 install surfaces, compatibility, non-mutating quickstart, controlled deploy, CLI-versus-macro guidance, lifecycle/eval overview, docs map, limitations, and policies.
+1. Verify the root README contains product identity, two current install surfaces, compatibility, non-mutating quickstart, controlled deploy, CLI-versus-macro guidance, lifecycle/eval overview, docs map, limitations, and policies.
 2. Verify every shipped command and command-specific option appears in the CLI reference and mutation/runtime/spend commands are labeled from parser help.
 3. Verify all documented local Markdown links resolve and adopter docs contain no copied-tooling, repository-only Make, embedded-package, or contradictory release-status language.
-4. Verify package, README, installation, compatibility, CLI, and upgrade surfaces identify v0.3.0 while upgrade history may identify v0.2.0.
+4. Verify package, README, installation, compatibility, CLI, and upgrade surfaces identify v0.3.1; older versions appear only in explicitly historical compatibility or release context.
 5. Verify YAML exposure/eval examples parse and preserve the manifest-owned metadata locations and required fields.
 6. Verify quickstart CLI examples parse through the shipped parser and contain no `--apply`, runtime smoke, baseline write, or paid evaluation execution.
-7. Verify evaluation docs state that the CLI requires a materialized eval table, stage, and deployed native-eval Agent and does not create those prerequisites.
+7. Verify evaluation docs state that the CLI requires a materialized eval table, stage, and normally deployed Agent and does not create or deploy those prerequisites.
 8. Run docs tests, the full Python suite, package build, and integration-consumer dbt parse without live mutation, runtime invocation, or paid evaluation.
 9. Verify README, installation, upgrade, init, package metadata, and test fixtures use the public HTTPS repository/tag and contain no private-index, private-Git, or SSH installation wording.
-10. Verify the primary post-publication CLI install is pinned `pipx install 'dbt-cortex-agent[runtime]==0.3.0'`, a pip equivalent is present, the pre-publication source fallback is commit-pinned and access-qualified, and dbt remains an HTTPS Git dependency because `dbt deps` does not install from PyPI.
-11. Verify the docs explain that PyPI `0.3.0` and Git tag `v0.3.0` are one immutable release and that `doctor` checks CLI, declared dependency, and installed dbt package alignment.
+10. Verify active pre-publication CLI installation uses a reviewed clean local checkout, documents the future pinned PyPI command only as a release contract, and keeps dbt as an HTTPS Git dependency because `dbt deps` does not install from PyPI.
+11. Verify the docs explain that PyPI `0.3.1` and Git tag `v0.3.1` are one immutable release and that `doctor` checks CLI, declared dependency, and installed consumer dbt package alignment.
 
 ## REQ-008: standalone CI and release verification
 
@@ -78,7 +78,7 @@
 2. Verify workflow text contains no secret interpolation, Snowflake credential variables, private-key setup, `--apply`, live runtime smoke, baseline acceptance, or paid evaluation.
 3. Verify the Python matrix exactly covers 3.10, 3.11, 3.12, and 3.13 and package metadata declares the same range.
 4. Verify the dbt matrix pins lower-bound dbt-core 1.10 with dbt-snowflake 1.10.3 and authority dbt-core 1.11 with dbt-snowflake 1.11.4, consistent with `dbt_project.yml`; dbt 1.9 is excluded by integration-fixture evidence.
-5. Verify policy/docs/project health, full tests, byte-compilation, dbt dependency/parse, macro determinism, canonical/native-eval fixture preview, eval-plan preview, and dry-run lifecycle are required jobs or steps.
+5. Verify policy/docs/project health, full tests, byte-compilation, dbt dependency/parse, macro determinism, single-Agent fixture preview, optional eval-plan preview, and dry-run lifecycle are required jobs or steps.
 6. Verify version alignment, pyproject/dbt consistency, package inventory, generated-residue, and secret-scan guards are present and tested.
 7. Build sdist and wheel, run Twine checks, inspect wheel inventory, and install the wheel into a clean environment outside the checkout.
 8. Exercise installed CLI help/version and deterministic consumer fixture previews without a connection, mutation, runtime invocation, or spend.
@@ -101,30 +101,29 @@
 3. Verify only the publish job has `id-token: write`, uses the protected `pypi` environment, downloads the verified artifact, and invokes the version-pinned PyPI publish action.
 4. Verify manual dispatch cannot reach publication and a release tag must begin with `v` before the publish job runs.
 5. Verify release workflow and documentation contain no PyPI API token, password, username, or secret interpolation contract.
-6. Simulate a clean tagged v0.3.0 repository and verify preflight success; verify dirty, malformed/missing tag, mismatched Python/dbt versions, and unreleased/undated changelog states fail closed.
+6. Simulate a clean tagged v0.3.1 repository and verify preflight success; verify dirty, malformed/missing tag, mismatched Python/dbt versions, and unreleased/undated changelog states fail closed.
 7. Verify release documentation covers owner setup, GitHub environment protection, PyPI trusted-publisher fields, release checklist/tag ordering, build-only validation, and post-publication checks.
-8. Run YAML parsing, focused/full tests, build, Twine, wheel inventory, and v0.3.0 preflight simulation without commit, tag, release, publication, visibility change, or Snowflake mutation.
+8. Run YAML parsing, focused/full tests, build, Twine, wheel inventory, and v0.3.1 preflight simulation without commit, tag, release, publication, visibility change, or Snowflake mutation.
 
 ## REQ-011: additive v0.3.1 tutorial product readiness
 
-1. Verify README and adopter docs use consistent v0.3.1 identity, parseable CLI examples, package-owned Orders names/paths, explicit projection and smoke semantics, and accurate preview/apply/spend boundaries.
+1. Verify README and adopter docs use consistent v0.3.1 identity, parseable CLI examples, package-owned Orders names/paths, one-Agent smoke semantics, and accurate preview/apply/spend boundaries.
 2. Generate the Orders starter twice from the same package version and explicit inputs in clean destinations; verify identical tracked content and manifest-owned Agent/eval metadata, synthetic-only data, no connection attempt, and fail-closed preservation unless overwrite is explicit.
 3. Verify the starter surface exposes only the curated Orders tutorial and contains no generic wizard prompts, arbitrary-domain/schema inference, open-ended instruction generation, or reusable custom-starter framework.
-4. Verify Agent render and deploy accept only `canonical` and `native_eval`, pass the selected projection unchanged to dbt macros, report its logical and physical identity, and preserve byte-equivalent v0.3.0 canonical behavior when projection is omitted.
-5. Verify general Agent smoke preview resolves logical Agent, projection, physical Agent, request, and safety context without constructing a connector and works for Agents with no skills.
+4. Verify Agent render and deploy expose no projection selector, report one logical and physical identity, and render the complete Agent specification.
+5. Verify general Agent smoke preview resolves logical Agent, physical Agent, request, and safety context without constructing a connector and works for Agents with no skills or eval model.
 6. Verify applied general Agent smoke fails closed without the runtime extra, explicit connection, matching dbt-resolved database, target/database allowlists, and explicit apply; verify controlled human/JSON success and failure contracts when those inputs are faked.
-7. Verify existing exposure/eval metadata, macro defaults, lifecycle/versioning behavior, artifact schemas, canonical outputs, and skill smoke remain compatible with v0.3.0 fixtures.
+7. Verify existing exposure/eval metadata, lifecycle/versioning behavior, artifact schemas, full-spec outputs, and skill smoke remain compatible except for the explicitly superseded projection contract.
 8. Verify starter, render, deploy, and smoke default paths contain no connection, upload, Snowflake DDL, commit, alias, grant, invocation, eval, baseline, or spend side effect.
-9. Run the package completion gate: version/docs alignment; starter regeneration; docs/policy and focused projection/deploy/smoke/compatibility tests; full Python tests; supported dbt dependency resolution and offline parse; canonical/native-eval render parity; build, Twine, wheel inventory, clean installed-wheel smoke, and residue checks without credentials or Snowflake calls.
+9. Run the package completion gate: version/docs alignment; starter regeneration; docs/policy and focused single-Agent deploy/smoke/compatibility tests; full Python tests; supported dbt dependency resolution and offline parse; full-spec render determinism; build, Twine, wheel inventory, clean installed-wheel smoke, and residue checks without credentials or Snowflake calls.
 10. Verify no companion Cortex Code/catalog tutorial skill is created, published, installed, or required before the package completion gate passes.
 11. For the deterministic Orders starter slice, verify exact generated paths, structured preview/apply
     actions, `.dbtignore` append/preservation, semantic-view dependency addition/preservation,
     identical-file no-ops, full collision validation before writes, and fail-closed differing files
     without force or a generic wizard.
-12. For the projection/render/deploy slice, verify CLI and macro projection rejection/defaults,
-    exact macro argument forwarding, one strict marked render envelope, actual spec exposure,
-    deterministic contained artifacts, canonical skill orchestration compatibility, and native-eval
-    skill-plan/upload omission with every existing apply safety gate retained.
+12. For the single-Agent render/deploy slice, verify CLI and macros reject projection arguments,
+    use one strict marked render envelope, expose the actual full specification, write deterministic
+    contained artifacts, and preserve skill orchestration plus every existing apply safety gate.
 13. For the general Agent smoke slice, verify required single logical Agent and nonblank question,
     optional exact expected-tool assertion, validated physical override and endpoint forwarding,
     stable structured preview/apply output, null preview result fields, and no preview invocation.
@@ -132,6 +131,34 @@
     manifest-database match, CLI target/database allowlists, and schema checks before reusing the
     existing invocation/SSE client; controlled assertion and runtime failures exit 2, and skill
     smoke behavior remains unchanged.
+
+## REQ-013: single physical Agent evaluation
+
+1. Verify an enabled exposure without evaluation metadata remains a valid normal deployment input and evaluation metadata is optional.
+2. Verify deployment and every optional evaluation suite resolve the same single physical Agent FQN for one enabled exposure and target.
+3. Verify evaluation cannot create, deploy, clone, suffix, replace, or otherwise mutate an Agent and fails closed when the manifest-owned deployed identity is not proven.
+4. Verify adding, changing, disabling, or removing evaluation metadata does not change the deployed Agent specification or initiate lifecycle work.
+5. Verify REQ-005, REQ-011, and REQ-012 retain historical facts while explicitly marking their distinct physical canonical/native-eval assumptions as superseded by REQ-013.
+6. Verify capability evidence uses only `attached`, `invoked`, `completed_with_attachment`, `absent`, or `indeterminate`, and completion with an attachment is never promoted to invocation without trace or metric proof.
+7. Verify the requirement records the supplied 7-record and 16-record zero-error probes, attached capabilities, absent `code_execution`, and indeterminate MCP evidence without claiming this slice reran Snowflake.
+8. Verify historical `_EVAL` Agent histories remain auditable but cannot serve as candidate or accepted baselines for the single-FQN contract.
+9. Verify public Agent render/deploy/smoke/grant/version/alias APIs and macros expose no projection selector, produce one full-spec target FQN, and retain skill, MCP, mutation, version, alias, and grant behavior.
+10. Verify render artifacts use `renders/<target>/<agent>/spec.json`, `_EVAL` suffix generation and `cortex_agent_eval_suffix` are absent, and transitional eval compilation resolves the same FQN with only a fixed `single_agent` compatibility marker.
+11. Run focused Agent/deploy/CLI/macro tests and offline dbt parse; do not run Snowflake, deployment, paid evaluation, consumer edits, commit, or push.
+12. Verify eval metadata and the signed execution-plan identity contain no projection field, while optional suites resolve the same normal Agent FQN used by deployment.
+13. Verify eval run proves Agent existence and DEFAULT version before config upload/START, invokes no Agent lifecycle macro, and uses the same FQN for native config, results, and provenance.
+14. Verify schema-v2 candidate and baseline artifacts contain signed plan identity and pre/post DEFAULT provenance without projection, and version drift fails closed.
+15. Verify legacy migration rejects a suffixed `_EVAL` physical identity rather than silently converting it to a current single-Agent baseline.
+16. Verify focused evaluation documentation examples are checked against starter metadata, plan fields, and artifact schema fields rather than stale projection prose.
+17. Verify general capability evidence uses only the five REQ-013 classifications and never derives `invoked` from attachment or completion alone.
+18. Verify native `expected_tools` accepts declared Analyst, Cortex Search, `web_search`, and generic custom tool names while rejecting skills, MCP, `code_execution`, other capability tools, and undeclared names.
+19. Verify `evaluation_supported` declarations are removed from focused metadata/reference examples and cannot alter rendered specification, target identity, or deployment behavior.
+20. Verify the packaged Orders starter and integration mirror contain one Agent exposure and an optional unsuffixed `orders_assistant_core` eval model that targets that exposure.
+21. Verify removing the optional Orders eval SQL/YAML still leaves an Agent-only fixture whose init, parse, manifest validation, render, and deploy preview path is documented and valid.
+22. Verify the project skill never proposes a second Agent or projection-specific deployment, keeps evaluation authoring optional, and preserves the four existing approval stops and resume conditions.
+23. Verify active README, upgrade, changelog release scope, getting-started, concept, lifecycle, evaluation, capability, CLI, macro, variable, metadata, compatibility, troubleshooting, and integration docs contain no active physical projection or `_EVAL` prerequisite claims.
+24. Verify active installation text does not claim an unpublished PyPI artifact is available; historical requirement/regression references are allowed only when explicitly superseded.
+25. Run focused docs/project-skill/starter/init/CLI tests, full package tests if feasible, offline dbt parse, build/Twine/wheel inventory, and hooks without Snowflake, spend, commit, or push.
 
 ## REQ-012: guided Cortex Code adoption skill
 
@@ -144,4 +171,17 @@
 7. Evaluate deterministic positive, near-miss, and negative prompt corpora against the frontmatter trigger contract; positive prompts select the skill and near-miss/negative prompts do not.
 8. Verify README, adopter docs, compatibility, and changelog describe the project-local, non-published, script-free 0.3.1 guidance without implying live proof.
 9. Run focused/full tests, build, wheel inventory, offline integration dependency/parse, and non-mutating starter/render/deploy/eval previews without Snowflake, spend, baseline movement, commit, or push.
-10. Verify doctor accepts a full immutable Git SHA only when the installed dbt package metadata matches the CLI version, while semantic version mismatches still fail.
+10. Verify doctor accepts a full immutable Git SHA only when actual installed consumer dbt package metadata matches the CLI version; reject missing installed metadata, branch revisions, mismatched installed metadata, and semantic version mismatches while preserving semantic direct-match.
+
+## REQ-014: installed-wheel single-Agent verifier
+
+1. Verify the script creates a venv outside the checkout, installs the supplied wheel plus selected dbt pins, and proves the imported CLI module is not sourced from the checkout.
+2. Verify two isolated consumer projects use a copied dbt package and installed starter data, with no project or dependency path into the checkout.
+3. Verify Agent-only deps/parse/doctor/manifest/render/deploy-preview/smoke-preview succeeds with zero enabled evals and no eval command or macro.
+4. Verify Agent-plus-eval completes the same path plus eval-plan preview and reports one identical Agent FQN across render, deploy, smoke, and eval evidence.
+5. Verify both paths have the `single_agent` lifecycle marker, no projection field, no `_EVAL` identity, and identical rendered specifications.
+6. Verify eval preview runs no lifecycle macro and does not change the rendered specification artifact; all commands omit connection, `--apply`, runtime, baseline, and paid actions.
+7. Verify script unit tests fail closed for command failures, projection fields, FQN drift, lifecycle calls during eval, changed render artifacts, and eval metadata in the Agent-only path.
+8. Verify package CI keeps Python 3.10-3.13 and dbt 1.10/1.11 matrices and runs the installed-wheel verifier in both dbt matrix entries.
+9. Verify release workflow publication triggers, permissions, protected environment, and OIDC-only publish job remain unchanged and safe.
+10. Run the local verifier, focused/full tests, build, Twine, wheel inventory, workflow YAML parse, and patch hygiene without Snowflake, consumer edits, commit, or push.

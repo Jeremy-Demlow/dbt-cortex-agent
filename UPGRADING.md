@@ -1,12 +1,14 @@
 # Upgrade to v0.3.1
 
-Version 0.3.1 adds the curated Orders starter, projection-aware render/deploy,
-and general Agent smoke to the stable v0.3.0 manifest-owned contract. Upgrade
+Version 0.3.1 is one release scope: the curated Orders starter, one physical
+Agent with optional same-Agent evaluation, general Agent smoke, the guided
+project-local Cortex Code skill, and immutable-SHA doctor validation. Upgrade
 both install surfaces together.
 
 ## Replace dependencies
 
-Pin the dbt package to `v0.3.1` and install the Python distribution at `0.3.1`:
+Pin the dbt package to `v0.3.1`. Version 0.3.1 is not published to PyPI yet, so
+install the reviewed Python distribution from a clean local checkout:
 
 ```yaml
 packages:
@@ -14,27 +16,34 @@ packages:
     revision: v0.3.1
 ```
 
-After v0.3.1 is published to PyPI:
-
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.3.1'
+pipx install '/absolute/path/to/dbt-cortex-agent[runtime]'
 # Managed environment equivalent:
-python -m pip install --upgrade 'dbt-cortex-agent[runtime]==0.3.1'
+python -m pip install --upgrade '/absolute/path/to/dbt-cortex-agent[runtime]'
 dbt deps
 ```
 
-Before publication, release operators can install the reviewed candidate from a
-clean local checkout with
-`pipx install '/absolute/path/to/dbt-cortex-agent[runtime]'`.
 dbt remains a separate HTTPS Git dependency because `dbt deps` does not install
 packages from PyPI. Public adopters need the repository and `v0.3.1` tag to be
-published before that dependency resolves. PyPI `0.3.1` and Git tag `v0.3.1` are the same immutable
+published before that dependency resolves. Future PyPI `0.3.1` and Git tag `v0.3.1` will be the same immutable
 release; run `dbt-cortex-agent doctor --project-dir . --json` after `dbt deps` to
 verify the CLI, declaration, and installed dbt package align.
+
+For immutable commit pins, doctor requires the installed consumer package at
+`dbt_packages/dbt_cortex_agent/dbt_project.yml` to report version `0.3.1`.
+The package source checkout's root `dbt_project.yml` is not accepted as proof
+that the consumer ran `dbt deps`. Branch revisions and mismatched installed
+metadata fail closed; semantic `v0.3.1` pins continue to match directly.
 
 Replace former `dbt-cortex-agent[invoke]` and `dbt-cortex-agent[eval]` installs
 with `dbt-cortex-agent[runtime]==0.3.1`. Remove local lifecycle/eval scripts and
 repository-specific Make wrappers; use the installed CLI commands.
+
+The repository also ships the script-free
+[`dbt-cortex-agent-project`](.cortex/skills/dbt-cortex-agent-project/SKILL.md)
+skill for Cortex Code-guided adoption. It uses the same stable CLI and metadata
+contracts and stops independently before local writes, Snowflake operations,
+paid evaluation, and baseline movement.
 
 ## Make safety policy explicit
 
@@ -60,7 +69,7 @@ dbt-cortex-agent agent render --project-dir . --json
 dbt-cortex-agent agent deploy --project-dir . --allow-target sandbox --allow-database ANALYTICS_DEV --json
 ```
 
-Run consumer tests and review canonical/native-eval render differences. Any
+Run consumer tests and review the one full rendered specification. Any
 rendered-spec change can mint a version when later applied.
 
 ## Migrate evaluation evidence
@@ -80,7 +89,7 @@ The current dbt plan supplies all identity and policy fields; legacy summary and
 run provenance are retained. Add `--apply` only after review. Existing targets
 also require `--force`; no overwrite is implicit. Unknown shapes or metric-set
 mismatches fail closed. Alternatively, produce a new paid candidate only after
-the native-eval Agent, eval table, and stage prerequisites exist; gate it, review
+the normal Agent, eval table, and stage prerequisites exist; gate it, review
 policy/provenance, then accept it explicitly if approved.
 
 ## Deploy deliberately

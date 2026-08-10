@@ -3,7 +3,7 @@
 `dbt_cortex_agent` 0.3.1 has two shipped surfaces and one metadata authority:
 
 - **dbt package:** Agent/eval contracts, graph resolution, deterministic renders,
-  lifecycle DDL, versioning, grants, and native evaluation macros;
+  lifecycle DDL, versioning, grants, and built-in evaluation macros;
 - **Python CLI:** fresh-manifest coordination, local skill files/Snow CLI,
   connector-backed runtime/evaluation clients, process exits/JSON, and artifacts;
 - **consumer project:** exposures, semantic/eval models, skills, target policy,
@@ -30,18 +30,22 @@ AUTHORING [consumer dbt project]
            |                 select/coordinate/artifact
            +-------------+--------------+
                          |
-        +----------------+-------------------+
-        |                                    |
-        v                                    v
- CANONICAL LIFECYCLE                  NATIVE EVALUATION
- skill plan/upload                    native_eval render/deploy
- canonical render/deploy              materialize/test eval table
- spec + skill hashes                  render one execution plan
- LIVE -> VERSION$N -> alias           start/poll paid evaluation
- grants/promotion/rollback            candidate -> gate -> baseline
-        |                                    |
-        v                                    v
- separate live skill smoke            durable local evidence
+                         v
+                  ONE AGENT LIFECYCLE
+                  skill plan/upload
+                  full-spec render/deploy
+                  spec + skill hashes
+                  LIVE -> VERSION$N -> alias
+                  grants/promotion/rollback
+                         |
+              +----------+-----------+
+              |                      |
+              v                      v
+       runtime/smoke proof      OPTIONAL EVALUATION
+                               materialize/test eval table
+                               render one execution plan
+                               start/poll paid evaluation
+                               candidate -> gate -> baseline
 ```
 
 ## Manifest ownership
@@ -54,9 +58,9 @@ dependencies, physical Agent names, eval tables, and skill declarations aligned.
 `--no-parse` exists only for controlled fixtures with a deliberately supplied
 manifest. It is not an operational performance switch.
 
-## Canonical lifecycle
+## Agent lifecycle
 
-The installed CLI and public macros reach the same canonical deploy macro, but
+The installed CLI and public macros reach the same deploy macro, but
 their orchestration safety differs. Applied CLI deploy plans and uploads declared
 local skills first, then delegates with fresh-manifest, explicit-connection,
 resolved-database, and CLI allowlist gates. A direct macro call performs none of
@@ -68,28 +72,26 @@ version. Alias movement, grants, MCP attachment, and smoke are explicit concerns
 The CLI does not implement Agent DDL. It delegates lifecycle changes to public
 dbt macros with selected Agents and explicit dry-run/apply arguments. Render
 parses one dbt-owned marked payload and saves only the returned specification at
-`target/dbt_cortex_agent/renders/<target>/<agent>/<projection>.json`.
+`target/dbt_cortex_agent/renders/<target>/<agent>/spec.json`.
 
-## Native evaluation
+## Optional evaluation
 
-The `native_eval` projection derives a separate evaluator-compatible Agent from
-the same exposure. It uses the configured suffix (default `_EVAL`), excludes
-skills and MCP connectors, and excludes tools/code execution explicitly marked
-unsupported while retaining supported instructions, tools, model, and budget.
-
-The CLI's `eval run` first consumes one offline `cortex_eval__execution_plan`
+Evaluation metadata is optional and resolves the same target-selected physical
+Agent as deployment. It does not filter the specification or create, deploy,
+clone, or suffix an Agent. The CLI's `eval run` first consumes one offline
+`cortex_eval__execution_plan`
 containing Agent/table/stage identity, native config, metrics, policy, ordered
-refs, target context, and suite signature. Paid apply assumes the native-eval
-Agent and materialized eval table already exist; it creates/uses the config stage,
+refs, target context, and suite signature. Paid apply assumes the normal Agent
+and materialized eval table already exist; it creates/uses the config stage,
 starts/polls the evaluation, and writes provenance-bound candidate JSON. The dbt
-`cortex_eval__run` macro is a separate on-demand native loop without local
+`cortex_eval__run` macro is a separate on-demand built-in loop without local
 accepted-baseline artifacts.
 
 ## CI proof order
 
 1. PR: dependencies, parse, tests, doctor, manifest validation, deterministic
    renders, dry-run deploy/upload, and eval plan—no mutation or spend.
-2. Sandbox: approved skill upload, canonical/native-eval deploy, eval table
+2. Sandbox: approved skill upload, one Agent deploy, optional eval table
    materialization/tests, grants, and optional live smoke.
 3. Paid eval: approved `eval run --apply`, candidate gate, artifact retention.
 4. Human policy: separately approve baseline acceptance or production alias move.
@@ -99,7 +101,7 @@ accepted-baseline artifacts.
 The package-local [`integration_tests`](../../integration_tests/README.md)
 consumer proves dependency installation, dbt parsing, semantic/eval compilation
 where a profile is available, manifest-owned metadata, package-qualified tests,
-and deterministic canonical/native-eval plans.
+and deterministic Agent/eval plans.
 
 It does not prove account privileges, live Agent DDL/versioning, stage upload,
 runtime skill selection, MCP attachment, or paid Agent Evaluation unless those

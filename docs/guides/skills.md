@@ -1,7 +1,7 @@
 # Skills
 
 Skills are declared under `capabilities.skills`, discovered through the dbt
-manifest, and included only in the canonical Agent projection.
+manifest, and included in the one full Agent specification.
 
 ```yaml
 capabilities:
@@ -38,7 +38,7 @@ explicit connection/database, both allowlists, and `--apply`. The CLI validates
 the complete plan, deduplicates shared stage paths, and invokes Snow CLI only
 after planning succeeds. A failure prevents subsequent deployment.
 
-Canonical `agent deploy --apply` performs this same declared-skill planning and
+`agent deploy --apply` performs this same declared-skill planning and
 upload implicitly before invoking the deploy macro, so a separate upload command
 is optional. The macro then independently checks that each declared stage-backed
 skill contains `SKILL.md` and includes staged file state in the idempotency hash.

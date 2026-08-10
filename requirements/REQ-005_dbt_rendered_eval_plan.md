@@ -53,6 +53,10 @@ Evaluation evidence is reproducibly tied to one dbt-validated execution plan and
 
 ## Notes
 
+- Superseded physical-identity assumption (2026-08-10): REQ-013 supersedes this requirement's use
+  of a distinct physical evaluation Agent as a future contract. The execution-plan, evidence,
+  provenance, and baseline-policy facts remain historical requirements, but future evaluation plans
+  must identify the enabled exposure's single target-resolved Agent FQN.
 - Objective lever: make dbt's validated execution plan the only metadata authority consumed by Python.
 - Data proof: the integration consumer already declares ordered `ground_truth_ref` values and all required metric, threshold, target, dataset, and Agent metadata.
 - Assembly line: fresh parse -> dbt plan render -> Python plan validation -> table validation -> pre-start provenance -> start/poll/retry/fetch -> post provenance -> artifact -> baseline-owned compare/gate.

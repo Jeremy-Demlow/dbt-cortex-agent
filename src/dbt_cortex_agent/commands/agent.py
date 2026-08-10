@@ -5,7 +5,7 @@ import json
 
 from ..config import Config
 from ..deploy import deploy_agents, lifecycle_macro, render_agents
-from ..identifiers import fqn, identifier, version
+from ..identifiers import identifier, version
 from ..invoke import invoke_agent
 from ..manifest import assert_config_database, physical_agent_name, select_agents
 from ..skills import assert_apply_safety
@@ -27,12 +27,10 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
     commands = parser.add_subparsers(dest="agent_command", required=True)
     render = commands.add_parser("render", parents=[shared], help="render Agent specifications")
     render.add_argument("--agent", action="append", dest="agents", help="logical Agent name; repeatable")
-    _add_projection(render)
     render.set_defaults(handler=handle)
 
     deploy = commands.add_parser("deploy", parents=[shared], help="dry-run or deploy Agents [MUTATION with --apply]")
     deploy.add_argument("--agent", action="append", dest="agents", help="logical Agent name; repeatable")
-    _add_projection(deploy)
     deploy.add_argument("--alias", help="alias assigned by the deploy macro")
     _add_apply(deploy)
     deploy.set_defaults(handler=handle)
@@ -44,7 +42,6 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
     )
     smoke.add_argument("--agent", required=True, help="logical Agent name")
     smoke.add_argument("--question", required=True, help="question sent to the Agent")
-    _add_projection(smoke)
     smoke.add_argument("--expect-tool", help="exact tool name required in the response")
     smoke.add_argument("--agent-object", help="physical Agent override")
     smoke.add_argument("--endpoint", help="HTTPS Snowflake Agent endpoint override")
@@ -77,15 +74,6 @@ def _add_apply(parser: argparse.ArgumentParser) -> None:
     add_allowlists(parser)
 
 
-def _add_projection(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--projection",
-        choices=("canonical", "native_eval"),
-        default="canonical",
-        help="Agent projection; default: canonical",
-    )
-
-
 def _nonblank(value: str | None, option: str) -> str:
     if value is None or not value.strip():
         raise ValueError(f"{option} must be nonblank")
@@ -101,14 +89,8 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
     selected = select_agents(manifest, [logical_agent])[0]
     if args.agent_object is not None:
         agent_object = identifier(args.agent_object, "Agent object override")
-    elif args.projection == "canonical":
-        agent_object = physical_agent_name(selected, config.target)
     else:
-        rendered = render_agents(config, [logical_agent], projection=args.projection).renders[0]
-        agent_object = identifier(
-            fqn(rendered["physical_agent"], "rendered physical Agent").rsplit(".", 1)[1],
-            "rendered Agent object",
-        )
+        agent_object = physical_agent_name(selected, config.target)
     response = None
     passed = None
     if args.apply:
@@ -136,7 +118,6 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
         "command": "agent smoke",
         "applied": bool(args.apply),
         "agent": logical_agent,
-        "projection": args.projection,
         "agent_object": agent_object,
         "question": question,
         "expected_tool": expected_tool,
@@ -170,7 +151,7 @@ def handle(args: argparse.Namespace, config: Config) -> int:
         require_explicit_connection(config, f"Agent {args.agent_command}")
         assert_config_database(manifest, config.database)
     if args.agent_command == "render":
-        result = render_agents(config, args.agents, projection=args.projection)
+        result = render_agents(config, args.agents)
     elif args.agent_command == "deploy":
         result = deploy_agents(
             config,
@@ -178,7 +159,6 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             apply=apply,
             allowed_targets=args.allow_target,
             allowed_databases=args.allow_database,
-            projection=args.projection,
             alias=args.alias,
         )
     else:
@@ -201,7 +181,6 @@ def handle(args: argparse.Namespace, config: Config) -> int:
         )
     payload = {"command": f"agent {args.agent_command}", "applied": apply, "agents": list(result.agents)}
     if args.agent_command in {"render", "deploy"}:
-        payload["projection"] = args.projection
         payload["renders"] = list(result.renders)
     if args.json:
         emit_json(payload)
@@ -212,7 +191,7 @@ def handle(args: argparse.Namespace, config: Config) -> int:
                 f"\nArtifact: {rendered['artifact']}" if rendered.get("artifact") else ""
             )
             print(
-                f"Rendered {rendered['agent']} ({rendered['projection']}) -> "
+                f"Rendered {rendered['agent']} -> "
                 f"{rendered['physical_agent']}{artifact}\n"
                 f"{json.dumps(rendered['spec'], indent=2, sort_keys=True)}"
             )

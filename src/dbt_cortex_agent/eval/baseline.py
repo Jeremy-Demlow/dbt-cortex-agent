@@ -33,8 +33,12 @@ def build_migrated_baseline(legacy: dict[str, Any], plan, source: str | Path) ->
         raise ValueError("Legacy accepted artifact schema_version must be absent or 1")
     if legacy.get("artifact_type") not in (None, "baseline") or legacy.get("passed") is not True:
         raise ValueError("Legacy artifact must be an accepted passing baseline")
-    physical_agent = plan.agent_fqn.rsplit(".", 1)[-1]
-    if legacy.get("agent") not in {plan.agent_name, physical_agent, plan.agent_fqn}:
+    legacy_agent = legacy.get("agent")
+    if isinstance(legacy_agent, str) and legacy_agent.upper().rsplit(".", 1)[-1].endswith("_EVAL"):
+        raise ValueError(
+            "Legacy _EVAL Agent identity is incompatible with the single-Agent evaluation plan"
+        )
+    if legacy_agent not in {plan.agent_name, plan.agent_fqn.rsplit(".", 1)[-1], plan.agent_fqn}:
         raise ValueError("Legacy artifact agent does not match the dbt evaluation plan")
     if legacy.get("suite") not in (None, plan.suite_name):
         raise ValueError("Legacy artifact suite does not match the dbt evaluation plan")
@@ -54,6 +58,8 @@ def build_migrated_baseline(legacy: dict[str, Any], plan, source: str | Path) ->
         or "LEGACY_UNKNOWN"
     )
     provenance = {
+        "agent_fqn": plan.agent_fqn,
+        "plan_identity": plan.plan_identity,
         "evaluated_version": version,
         "pre_start": {"default_version": version, "aliases": {}},
         "post_completion": {"default_version": version, "aliases": {}},
@@ -78,7 +84,7 @@ def build_migrated_baseline(legacy: dict[str, Any], plan, source: str | Path) ->
         "run_metadata": provenance,
         "plan_schema_version": plan.schema_version,
         "suite_signature": plan.suite_signature,
-        "projection": plan.projection,
+        "plan_identity": plan.plan_identity,
         "agent_fqn": plan.agent_fqn,
         "dataset_fqn": plan.table_fqn,
         "stage_fqn": plan.stage_fqn,
@@ -125,7 +131,7 @@ def build_baseline(candidate: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "agent", "suite", "eval_model", "run_name", "timestamp", "summary", "thresholds",
         "regression_tolerances", "passed", "total_records", "plan_schema_version",
-        "suite_signature", "projection", "agent_fqn", "dataset_fqn", "stage_fqn",
+        "suite_signature", "plan_identity", "agent_fqn", "dataset_fqn", "stage_fqn",
         "metric_names", "ordered_ground_truth_refs", "status",
     )
     baseline = {key: candidate.get(key) for key in keys}

@@ -19,14 +19,14 @@
 {% endmacro %}
 
 
-{% macro cortex_agent__set_alias(agent_name, alias, to_version=none, from_alias=none, projection='canonical', dry_run=true) %}
+{% macro cortex_agent__set_alias(agent_name, alias, to_version=none, from_alias=none, dry_run=true) %}
   {# Single alias-move primitive over native versioning. Resolve the target
      version either from an explicit VERSION$N (to_version) or from the version
      another alias currently points at (from_alias). No spec change. Dry-run by
      default and sandbox-guarded. promote_alias/rollback_alias are thin wrappers. #}
   {% set exposure = cortex_agent__get_agent(agent_name) %}
   {% set agent = exposure.meta.get('cortex_agent', {}) %}
-  {% set agent_fqn = cortex_agent__target_agent_fqn(agent, projection) %}
+  {% set agent_fqn = cortex_agent__target_agent_fqn(agent) %}
   {% set alias = cortex_agent__unquoted_identifier(alias, 'alias') %}
 
   {% if not execute %}
@@ -65,13 +65,13 @@
 {% endmacro %}
 
 
-{% macro cortex_agent__promote_alias(agent_name, from_alias, to_alias, projection='canonical', dry_run=true) %}
+{% macro cortex_agent__promote_alias(agent_name, from_alias, to_alias, dry_run=true) %}
   {# Move to_alias to whatever version currently holds from_alias. Thin wrapper. #}
-  {{ return(cortex_agent__set_alias(agent_name, to_alias, from_alias=from_alias, projection=projection, dry_run=dry_run)) }}
+  {{ return(cortex_agent__set_alias(agent_name, to_alias, from_alias=from_alias, dry_run=dry_run)) }}
 {% endmacro %}
 
 
-{% macro cortex_agent__rollback_alias(agent_name, alias, to_version, projection='canonical', dry_run=true) %}
+{% macro cortex_agent__rollback_alias(agent_name, alias, to_version, dry_run=true) %}
   {# Reassign alias to an explicit prior VERSION$N. Thin wrapper. #}
-  {{ return(cortex_agent__set_alias(agent_name, alias, to_version=to_version, projection=projection, dry_run=dry_run)) }}
+  {{ return(cortex_agent__set_alias(agent_name, alias, to_version=to_version, dry_run=dry_run)) }}
 {% endmacro %}

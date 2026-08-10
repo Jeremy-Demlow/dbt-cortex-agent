@@ -86,6 +86,7 @@ def test_workflow_covers_release_and_deterministic_contracts():
         "python -m build",
         "python -m twine check",
         "tests/verify_wheel.py",
+        "scripts/verify_installed_wheel.py",
         "dbt-cortex-agent\" --help",
         "detect-secrets==1.5.0",
         "pip-licenses==5.5.0",
@@ -94,6 +95,23 @@ def test_workflow_covers_release_and_deterministic_contracts():
         "git status --porcelain",
     )
     assert all(value in text for value in required)
+
+
+def test_dbt_matrix_runs_installed_wheel_verifier_for_both_supported_lines():
+    workflow = yaml.safe_load(_workflow_text())
+    compatibility = workflow["jobs"]["dbt-compatibility"]
+    matrix = compatibility["strategy"]["matrix"]["include"]
+    assert matrix == [
+        {"line": "lower-bound", "dbt-core": "~=1.10.0", "dbt-snowflake": "1.10.3"},
+        {"line": "authority", "dbt-core": "~=1.11.0", "dbt-snowflake": "1.11.4"},
+    ]
+    commands = "\n".join(step.get("run", "") for step in compatibility["steps"])
+    assert 'python -m build --wheel --outdir "$RUNNER_TEMP/wheel-dist"' in commands
+    assert "python scripts/verify_installed_wheel.py" in commands
+    assert '--wheel "$RUNNER_TEMP"/wheel-dist/*.whl' in commands
+    assert "--dbt-package-dir ." in commands
+    assert "--dbt-core '${{ matrix.dbt-core }}'" in commands
+    assert "--dbt-snowflake '${{ matrix.dbt-snowflake }}'" in commands
 
 
 def test_current_product_versions_and_project_names_align():

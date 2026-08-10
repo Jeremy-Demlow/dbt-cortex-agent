@@ -27,7 +27,7 @@ metadata; they are not rendered into the Agent specification.
 
 ## Complete public field inventory
 
-| Field path | Type | Required | Default / projection behavior |
+| Field path | Type | Required | Default / behavior |
 |---|---|---:|---|
 | `enabled` | boolean | Yes | Must be `true` for discovery |
 | `snowflake_name` | string | Yes | Base name when no target mapping exists |
@@ -51,7 +51,6 @@ metadata; they are not rendered into the Agent specification.
 | `tools[].description` | string | No | Empty string |
 | `tools[].warehouse` | string | No | `target.warehouse` |
 | `tools[].query_timeout` | number | No | `300` |
-| `tools[].evaluation_supported` | boolean/string | No | Included unless explicitly false |
 | `tools[].semantic_view_model` | string | Analyst only | Manifest-resolved semantic view |
 | `tools[].search_service` | string | Search only | Pre-existing service FQN |
 | `tools[].identifier` | string | Generic only | Pre-existing procedure FQN |
@@ -61,21 +60,19 @@ metadata; they are not rendered into the Agent specification.
 | `capabilities.data_to_chart.enabled` | boolean | No | Disabled when absent |
 | `capabilities.data_to_chart.description` | string | No | Default chart description |
 | `capabilities.code_execution.enabled` | boolean | No | Also gated by `code_execution_enabled` |
-| `capabilities.code_execution.evaluation_supported` | boolean/string | No | Excluded from native eval when false |
 | `capabilities.code_execution.usage_policy` | string | No | Documentary only |
 | `capabilities.code_execution.artifact_repositories` | any | No | Rendered into code-execution resources when supplied |
 | `capabilities.code_execution.external_access_integrations` | any | No | Rendered into code-execution resources when supplied |
-| `capabilities.skills[]` | object | No | Canonical only |
+| `capabilities.skills[]` | object | No | Rendered in the full Agent specification |
 | `capabilities.skills[].name` | string | Yes per skill | Rendered name |
 | `capabilities.skills[].description` | string | No | Documentary; `SKILL.md` is authoritative |
 | `capabilities.skills[].source.type` | string | Yes per skill | Stage readiness supports `stage` |
 | `capabilities.skills[].source.path` | string | Yes per skill | Rendered unchanged |
-| `capabilities.mcp_connectors[]` | object | No | Attached through separate canonical DDL |
+| `capabilities.mcp_connectors[]` | object | No | Attached through separate Agent DDL |
 | `capabilities.mcp_connectors[].name` | string | No | Documentary only |
 | `capabilities.mcp_connectors[].enabled` | boolean | No | Disabled when absent |
 | `capabilities.mcp_connectors[].server` | string | Yes when enabled | External MCP server FQN |
 | `capabilities.mcp_connectors[].usage_policy` | string | No | Documentary only |
-| `capabilities.mcp_connectors[].evaluation_supported` | boolean | No | Native eval excludes all MCP connectors |
 
 ## Tools
 
@@ -91,4 +88,8 @@ Unknown tool types fail validation. Analyst model names must resolve uniquely to
 dbt model materialized as `semantic_view`.
 
 Usage-policy and descriptive capability fields may be retained as governance
-metadata without being rendered.
+metadata without being rendered. `evaluation_supported` is not a public metadata
+field and never filters the rendered/deployed Agent specification. Built-in evaluation
+coverage is validated separately from deployment: Analyst, Cortex Search, `web_search`,
+and declared generic custom tool names may be expected; skills, MCP, code execution,
+and other capability tools require separate proof.

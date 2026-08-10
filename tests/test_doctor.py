@@ -159,3 +159,78 @@ def test_doctor_accepts_immutable_sha_when_installed_dbt_version_matches(tmp_pat
     check = next(item for item in diagnostics if item.name == "consumer package version")
     assert check.status == "PASS"
     assert "8e8df8e9754a0089532fffea3dd7005242866c59" in check.detail
+
+
+def test_doctor_rejects_immutable_sha_without_installed_dbt_package(tmp_path):
+    config = _config(tmp_path)
+    (tmp_path / "packages.yml").write_text(
+        "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
+        "    revision: 8e8df8e9754a0089532fffea3dd7005242866c59\n"
+    )
+
+    diagnostics = run_doctor(
+        config,
+        CommandRunner(lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "ok", "")),
+    )
+
+    installed = [item for item in diagnostics if item.name == "installed package version"]
+    check = next(item for item in diagnostics if item.name == "consumer package version")
+    assert installed == []
+    assert check.status == "FAIL"
+
+
+def test_doctor_rejects_branch_revision_even_when_installed_dbt_version_matches(tmp_path):
+    config = _config(tmp_path)
+    (tmp_path / "packages.yml").write_text(
+        "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
+        "    revision: main\n"
+    )
+    installed = tmp_path / "dbt_packages/dbt_cortex_agent/dbt_project.yml"
+    installed.parent.mkdir(parents=True)
+    installed.write_text("name: dbt_cortex_agent\nversion: 0.3.1\nconfig-version: 2\n")
+
+    diagnostics = run_doctor(
+        config,
+        CommandRunner(lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "ok", "")),
+    )
+
+    check = next(item for item in diagnostics if item.name == "consumer package version")
+    assert check.status == "FAIL"
+    assert "main" in check.detail
+
+
+def test_doctor_rejects_immutable_sha_when_installed_dbt_version_mismatches(tmp_path):
+    config = _config(tmp_path)
+    (tmp_path / "packages.yml").write_text(
+        "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
+        "    revision: 8e8df8e9754a0089532fffea3dd7005242866c59\n"
+    )
+    installed = tmp_path / "dbt_packages/dbt_cortex_agent/dbt_project.yml"
+    installed.parent.mkdir(parents=True)
+    installed.write_text("name: dbt_cortex_agent\nversion: 0.3.0\nconfig-version: 2\n")
+
+    diagnostics = run_doctor(
+        config,
+        CommandRunner(lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "ok", "")),
+    )
+
+    installed_check = next(item for item in diagnostics if item.name == "installed package version")
+    consumer_check = next(item for item in diagnostics if item.name == "consumer package version")
+    assert installed_check.status == "FAIL"
+    assert consumer_check.status == "FAIL"
+
+
+def test_doctor_preserves_semantic_revision_direct_match(tmp_path):
+    config = _config(tmp_path)
+    (tmp_path / "packages.yml").write_text(
+        "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
+        "    revision: v0.3.1\n"
+    )
+
+    diagnostics = run_doctor(
+        config,
+        CommandRunner(lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "ok", "")),
+    )
+
+    check = next(item for item in diagnostics if item.name == "consumer package version")
+    assert check.status == "PASS"

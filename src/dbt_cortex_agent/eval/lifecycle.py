@@ -38,7 +38,6 @@ class EvalPlan:
     agent_name: str
     suite_name: str
     eval_model: str
-    projection: str
     table_fqn: str
     agent_fqn: str
     stage_fqn: str
@@ -55,6 +54,7 @@ class EvalPlan:
     regression_tolerances: dict[str, float]
     ordered_ground_truth_refs: list[str]
     suite_signature: str
+    plan_identity: dict[str, Any]
 
 
 @dataclass(frozen=True)
@@ -86,7 +86,7 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
     if not isinstance(identity, dict):
         raise ValueError("Evaluation plan identity must be an object")
     required_identity = {
-        "agent_name", "suite_name", "eval_model", "projection", "agent_fqn",
+        "agent_name", "suite_name", "eval_model", "agent_fqn",
         "dataset_fqn", "stage_fqn", "target_name", "target_role", "target_database",
         "target_schema",
     }
@@ -97,6 +97,8 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
         )
     if identity.get("agent_name") != agent_name or identity.get("suite_name") != suite_name:
         raise ValueError("Evaluation plan identity does not match the selected Agent and suite")
+    if "projection" in identity or "projection" in payload:
+        raise ValueError("Evaluation plan must not contain projection identity")
     signature_material = payload.get("signature_material")
     if not isinstance(signature_material, str):
         raise ValueError("Evaluation plan signature_material must be a string")
@@ -123,6 +125,11 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
     metric_names = payload.get("metric_names")
     if not isinstance(config_template, dict) or not isinstance(refs, list) or not isinstance(metric_names, list):
         raise ValueError("Evaluation plan config, metric_names, and ordered refs have invalid types")
+    config_agent = (
+        config_template.get("evaluation", {}).get("agent_params", {}).get("agent_name")
+    )
+    if config_agent != identity.get("agent_fqn"):
+        raise ValueError("Evaluation plan native config Agent must match signed agent_fqn")
     refs = [str(value) for value in refs]
     if not refs or any(not value for value in refs) or len(refs) != len(set(refs)):
         raise ValueError("Evaluation plan ordered_ground_truth_refs must be non-empty and unique")
@@ -140,7 +147,6 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
         agent_name=agent_name,
         suite_name=suite_name,
         eval_model=str(identity["eval_model"]),
-        projection=str(identity["projection"]),
         table_fqn=fqn(str(identity["dataset_fqn"]), "eval table"),
         agent_fqn=fqn(str(identity["agent_fqn"]), "Agent object"),
         stage_fqn=fqn(str(identity["stage_fqn"]), "evaluation stage"),
@@ -157,6 +163,7 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
         regression_tolerances=_numeric_policy(payload.get("regression_tolerances"), "regression_tolerances"),
         ordered_ground_truth_refs=refs,
         suite_signature=expected_signature,
+        plan_identity=dict(identity),
     )
 
 
@@ -295,14 +302,26 @@ def _agent_provenance(cursor, plan: EvalPlan) -> dict[str, Any]:
     cursor.execute(f"DESCRIBE AGENT {plan.agent_fqn}")
     columns = [str(item[0]).lower() for item in cursor.description]
     row = cursor.fetchone()
+    if row is None:
+        raise RuntimeError(f"Agent {plan.agent_fqn} does not exist")
     aliases: dict[str, Any] = {}
-    if row and "aliases" in columns and row[columns.index("aliases")]:
+    if "aliases" in columns and row[columns.index("aliases")]:
         raw = row[columns.index("aliases")]
         aliases = json.loads(raw) if isinstance(raw, str) else dict(raw)
     default_version = aliases.get("DEFAULT")
     if not default_version:
         raise RuntimeError(f"Agent {plan.agent_fqn} has no resolvable DEFAULT version")
     return {"default_version": str(default_version), "aliases": aliases}
+
+
+def _assert_agent_exists_with_default(cursor, plan: EvalPlan) -> dict[str, Any]:
+    try:
+        provenance = _agent_provenance(cursor, plan)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Evaluation requires existing Agent {plan.agent_fqn} with a resolvable DEFAULT version"
+        ) from exc
+    return provenance
 
 
 def _default_connect(connection: str):
@@ -356,6 +375,7 @@ def run_evaluation(
         cursor.execute(f"USE WAREHOUSE {identifier(plan.target_warehouse or config.warehouse, 'warehouse')}")
         cursor.execute(f"USE DATABASE {plan.target_database}")
         cursor.execute(f"USE SCHEMA {plan.target_schema}")
+        initial_provenance = _assert_agent_exists_with_default(cursor, plan)
         validate_table(cursor, plan.table_fqn, plan.metric_names, plan.ordered_ground_truth_refs)
         final_run = base_run
         status = PollResult("FAILED", "evaluation was not started")
@@ -365,7 +385,11 @@ def run_evaluation(
             dataset_name = f"{final_run}_dataset"
             filename = plan.config_filename_template.replace("__RUN_NAME__", final_run)
             stage_path = _upload_config(cursor, plan, filename, render_eval_config(plan, dataset_name))
-            pre_start = _agent_provenance(cursor, plan)
+            pre_start = _assert_agent_exists_with_default(cursor, plan)
+            if pre_start["default_version"] != initial_provenance["default_version"]:
+                raise RuntimeError(
+                    f"Agent {plan.agent_fqn} DEFAULT version changed before evaluation START"
+                )
             cursor.execute(
                 "CALL EXECUTE_AI_EVALUATION('START', OBJECT_CONSTRUCT('run_name', %s), %s)",
                 (final_run, stage_path),
@@ -381,11 +405,12 @@ def run_evaluation(
         if not rows or not any(row.get("metric_name") for row in rows):
             raise RuntimeError(f"Evaluation {final_run} returned no scored metric rows")
         annotate_rows(cursor, plan.table_fqn, rows)
-        post_completion = _agent_provenance(cursor, plan)
+        post_completion = _assert_agent_exists_with_default(cursor, plan)
         if pre_start is None:
             raise RuntimeError("Evaluation provenance was not captured before START")
         provenance = {
             "agent_fqn": plan.agent_fqn,
+            "plan_identity": plan.plan_identity,
             "evaluated_version": pre_start["default_version"],
             "pre_start": pre_start,
             "post_completion": post_completion,

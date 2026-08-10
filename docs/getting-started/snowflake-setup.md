@@ -10,7 +10,7 @@ and account policy; validate least privilege with the account security owner.
 | Agent deploy role | database/schema usage; warehouse usage; create/alter Agent privileges; referenced semantic view/search/procedure access | consumer runtime access; broad role inheritance |
 | Skill uploader | stage/database/schema access and Snow CLI authentication; explicit target/database allowlists | Agent deployment or Agent usage |
 | Runtime consumer | database/schema and warehouse usage; `USAGE ON AGENT`; privileges needed by referenced resources | automatic semantic-view, search-service, procedure, or stage grants |
-| Evaluation operator | deployed native-eval Agent usage; materialized eval table access; evaluation-stage create/write/read; warehouse usage; Agent Evaluation privileges | creation of the Agent/table prerequisites by the CLI |
+| Evaluation operator | deployed Agent usage; materialized eval table access; evaluation-stage create/write/read; warehouse usage; Agent Evaluation privileges | creation of the Agent/table prerequisites by the CLI |
 | MCP deployer | access to the pre-existing external MCP server and Agent attachment privileges | MCP server creation or credential management |
 
 `access.usage_roles` plus `cortex_agent__grant_usage` grants only `USAGE ON AGENT`.

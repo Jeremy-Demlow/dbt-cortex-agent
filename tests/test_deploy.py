@@ -90,12 +90,8 @@ class FakeRunner:
             arguments = _macro_args(command)
             payload = {
                 "agent": arguments["agent_name"],
-                "physical_agent": (
-                    "DB.AGENTS.AGENT_EVAL"
-                    if arguments["projection"] == "native_eval"
-                    else "DB.AGENTS.AGENT"
-                ),
-                "projection": arguments["projection"],
+                "physical_agent": "DB.AGENTS.AGENT",
+                "lifecycle_contract": "single_agent",
                 "spec": {"tools": []},
                 "target": "sandbox",
             }
@@ -124,22 +120,12 @@ def test_dry_run_deploy_invokes_only_canonical_macro(tmp_path):
 
     assert len(fake.calls) == 1
     assert fake.calls[0][:3] == ["dbt-custom", "run-operation", "cortex_agent__deploy"]
-    assert _macro_args(fake.calls[0]) == {
-        "agent_name": "agent",
-        "dry_run": True,
-        "projection": "canonical",
-    }
+    assert _macro_args(fake.calls[0]) == {"agent_name": "agent", "dry_run": True}
 
 
-def test_native_eval_deploy_skips_skill_plan_and_upload_but_keeps_apply_preflight(
-    tmp_path, monkeypatch
-):
+def test_deploy_always_uploads_skills_after_apply_preflight(tmp_path):
     _project(tmp_path)
     fake = FakeRunner()
-    monkeypatch.setattr(
-        "dbt_cortex_agent.deploy.build_upload_plan",
-        lambda *args: pytest.fail("native_eval deploy planned skills"),
-    )
 
     result = deploy_agents(
         _config(tmp_path),
@@ -147,15 +133,13 @@ def test_native_eval_deploy_skips_skill_plan_and_upload_but_keeps_apply_prefligh
         apply=True,
         allowed_targets=["sandbox"],
         allowed_databases=["DB"],
-        projection="native_eval",
         runner=CommandRunner(fake),
     )
 
     assert fake.calls[0][2] == "cortex_agent__validate_deploy_context"
     assert fake.calls[-1][2] == "cortex_agent__deploy"
-    assert _macro_args(fake.calls[-1])["projection"] == "native_eval"
-    assert not any(call[0:3] == ["snow-custom", "stage", "copy"] for call in fake.calls)
-    assert result.renders[0]["physical_agent"] == "DB.AGENTS.AGENT_EVAL"
+    assert any(call[0:3] == ["snow-custom", "stage", "copy"] for call in fake.calls)
+    assert result.renders[0]["physical_agent"] == "DB.AGENTS.AGENT"
 
 
 def test_plan_failure_causes_zero_subprocess_calls(tmp_path):
@@ -260,12 +244,12 @@ def test_render_and_lifecycle_commands_delegate_with_expected_args(tmp_path):
     )
 
     assert fake.calls[0][2] == "cortex_agent__render_spec"
-    assert _macro_args(fake.calls[0])["projection"] == "canonical"
+    assert _macro_args(fake.calls[0]) == {"agent_name": "agent"}
     assert fake.calls[1][2] == "cortex_agent__promote_alias"
     assert _macro_args(fake.calls[1])["dry_run"] is True
 
 
-def test_render_native_eval_exposes_spec_and_writes_deterministic_contained_artifact(tmp_path):
+def test_render_exposes_full_spec_and_writes_stable_contained_artifact(tmp_path):
     _project(tmp_path, include_skill=False)
     fake = FakeRunner()
 
@@ -273,7 +257,6 @@ def test_render_native_eval_exposes_spec_and_writes_deterministic_contained_arti
         _config(tmp_path),
         ["agent"],
         CommandRunner(fake),
-        projection="native_eval",
     )
 
     render = result.renders[0]
@@ -282,15 +265,15 @@ def test_render_native_eval_exposes_spec_and_writes_deterministic_contained_arti
         "agent": "agent",
         "artifact": str(
             tmp_path
-            / "target/dbt_cortex_agent/renders/sandbox/agent/native_eval.json"
+            / "target/dbt_cortex_agent/renders/sandbox/agent/spec.json"
         ),
-        "physical_agent": "DB.AGENTS.AGENT_EVAL",
-        "projection": "native_eval",
+        "physical_agent": "DB.AGENTS.AGENT",
+        "lifecycle_contract": "single_agent",
         "spec": {"tools": []},
         "target": "sandbox",
     }
     assert json.loads(artifact.read_text()) == render["spec"]
-    assert _macro_args(fake.calls[0])["projection"] == "native_eval"
+    assert _macro_args(fake.calls[0]) == {"agent_name": "agent"}
 
 
 @pytest.mark.parametrize(
@@ -304,7 +287,7 @@ def test_render_native_eval_exposes_spec_and_writes_deterministic_contained_arti
         (f"{RENDER_MARKER}{{", "Malformed render marker JSON"),
         (f"{RENDER_MARKER}[]", "must contain a JSON object"),
         (
-            f'{RENDER_MARKER}{{"agent":"agent","projection":"canonical",'
+            f'{RENDER_MARKER}{{"agent":"agent","lifecycle_contract":"single_agent",'
             '"target":"sandbox","physical_agent":"DB.S.A","spec":[]}',
             "spec for Agent 'agent' must be a JSON object",
         ),
@@ -312,18 +295,53 @@ def test_render_native_eval_exposes_spec_and_writes_deterministic_contained_arti
 )
 def test_render_marker_parser_fails_closed(stdout, message):
     with pytest.raises(ValueError, match=message):
-        _parse_render_output(stdout, "agent", "canonical")
+        _parse_render_output(stdout, "agent")
 
 
-def test_macro_projection_validation_and_marker_contract():
+def test_macro_single_agent_marker_contract():
     root = Path(__file__).parents[1]
     contract = (root / "macros/cortex_agents/agent_contract.sql").read_text()
     render = (root / "macros/cortex_agents/agent_render.sql").read_text()
 
-    assert "projection not in ['canonical', 'native_eval']" in contract
-    assert "{% do cortex_agent__validate_projection(projection) %}" in contract
+    assert "validate_projection" not in contract
+    assert "cortex_agent_eval_suffix" not in render
+    assert "lifecycle_contract" in render
     assert "{% do log(tojson(spec), info=True) %}" in render
     assert render.count("__DBT_CORTEX_AGENT_RENDER__=") == 2
+
+
+def test_public_agent_macros_have_no_projection_interface():
+    root = Path(__file__).parents[1] / "macros/cortex_agents"
+    sources = {
+        name: (root / name).read_text(encoding="utf-8")
+        for name in (
+            "agent_contract.sql",
+            "agent_render.sql",
+            "agent_grants.sql",
+            "agent_versioning.sql",
+        )
+    }
+
+    for source in sources.values():
+        assert "projection=" not in source
+        assert "cortex_agent_eval_suffix" not in source
+        assert "native_eval" not in source
+    assert "{% macro cortex_agent__render_spec(agent_name) %}" in sources["agent_render.sql"]
+    assert "{% macro cortex_agent__deploy(agent_name, dry_run=True, alias=None) %}" in sources["agent_render.sql"]
+    assert "{% macro cortex_agent__grant_usage(agent_name, dry_run=True) %}" in sources["agent_grants.sql"]
+    assert "{% macro cortex_agent__set_alias(agent_name, alias, to_version=none, from_alias=none, dry_run=true) %}" in sources["agent_versioning.sql"]
+
+
+def test_eval_macros_target_single_agent_without_deploying_it():
+    root = Path(__file__).parents[1] / "macros/cortex_agents"
+    render = (root / "eval_render.sql").read_text(encoding="utf-8")
+    run = (root / "eval_run.sql").read_text(encoding="utf-8")
+
+    assert "cortex_agent__target_agent_fqn(agent)" in render
+    assert "projection" not in render
+    assert "cortex_agent__target_agent_fqn(agent)" in run
+    for forbidden in ("cortex_agent__deploy", "cortex_agent__build(", "CREATE AGENT", "ALTER AGENT"):
+        assert forbidden not in render + run
 
 
 @pytest.mark.parametrize(

@@ -58,7 +58,6 @@ def _manifest(*, duplicate=False, agent_object=True):
         "enabled": True,
         "name": "core",
         "agent": "orders_assistant",
-        "projection": "native_eval",
         "stage": "DB.EVAL.EVAL_STAGE",
         "metrics": [
             "answer_correctness",
@@ -121,8 +120,8 @@ def _plan_payload(*, refs=None, tolerances=None):
     token = "__DBT_CORTEX_AGENT_DATASET_NAME__"
     identity = {
         "agent_name": "orders_assistant", "suite_name": "core",
-        "eval_model": "eval_orders", "projection": "native_eval",
-        "agent_fqn": "DB.AGENT_SCHEMA.ORDERS_ASSISTANT_SANDBOX_EVAL",
+        "eval_model": "eval_orders",
+        "agent_fqn": "DB.AGENT_SCHEMA.ORDERS_ASSISTANT",
         "dataset_fqn": "DB.EVAL.EVAL_ORDERS", "stage_fqn": "DB.AGENT_SCHEMA.EVAL_CONFIG_STAGE",
         "target_name": "sandbox", "target_role": "EVAL_ROLE",
         "target_database": "DB", "target_schema": "AGENT_SCHEMA",
@@ -160,7 +159,8 @@ def test_build_plan_consumes_dbt_payload_without_reconstructing_identity(tmp_pat
         _config(tmp_path, _manifest()), agent_name="orders_assistant", suite_name="core",
         plan_payload=_plan_payload(),
     )
-    assert plan.agent_fqn == "DB.AGENT_SCHEMA.ORDERS_ASSISTANT_SANDBOX_EVAL"
+    assert plan.agent_fqn == "DB.AGENT_SCHEMA.ORDERS_ASSISTANT"
+    assert not hasattr(plan, "projection")
     assert plan.table_fqn == "DB.EVAL.EVAL_ORDERS"
     assert plan.stage_fqn == "DB.AGENT_SCHEMA.EVAL_CONFIG_STAGE"
     assert plan.target_role == "EVAL_ROLE"
@@ -220,6 +220,32 @@ def test_build_plan_requires_authoritative_target_role(tmp_path):
             agent_name="orders_assistant",
             suite_name="core",
             plan_payload=payload,
+        )
+
+
+def test_build_plan_rejects_projection_and_native_config_agent_mismatch(tmp_path):
+    projection = _plan_payload()
+    projection["identity"]["projection"] = "native_eval"
+    signed = json.loads(projection["signature_material"])
+    signed["identity"]["projection"] = "native_eval"
+    projection["signature_material"] = json.dumps(signed, separators=(",", ":"))
+    projection["suite_signature"] = hashlib.md5(projection["signature_material"].encode()).hexdigest()
+    with pytest.raises(ValueError, match="must not contain projection"):
+        build_plan(
+            _config(tmp_path, _manifest()), agent_name="orders_assistant",
+            suite_name="core", plan_payload=projection,
+        )
+
+    mismatch = _plan_payload()
+    mismatch["native_eval_config"]["evaluation"]["agent_params"]["agent_name"] = "DB.S.WRONG"
+    signed = json.loads(mismatch["signature_material"])
+    signed["native_eval_config"] = mismatch["native_eval_config"]
+    mismatch["signature_material"] = json.dumps(signed, separators=(",", ":"))
+    mismatch["suite_signature"] = hashlib.md5(mismatch["signature_material"].encode()).hexdigest()
+    with pytest.raises(ValueError, match="native config Agent must match"):
+        build_plan(
+            _config(tmp_path / "mismatch", _manifest()), agent_name="orders_assistant",
+            suite_name="core", plan_payload=mismatch,
         )
 
 
@@ -313,7 +339,14 @@ def test_candidate_is_boundary_aware_and_provenance_rich(tmp_path):
         plan=plan,
         run_name="run-1",
         rows=_rows(),
-        provenance={"agent_fqn": plan.agent_fqn, "evaluated_version": "VERSION$7", "aliases": {"DEFAULT": "VERSION$7"}},
+        provenance={
+            "agent_fqn": plan.agent_fqn,
+            "plan_identity": plan.plan_identity,
+            "evaluated_version": "VERSION$7",
+            "pre_start": {"default_version": "VERSION$7", "aliases": {}},
+            "post_completion": {"default_version": "VERSION$7", "aliases": {}},
+            "default_version_changed": False,
+        },
     )
 
     assert candidate["summary"]["answer_correctness"] == {"avg": pytest.approx(0.6), "n": 2}
@@ -324,17 +357,25 @@ def test_candidate_is_boundary_aware_and_provenance_rich(tmp_path):
 
 
 def _result(*, score=0.8, passed=True, ids=None):
+    plan_identity = {
+        "agent_name": "orders_assistant", "suite_name": "core",
+        "eval_model": "eval_orders", "agent_fqn": "DB.S.AGENT",
+        "dataset_fqn": "DB.EVAL.TABLE", "stage_fqn": "DB.S.STAGE",
+    }
     return {
         "schema_version": ARTIFACT_SCHEMA_VERSION, "artifact_type": "candidate",
         "agent": "orders_assistant", "suite": "core", "eval_model": "eval_orders",
         "run_name": "run", "timestamp": "20260804_000000",
         "run_metadata": {
+            "agent_fqn": "DB.S.AGENT",
+            "plan_identity": plan_identity,
             "evaluated_version": "VERSION$1", "git_sha": "abc",
             "pre_start": {"default_version": "VERSION$1", "aliases": {}},
             "post_completion": {"default_version": "VERSION$1", "aliases": {}},
             "default_version_changed": False,
         },
-        "plan_schema_version": 1, "suite_signature": "abc123", "projection": "native_eval",
+        "plan_schema_version": 1, "suite_signature": "abc123",
+        "plan_identity": plan_identity,
         "agent_fqn": "DB.S.AGENT", "dataset_fqn": "DB.EVAL.TABLE", "stage_fqn": "DB.S.STAGE",
         "metric_names": ["answer_correctness"], "status": "completed",
         "summary": {"answer_correctness": {"avg": score, "n": 2}},
@@ -426,6 +467,11 @@ def test_legacy_baseline_migration_uses_current_plan_and_preserves_provenance(tm
         physical = _legacy_baseline()
         physical["agent"] = legacy_agent
         assert build_migrated_baseline(physical, plan, source)["agent"] == plan.agent_name
+
+    historical_eval = _legacy_baseline()
+    historical_eval["agent"] = "ORDERS_ASSISTANT_EVAL"
+    with pytest.raises(ValueError, match="_EVAL Agent identity is incompatible"):
+        build_migrated_baseline(historical_eval, plan, source)
 
     near_match = _legacy_baseline()
     near_match["agent"] = f"{plan.agent_fqn.rsplit('.', 1)[-1]}_OTHER"
@@ -574,6 +620,8 @@ def test_apply_retries_once_and_persists_candidate(tmp_path):
     candidate = load_result(output)
     assert candidate["run_name"] == "candidate_run-r1"
     assert candidate["run_metadata"]["evaluated_version"] == "VERSION$9"
+    assert candidate["run_metadata"]["plan_identity"]["agent_fqn"] == plan.agent_fqn
+    assert "projection" not in candidate
     assert candidate["ordered_ground_truth_refs"] == ["total_revenue"]
     assert output.parent.name == "core"
 
@@ -625,6 +673,7 @@ def test_candidate_is_indeterminate_when_default_changes(tmp_path):
         plan=plan, run_name="run", rows=_rows(),
         provenance={
             "agent_fqn": plan.agent_fqn, "evaluated_version": "VERSION$7",
+            "plan_identity": plan.plan_identity,
             "pre_start": {"default_version": "VERSION$7", "aliases": {}},
             "post_completion": {"default_version": "VERSION$8", "aliases": {}},
             "default_version_changed": True,
@@ -633,6 +682,82 @@ def test_candidate_is_indeterminate_when_default_changes(tmp_path):
     assert candidate["passed"] is False
     assert candidate["status"] == "indeterminate"
     assert "DEFAULT version changed" in candidate["threshold_failures"][-1]
+
+
+def test_apply_fails_before_upload_when_agent_missing_or_has_no_default(tmp_path):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config, agent_name="orders_assistant", suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"]),
+    )
+
+    class MissingAgentCursor(LifecycleCursor):
+        def execute(self, sql, params=None):
+            if "DESCRIBE AGENT" in " ".join(sql.split()).upper():
+                raise RuntimeError("does not exist")
+            super().execute(sql, params)
+
+    connection = LifecycleConnection()
+    connection.cursor_value = MissingAgentCursor()
+    with pytest.raises(RuntimeError, match="requires existing Agent"):
+        run_evaluation(
+            config, plan, apply=True, allowed_targets=["sandbox"], allowed_databases=["DB"],
+            connect=lambda _: connection, sleep=lambda _: None,
+        )
+    assert not any("CREATE STAGE" in call or "'START'" in call for call in connection.cursor_value.calls)
+
+
+def test_apply_treats_empty_describe_result_as_missing_agent(tmp_path):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config, agent_name="orders_assistant", suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"]),
+    )
+
+    class EmptyDescribeCursor(LifecycleCursor):
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if "DESCRIBE AGENT" in " ".join(sql.split()).upper():
+                self.rows = []
+
+    connection = LifecycleConnection()
+    connection.cursor_value = EmptyDescribeCursor()
+    with pytest.raises(RuntimeError, match="requires existing Agent"):
+        run_evaluation(
+            config, plan, apply=True, allowed_targets=["sandbox"], allowed_databases=["DB"],
+            connect=lambda _: connection, sleep=lambda _: None,
+        )
+    assert not any("CREATE STAGE" in call or "'START'" in call for call in connection.cursor_value.calls)
+
+
+def test_apply_fails_when_default_changes_before_start(tmp_path):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config, agent_name="orders_assistant", suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"]),
+    )
+
+    class VersionChangeCursor(LifecycleCursor):
+        def __init__(self):
+            super().__init__()
+            self.describe_count = 0
+
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if "DESCRIBE AGENT" in " ".join(sql.split()).upper():
+                self.describe_count += 1
+                version = "VERSION$9" if self.describe_count == 1 else "VERSION$10"
+                self.rows = [(json.dumps({"DEFAULT": version}),)]
+
+    connection = LifecycleConnection()
+    connection.cursor_value = VersionChangeCursor()
+    with pytest.raises(RuntimeError, match="changed before evaluation START"):
+        run_evaluation(
+            config, plan, apply=True, run_name="drift", poll_attempts=1,
+            allowed_targets=["sandbox"], allowed_databases=["DB"],
+            connect=lambda _: connection, sleep=lambda _: None,
+        )
+    assert not any("'START'" in call for call in connection.cursor_value.calls)
 
 
 def test_table_validation_rejects_duplicate_refs_and_inputs():

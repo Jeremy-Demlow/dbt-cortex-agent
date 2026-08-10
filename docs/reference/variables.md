@@ -16,9 +16,8 @@ do not replace them.
 | `code_execution_enabled` | `false` | Global code-execution render gate. |
 | `force_agent_recreate` | `false` | Bypass no-change skip; review version impact before use. |
 | `mcp_deploy_enabled` | `false` | Permit separate MCP attachment DDL. |
-| `cortex_agent_validate_staged_skills` | context-dependent | Preview validation defaults false; mutating canonical deploy defaults true. |
+| `cortex_agent_validate_staged_skills` | context-dependent | Preview validation defaults false; mutating Agent deploy defaults true. |
 | `cortex_agent_env_suffixes` | `{dev: _DEV, dbt_focus: _DBT_FOCUS}` | Physical-name fallback by target. |
-| `cortex_agent_eval_suffix` | `_EVAL` | Native-eval Agent suffix. |
 
 `cortex_agent_skill_stage` is read by consumer property YAML, not by a package
 macro. Keep it aligned with the real stage in `capabilities.skills[].source.path`.

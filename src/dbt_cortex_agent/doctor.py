@@ -40,10 +40,7 @@ def _declared_revisions(project_dir: Path) -> list[str]:
 
 def _dbt_package_versions(project_dir: Path) -> list[str]:
     versions: list[str] = []
-    candidates = (
-        Path(__file__).resolve().parents[2] / "dbt_project.yml",
-        project_dir / "dbt_packages" / "dbt_cortex_agent" / "dbt_project.yml",
-    )
+    candidates = (project_dir / "dbt_packages" / "dbt_cortex_agent" / "dbt_project.yml",)
     for candidate in candidates:
         project = load_yaml_mapping(candidate, strict=False)
         if project.get("name") == "dbt_cortex_agent" and project.get("version"):

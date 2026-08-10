@@ -14,8 +14,8 @@ Consumers can adopt v0.3.0 without ambiguity about which layer defines or mutate
 
 ## Acceptance criteria
 
-1. Current package, runtime, lock, bootstrap, citation, and installation references identify v0.3.0; historical v0.2.0 changelog entries remain unchanged.
-2. The unreleased changelog describes v0.3.0 as the combined dbt package and Python companion product.
+1. At completion of this historical requirement, package, runtime, lock, bootstrap, citation, and installation references identified v0.3.0; later release requirements supersede only the active version wording.
+2. The v0.3.0 changelog entry records the combined dbt package and Python companion product.
 3. A concise architecture document assigns graph/meta contracts, rendering, Agent DDL, naming, versions, aliases, grants, and eval-plan rendering to dbt; it assigns local files, Snow CLI coordination, REST/SSE, polling/retry, local artifacts/baselines, and thin macro delegation to Python.
 4. Python Agent deploy, grant, promotion, and rollback paths delegate lifecycle changes to dbt macros.
 5. Python source contains no mutating `CREATE AGENT`, `ALTER AGENT`, or `DROP AGENT` DDL.

@@ -60,7 +60,7 @@ def _run_operation_result(
     return tuple(command), result
 
 
-def _parse_render_output(stdout: str, expected_agent: str, expected_projection: str) -> dict:
+def _parse_render_output(stdout: str, expected_agent: str) -> dict:
     marker_count = stdout.count(RENDER_MARKER)
     if marker_count != 1:
         raise ValueError(
@@ -82,10 +82,8 @@ def _parse_render_output(stdout: str, expected_agent: str, expected_projection: 
         raise ValueError(f"Render marker for Agent {expected_agent!r} must contain a JSON object")
     if payload.get("agent") != expected_agent:
         raise ValueError(f"Render marker Agent does not match requested Agent {expected_agent!r}")
-    if payload.get("projection") != expected_projection:
-        raise ValueError(
-            f"Render marker projection does not match requested projection {expected_projection!r}"
-        )
+    if payload.get("lifecycle_contract") != "single_agent":
+        raise ValueError("Render marker lifecycle_contract must be 'single_agent'")
     for key in ("target", "physical_agent"):
         if not isinstance(payload.get(key), str) or not payload[key]:
             raise ValueError(f"Render marker field {key!r} must be a non-empty string")
@@ -100,7 +98,7 @@ def _write_render_artifact(config: Config, payload: dict) -> Path:
         "renders",
         payload["target"],
         payload["agent"],
-        f"{payload['projection']}.json",
+        "spec.json",
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -144,7 +142,6 @@ def render_agents(
     config: Config,
     agent_names: list[str] | None,
     runner: CommandRunner | None = None,
-    projection: str = "canonical",
 ) -> LifecycleResult:
     _, agents = _selected(config, agent_names)
     command_runner = runner or CommandRunner()
@@ -154,10 +151,10 @@ def render_agents(
         command, result = _run_operation_result(
             config,
             "cortex_agent__render_spec",
-            {"agent_name": agent["name"], "projection": projection},
+            {"agent_name": agent["name"]},
             command_runner,
         )
-        payload = _parse_render_output(result.stdout, agent["name"], projection)
+        payload = _parse_render_output(result.stdout, agent["name"])
         artifact = _write_render_artifact(config, payload)
         renders.append({**payload, "artifact": str(artifact)})
         commands.append(command)
@@ -173,31 +170,24 @@ def deploy_agents(
     apply: bool,
     allowed_targets: list[str],
     allowed_databases: list[str],
-    projection: str = "canonical",
     alias: str | None = None,
     runner: CommandRunner | None = None,
 ) -> LifecycleResult:
     command_runner = runner or CommandRunner()
     manifest, agents = _selected(config, agent_names)
     selected_names = [agent["name"] for agent in agents]
-    plan = (
-        build_upload_plan(manifest, config.project_dir, selected_names)
-        if projection == "canonical"
-        else None
-    )
+    plan = build_upload_plan(manifest, config.project_dir, selected_names)
     if apply:
         assert_config_database(manifest, config.database)
         validate_deploy_context(
             config, allowed_targets, allowed_databases, command_runner
         )
-        if plan is not None:
-            upload_skills(plan, config, command_runner)
+        upload_skills(plan, config, command_runner)
     commands = []
     renders = []
     for agent in agents:
         arguments = {
             "agent_name": agent["name"],
-            "projection": projection,
             "dry_run": not apply,
         }
         if alias:
@@ -210,7 +200,7 @@ def deploy_agents(
             _allowlist_variables(allowed_targets, allowed_databases) if apply else None,
         )
         commands.append(command)
-        renders.append(_parse_render_output(result.stdout, agent["name"], projection))
+        renders.append(_parse_render_output(result.stdout, agent["name"]))
     return LifecycleResult(tuple(selected_names), tuple(commands), tuple(renders))
 
 

@@ -17,15 +17,15 @@ Use this sequence rather than skipping directly to deploy or evaluation:
 3. Run `doctor` with the intended `--project-dir` and `--target`; fix every `FAIL`.
 4. Run `manifest validate --agent <logical-name> --json` and confirm the Agent
    and eval suite are discovered from the fresh manifest.
-5. Run `skill plan --agent <logical-name> --json` when the canonical projection
+5. Run `skill plan --agent <logical-name> --json` when the Agent
    declares skills; fix missing local paths before deployment.
 6. Run `agent render`, then `agent deploy` without `--apply`; inspect
    `logs/dbt.log` for the rendered spec, physical name, hashes, and dry-run DDL.
-7. For an approved canonical apply, supply an explicit connection, matching
+7. For an approved Agent apply, supply an explicit connection, matching
    database, and both CLI allowlists. The CLI uploads declared skills first.
-8. For evaluation, separately materialize/test the eval model and dry-run then
-   apply `cortex_agent__deploy` with `projection: native_eval`; only then preview
-   `eval run` and consider its paid `--apply` path.
+8. For evaluation, separately materialize/test the optional eval model after the
+   normal Agent is deployed; then preview `eval run` and consider its paid
+   `--apply` path. Do not deploy a second Agent.
 9. Retain the candidate at
    `<artifact-dir>/candidates/<agent>/<suite>/<run_name>.json`, gate it, compare
    it with `<artifact-dir>/baselines/<agent>/<suite>.json`, and move a baseline
@@ -35,6 +35,7 @@ Use this sequence rather than skipping directly to deploy or evaluation:
 |---|---|
 | dbt/project/executable failure | Verify `--project-dir`, `--dbt-executable`, dependency install, and profile target; rerun doctor. |
 | Snow CLI executable failure | Install Snow CLI or set `--snow-executable`/`SNOW_EXECUTABLE`; rerun doctor. |
+| Immutable SHA package version fails | Run `dbt deps` and verify `dbt_packages/dbt_cortex_agent/dbt_project.yml` reports the CLI version. A source-root `dbt_project.yml`, branch revision, missing install, or mismatched installed version is not accepted. |
 | `init` completed but no Agent exists | Expected: init only appends dependency and selected project vars; author the exposure, semantic view, and eval model separately. |
 | No enabled exposure | Set `config.meta.cortex_agent.enabled: true`; use the logical exposure name. |
 | Semantic model does not resolve | Make the model name unique and materialize it as `semantic_view`. |
@@ -45,13 +46,13 @@ Use this sequence rather than skipping directly to deploy or evaluation:
 | Apply says connection is not explicit | Pass `--connection`; `SNOWFLAKE_CONNECTION_NAME` alone does not authorize apply. |
 | Missing staged `SKILL.md` | Run `skill plan`, upload the declared directory to the exact stage path, then deploy. |
 | Wrong skill directory | Mirror the declared stage suffix under the private/shared layout; do not add name-keyed remapping. |
-| Expected eval tool missing | Check `projection` and `evaluation_supported`; native eval excludes skills and MCP. |
-| Eval plan works but apply fails | Confirm the deployed native-eval Agent, materialized eval table, evaluation stage access, explicit connection, matching database, warehouse, and runtime extra. |
+| Expected eval tool rejected | Use a declared Analyst, Cortex Search, `web_search`, or generic custom tool name. Skills, MCP, code execution, and other capability tools require separate proof. |
+| Eval plan works but apply fails | Confirm the normally deployed Agent, materialized eval table, evaluation stage access, explicit connection, matching database, warehouse, and runtime extra. |
 | Eval dataset rejected | Require unique `ground_truth_ref`, unique `INPUT_QUERY`, and one valid `OUTPUT` VARIANT per row. |
 | Tool metric fails on boundary rows | Set `custom_criteria.test_type`; require invocations only for relevant in-scope rows. |
 | Candidate is indeterminate | Check pre/post DEFAULT provenance; do not rerun until green or relax tolerances. |
 | Baseline comparison rejected | Keep suite signature/policy compatible and use the accepted baseline's tolerances. |
-| Unexpected `_EVAL`/target suffix | Review `naming.<target>`, `cortex_agent_env_suffixes`, and `cortex_agent_eval_suffix`. |
+| Unexpected target suffix | Review `naming.<target>` and `cortex_agent_env_suffixes`; evaluation does not add an Agent suffix. |
 | Controlled error lacks JSON on stdout | Errors are emitted to stderr; process exit is `2`. |
 | `agent render --json` has no specification | Expected: CLI JSON is an orchestration summary and successful dbt stdout is captured; inspect `logs/dbt.log` or call `cortex_agent__render_spec` directly. |
 

@@ -133,7 +133,7 @@ def test_orders_starter_json_preview_is_structured(tmp_path, capsys):
         "packages.yml",
         "models/semantic/sem_orders.sql",
         "models/agents/orders_assistant/agent.yml",
-        "models/agents/orders_assistant/evals/eval_orders_assistant__core.sql",
+        "models/agents/orders_assistant/evals/orders_assistant_core.sql",
         "models/agents/orders_assistant/evals/core.yml",
         "seeds/orders.csv",
         "seeds/orders.yml",
@@ -202,27 +202,16 @@ def test_eval_run_is_paid_opt_in():
     assert args.apply is False
 
 
-def test_agent_render_and_deploy_projection_defaults_and_choices():
+def test_agent_lifecycle_commands_do_not_expose_projection():
     parser = build_parser()
 
-    assert parser.parse_args(["agent", "render"]).projection == "canonical"
-    assert parser.parse_args(["agent", "deploy"]).projection == "canonical"
-    assert parser.parse_args(
-        ["agent", "smoke", "--agent", "a", "--question", "q"]
-    ).projection == "canonical"
-    assert (
-        parser.parse_args(
-            ["agent", "render", "--projection", "native_eval"]
-        ).projection
-        == "native_eval"
-    )
     with pytest.raises(SystemExit) as exc:
-        parser.parse_args(["agent", "deploy", "--projection", "unsupported"])
+        parser.parse_args(["agent", "deploy", "--projection", "native_eval"])
     assert exc.value.code == 2
     with pytest.raises(SystemExit) as exc:
         parser.parse_args([
             "agent", "smoke", "--agent", "a", "--question", "q",
-            "--projection", "unsupported",
+            "--projection", "canonical",
         ])
     assert exc.value.code == 2
 
@@ -275,50 +264,12 @@ def test_agent_smoke_preview_is_structured_and_does_not_invoke(
         "command": "agent smoke",
         "applied": False,
         "agent": "orders_assistant",
-        "projection": "canonical",
         "agent_object": "ORDERS_OVERRIDE",
         "question": " How many orders? ",
         "expected_tool": " analyst ",
         "passed": None,
         "response": None,
     }
-
-
-def test_agent_smoke_native_eval_uses_dbt_rendered_physical_identity(
-    monkeypatch, capsys, tmp_path
-):
-    manifest = {
-        "exposures": {
-            "exposure.fixture.orders_assistant": {
-                "name": "orders_assistant",
-                "meta": {"cortex_agent": {"enabled": True}},
-            }
-        }
-    }
-    monkeypatch.setattr(
-        "dbt_cortex_agent.commands.agent.fresh_manifest", lambda *args, **kwargs: manifest
-    )
-    calls = []
-    monkeypatch.setattr(
-        "dbt_cortex_agent.commands.agent.render_agents",
-        lambda config, names, projection: calls.append((names, projection))
-        or type(
-            "Result",
-            (),
-            {"renders": ({"physical_agent": "DB.AGENTS.CUSTOM_EVAL_AGENT"},)},
-        )(),
-    )
-
-    assert main([
-        "agent", "smoke", "--project-dir", str(tmp_path), "--no-parse",
-        "--target", "sandbox", "--agent", "orders_assistant",
-        "--question", "question", "--projection", "native_eval", "--json",
-    ]) == 0
-
-    payload = json.loads(capsys.readouterr().out)
-    assert calls == [(["orders_assistant"], "native_eval")]
-    assert payload["projection"] == "native_eval"
-    assert payload["agent_object"] == "CUSTOM_EVAL_AGENT"
 
 
 @pytest.mark.parametrize(("option", "value"), [("--agent", "   "), ("--question", "\t")])
@@ -490,8 +441,8 @@ def test_agent_deploy_human_output_does_not_require_render_artifact(
             "renders": (
                 {
                     "agent": "agent",
-                    "physical_agent": "DB.AGENTS.AGENT_EVAL",
-                    "projection": "native_eval",
+                    "physical_agent": "DB.AGENTS.AGENT",
+                    "lifecycle_contract": "single_agent",
                     "spec": {"tools": []},
                     "target": "sandbox",
                 },
@@ -507,10 +458,10 @@ def test_agent_deploy_human_output_does_not_require_render_artifact(
 
     assert main([
         "agent", "deploy", "--project-dir", str(tmp_path), "--no-parse",
-        "--agent", "agent", "--projection", "native_eval",
+        "--agent", "agent",
     ]) == 0
     output = capsys.readouterr().out
-    assert "DB.AGENTS.AGENT_EVAL" in output
+    assert "DB.AGENTS.AGENT" in output
     assert "Artifact:" not in output
 
 

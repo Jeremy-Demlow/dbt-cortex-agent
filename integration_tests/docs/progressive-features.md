@@ -1,6 +1,6 @@
 # Progressive features
 
-Keep the first Agent minimal. Add these only after canonical/native-eval renders and
+Keep the first Agent minimal. Add these only after the full Agent render and
 the guarded lifecycle are understood.
 
 ## Cortex Search tool
@@ -15,7 +15,6 @@ tools:
   - name: SupportSearch
     type: cortex_search
     search_service: SUPPORT.SEARCH.SUPPORT_SEARCH_SERVICE
-    evaluation_supported: true
     description: Searches governed support content. Use for support-policy questions.
 ```
 
@@ -25,7 +24,6 @@ tools:
 - name: OpenOrderProcedure
   type: generic
   identifier: TOOLS.OPEN_ORDER_STATUS
-  evaluation_supported: true
   description: Returns status for a supplied order identifier.
 ```
 

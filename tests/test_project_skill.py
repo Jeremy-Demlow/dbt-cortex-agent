@@ -152,6 +152,17 @@ def test_skill_has_no_parse_bypass_fixed_environment_or_lifecycle_copy() -> None
     assert not re.search(r"\b[A-Z][A-Z0-9_]*\.[A-Z][A-Z0-9_]*\.[A-Z][A-Z0-9_]*\b", text)
 
 
+def test_skill_uses_one_agent_and_optional_eval_without_projection_deploy() -> None:
+    _, body = _skill_parts()
+    lowered = body.lower()
+    assert "an agent\ncan be authored, rendered, deployed, and smoked without an eval model" in lowered
+    assert "never create, deploy, clone, or suffix a\nsecond agent" in lowered
+    assert "never\npropose a second agent deployment" in lowered
+    assert "--projection" not in body
+    assert "native_eval" not in body
+    assert body.count("dbt-cortex-agent agent deploy") == 2
+
+
 def test_skill_has_independent_ordered_approval_stops() -> None:
     _, body = _skill_parts()
     stops = (

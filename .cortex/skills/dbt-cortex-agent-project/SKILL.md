@@ -16,7 +16,8 @@ lifecycle logic.
 - dbt Core with `dbt-snowflake` is authoritative for parse, graph, manifest, and release
   proof. Fusion/fdbt may provide advisory feedback but never replaces dbt Core evidence.
 - dbt owns Agent/eval definitions, rendering, physical naming, lifecycle macros, versions,
-  aliases, grants, and eval plans. The CLI coordinates those contracts.
+  aliases, grants, and eval plans. One enabled exposure resolves one physical Agent; optional
+  evaluation metadata targets that same Agent. The CLI coordinates those contracts.
 - Let manifest-dependent commands run their normal fresh parse. Never bypass parsing.
 - Discover target, database, schemas, connection, warehouse, role, Agent names, semantic
   views, and safety allowlists from the project and user. Do not invent environment values.
@@ -55,8 +56,9 @@ Before choosing files or commands, state and confirm:
   ground truth available to prove feasibility. Record gaps instead of inventing semantics.
 - **Proof:** offline parse/validation/render evidence first; optional runtime and evaluation
   evidence only behind later approvals.
-- **Assembly line:** metadata -> parse -> validate -> render -> deploy preview -> optional
-  approved deploy/runtime -> optional approved eval -> separately approved baseline policy.
+- **Assembly line:** Agent metadata -> parse -> validate -> render -> deploy preview -> optional
+  approved deploy/runtime -> optional eval-model authoring and approved eval -> separately approved
+  baseline policy.
 
 If objective, controllable lever, or supporting data is missing, stop with a concise gap report.
 
@@ -102,7 +104,7 @@ Create a migration table for review:
 | Search/tool config | supported exposure tool metadata |
 | Physical name | `snowflake_name` or target naming map |
 | Usage roles | `access.usage_roles` |
-| Skills/MCP | supported canonical metadata; excluded from native eval |
+| Skills/MCP | supported Agent metadata; use capability-specific proof where built-in evaluation cannot invoke them |
 | Versions/aliases/grants | existing package lifecycle commands after approval |
 
 Flag unsupported or unavailable fields. Preserve the existing live Agent until dbt render and an
@@ -110,9 +112,11 @@ approved migration plan prove parity; never mutate it during discovery or author
 
 #### D. Optional evaluation authoring
 
-Add this route only when representative questions and ground truth exist. Plan a table model with
-`config.meta.cortex_eval`, stable question IDs/refs, `native_eval` projection, metrics, thresholds,
-and regression tolerances. Each row must emit one `OUTPUT` VARIANT. Use
+Add this route only when representative questions and ground truth exist. It is optional: an Agent
+can be authored, rendered, deployed, and smoked without an eval model. Plan a table model with
+`config.meta.cortex_eval`, stable question IDs/refs, metrics, thresholds, and regression tolerances.
+The suite's `agent` field names the same enabled exposure; never create, deploy, clone, or suffix a
+second Agent for evaluation. Each row must emit one `OUTPUT` VARIANT. Use
 `ground_truth_output` for answer correctness and `ground_truth_invocations` for tool metrics;
 expected tool names must match projected tool names exactly.
 
@@ -159,9 +163,8 @@ dbt deps --project-dir <PROJECT_DIR>
 dbt parse --project-dir <PROJECT_DIR> --target <TARGET>
 dbt-cortex-agent doctor --project-dir <PROJECT_DIR> --target <TARGET> --json
 dbt-cortex-agent manifest validate --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --json
-dbt-cortex-agent agent render --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --projection canonical --json
-dbt-cortex-agent agent render --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --projection native_eval --json
-dbt-cortex-agent agent deploy --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --projection canonical --allow-target <TARGET> --allow-database <DATABASE> --json
+dbt-cortex-agent agent render --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --json
+dbt-cortex-agent agent deploy --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --allow-target <TARGET> --allow-database <DATABASE> --json
 ```
 
 Run the applicable commands through Cortex Code. The deploy command above is a preview: it does
@@ -181,13 +184,13 @@ Only when the user requests live proof, present separate exact plans for the nee
 Deployment manual parity:
 
 ```bash
-dbt-cortex-agent agent deploy --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --projection canonical --connection <CONNECTION> --database <DATABASE> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
+dbt-cortex-agent agent deploy --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --connection <CONNECTION> --database <DATABASE> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
 ```
 
 Runtime smoke manual parity:
 
 ```bash
-dbt-cortex-agent agent smoke --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --question <QUESTION> --projection canonical --connection <CONNECTION> --database <DATABASE> --schema <AGENT_SCHEMA> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
+dbt-cortex-agent agent smoke --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --question <QUESTION> --connection <CONNECTION> --database <DATABASE> --schema <AGENT_SCHEMA> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
 ```
 
 State which objects or runtime are affected, selected context, allowlists, and expected proof.
@@ -205,8 +208,9 @@ present a revised packet, and stop again.
 
 ### 7. Prepare optional paid evaluation
 
-Require an already deployed native-eval Agent, materialized eval table, evaluation stage access,
-explicit connection/warehouse, matching target/database, and both allowlists. Show the exact suite,
+Require the already deployed Agent selected by the exposure, a materialized eval table, evaluation
+stage access, explicit connection/warehouse, matching target/database, and both allowlists. Never
+propose a second Agent deployment for this step. Show the exact suite,
 metrics, row scope, prerequisites, and command:
 
 ```bash

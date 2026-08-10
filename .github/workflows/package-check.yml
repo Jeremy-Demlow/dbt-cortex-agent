@@ -105,9 +105,18 @@ jobs:
           tests/test_eval.py
           tests/test_cli.py
           tests/test_manifest.py
+      - name: Build wheel for installed end-to-end verification
+        run: python -m build --wheel --outdir "$RUNNER_TEMP/wheel-dist"
+      - name: Verify installed wheel with ${{ matrix.line }} dbt line
+        run: >-
+          python scripts/verify_installed_wheel.py
+          --wheel "$RUNNER_TEMP"/wheel-dist/*.whl
+          --dbt-package-dir .
+          --dbt-core '${{ matrix.dbt-core }}'
+          --dbt-snowflake '${{ matrix.dbt-snowflake }}'
       - name: Clean dbt residue
         if: always()
-        run: rm -rf integration_tests/dbt_packages integration_tests/target integration_tests/logs
+        run: rm -rf integration_tests/dbt_packages integration_tests/target integration_tests/logs build src/*.egg-info
 
   distribution:
     runs-on: ubuntu-latest

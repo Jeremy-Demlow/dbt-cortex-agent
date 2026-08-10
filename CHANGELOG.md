@@ -5,24 +5,37 @@ versioning for documented public macros, metadata contracts, and rendered specs.
 
 ## Unreleased
 
-- Added a project-local, script-free Cortex Code adoption skill for dbt-owned
-  Agents. It supports existing semantic views, the fixed Orders starter,
-  existing-Agent migration, and optional eval authoring with manual 0.3.1
-  command parity and separate local-write, Snowflake, paid-eval, and baseline
-  approval boundaries.
+- Replaced the evaluation-specific duplicate Agent contract with one full
+  Agent per enabled exposure and target. Optional suites evaluate that same Agent
+  and never deploy or mutate a second object.
+- Updated the Orders starter, project-local Cortex Code skill, active docs, and
+  package tests for Agent-only and Agent-plus-eval adoption. Historical `_EVAL`
+  evidence remains auditable but is explicitly superseded.
+- The Python 0.3.1 distribution is not yet published to PyPI; active install
+  guidance uses a reviewed clean local checkout until publication is verified.
 
 ## 0.3.1 — 2026-08-07
 
-- Added explicit `canonical`/`native_eval` selection to Agent render and deploy,
-  with canonical defaults, macro validation, dbt-owned physical identity,
-  strict marked-output parsing, and deterministic contained render artifacts.
-- Native-eval CLI deploy retains the existing apply safety gates while skipping
-  canonical-only skill planning and upload.
+- Added preview-first `init --starter orders` generation from packaged synthetic
+  fixtures, with exact structured actions, atomic collision validation,
+  idempotent identical files, `.dbtignore` append, and semantic-view dependency
+  preservation.
+- Agent render and deploy resolve one target-selected physical Agent, with macro
+  validation, strict marked-output parsing, deterministic `spec.json` artifacts,
+  and complete skill/capability rendering.
 - Added skill-independent `agent smoke` preview and explicit runtime invocation,
   with manifest-owned physical resolution, optional exact tool assertion, stable
   structured output, existing SSE-client reuse, and pre-invocation safety gates.
-- General Agent smoke now selects `canonical` or `native_eval`, reports that
-  projection, and resolves native-eval physical identity through dbt rendering.
+- General Agent smoke resolves the same manifest-owned physical Agent as deploy.
+- Added a project-local, script-free Cortex Code adoption skill for dbt-owned
+  Agents. It supports existing semantic views, the fixed Orders starter,
+  existing-Agent migration, and optional eval authoring with manual command
+  parity and separate local-write, Snowflake, paid-eval, and baseline approvals.
+- Doctor now accepts an immutable 40-character Git SHA only when the installed
+  consumer dbt package metadata matches the CLI version. Branches, missing or
+  mismatched installed metadata, and semantic-version mismatches fail closed.
+- Evaluation metadata is optional and targets the same deployed Agent; it does
+  not create, deploy, clone, suffix, or filter a second Agent.
 
 ## 0.3.0 — 2026-08-06
 
@@ -46,10 +59,6 @@ versioning for documented public macros, metadata contracts, and rendered specs.
   canonical CLI deploy uploads declared skills, native-eval deployment uses the
   public macro, and CLI/macro output, safety, artifact, and troubleshooting
   boundaries are documented explicitly.
-- Added preview-first `init --starter orders` generation from packaged integration
-  fixtures, with exact structured actions, atomic collision validation,
-  idempotent identical files, `.dbtignore` append, and semantic-view dependency
-  preservation. Projection, render, deploy, and smoke behavior are unchanged.
 
 ## 0.2.0 — 2026-07-31
 

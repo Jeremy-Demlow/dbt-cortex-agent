@@ -58,7 +58,7 @@ def build_candidate(
         "run_metadata": provenance,
         "plan_schema_version": plan.schema_version,
         "suite_signature": plan.suite_signature,
-        "projection": plan.projection,
+        "plan_identity": plan.plan_identity,
         "agent_fqn": plan.agent_fqn,
         "dataset_fqn": plan.table_fqn,
         "stage_fqn": plan.stage_fqn,
@@ -112,7 +112,7 @@ def validate_result(value: dict[str, Any], expected_type: str | None = None) -> 
         "total_records",
         "plan_schema_version",
         "suite_signature",
-        "projection",
+        "plan_identity",
         "agent_fqn",
         "dataset_fqn",
         "stage_fqn",
@@ -127,9 +127,26 @@ def validate_result(value: dict[str, Any], expected_type: str | None = None) -> 
         raise ValueError("Evaluation artifact summary must be an object and ordered refs a list")
     if len(value["ordered_ground_truth_refs"]) != len(set(value["ordered_ground_truth_refs"])):
         raise ValueError("Evaluation artifact ordered_ground_truth_refs must be unique")
+    for field in ("agent", "suite", "eval_model", "run_name"):
+        artifact_slug(value[field], f"evaluation artifact {field}")
     metadata = value.get("run_metadata")
     if not isinstance(metadata, dict):
         raise ValueError("Evaluation artifact run_metadata must be an object")
+    plan_identity = metadata.get("plan_identity")
+    if not isinstance(plan_identity, dict) or plan_identity.get("agent_fqn") != value.get("agent_fqn"):
+        raise ValueError("Evaluation artifact run_metadata.plan_identity must match agent_fqn")
+    if value.get("plan_identity") != plan_identity:
+        raise ValueError("Evaluation artifact plan_identity must match signed run metadata identity")
+    expected_identity = {
+        "agent_name": value.get("agent"),
+        "suite_name": value.get("suite"),
+        "eval_model": value.get("eval_model"),
+        "agent_fqn": value.get("agent_fqn"),
+        "dataset_fqn": value.get("dataset_fqn"),
+        "stage_fqn": value.get("stage_fqn"),
+    }
+    if any(plan_identity.get(field) != expected for field, expected in expected_identity.items()):
+        raise ValueError("Evaluation artifact fields must match signed plan_identity")
     for phase in ("pre_start", "post_completion"):
         provenance = metadata.get(phase)
         if not isinstance(provenance, dict) or not provenance.get("default_version"):
@@ -141,8 +158,6 @@ def validate_result(value: dict[str, Any], expected_type: str | None = None) -> 
         raise ValueError("Evaluation artifact DEFAULT drift flag is inconsistent with provenance")
     if changed and (value.get("status") != "indeterminate" or value.get("passed") is not False):
         raise ValueError("Evaluation artifact with DEFAULT drift must be indeterminate and failed")
-    for field in ("agent", "suite", "eval_model", "run_name"):
-        artifact_slug(value[field], f"evaluation artifact {field}")
     return value
 
 
