@@ -77,10 +77,12 @@ def _config(tmp_path):
 class FakeRunner:
     def __init__(self, fail_on=None):
         self.calls = []
+        self.kwargs = []
         self.fail_on = fail_on
 
     def __call__(self, command, **kwargs):
         self.calls.append(command)
+        self.kwargs.append(kwargs)
         failed = self.fail_on and self.fail_on(command)
         stdout = ""
         if not failed and len(command) > 2 and command[2] in {
@@ -121,6 +123,25 @@ def test_dry_run_deploy_invokes_only_canonical_macro(tmp_path):
     assert len(fake.calls) == 1
     assert fake.calls[0][:3] == ["dbt-custom", "run-operation", "cortex_agent__deploy"]
     assert _macro_args(fake.calls[0]) == {"agent_name": "agent", "dry_run": True}
+
+
+def test_deploy_passes_resolved_environment_to_dbt_macro(tmp_path):
+    _project(tmp_path, include_skill=False)
+    fake = FakeRunner()
+    config = _config(tmp_path)
+    context = type("Context", (), {"dbt_env": {"SNOWFLAKE_ACCOUNT": "acct"}})()
+    config = __import__("dataclasses").replace(config, execution_context=context)
+
+    deploy_agents(
+        config,
+        ["agent"],
+        apply=False,
+        allowed_targets=[],
+        allowed_databases=[],
+        runner=CommandRunner(fake),
+    )
+
+    assert fake.kwargs[0]["env"] == {"SNOWFLAKE_ACCOUNT": "acct"}
 
 
 def test_deploy_always_uploads_skills_after_apply_preflight(tmp_path):

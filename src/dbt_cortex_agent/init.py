@@ -304,7 +304,11 @@ def initialize(
             changed.append(path)
         if run_deps:
             result = run_dbt_deps(
-                config.dbt_executable, config.project_dir, config.target, runner or CommandRunner()
+                config.dbt_executable,
+                config.project_dir,
+                config.target,
+                runner or CommandRunner(),
+                config.dbt_env,
             )
             if result.returncode:
                 detail = result.stderr.strip() or result.stdout.strip()

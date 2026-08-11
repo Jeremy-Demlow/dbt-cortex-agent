@@ -5,6 +5,7 @@ import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Mapping
 
 
 RunCallable = Callable[..., subprocess.CompletedProcess[str]]
@@ -15,33 +16,58 @@ class CommandRunner:
     run_callable: RunCallable = subprocess.run
 
     def run(
-        self, command: Sequence[str], *, cwd: str | Path | None = None
+        self,
+        command: Sequence[str],
+        *,
+        cwd: str | Path | None = None,
+        env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        return self.run_callable(
-            list(command), cwd=cwd, text=True, capture_output=True, check=False
-        )
+        kwargs = {"cwd": cwd, "text": True, "capture_output": True, "check": False}
+        if env is not None:
+            kwargs["env"] = dict(env)
+        return self.run_callable(list(command), **kwargs)
 
 
 def executable_version(executable: str, runner: CommandRunner) -> subprocess.CompletedProcess[str]:
     return runner.run([executable, "--version"])
 
 
+def _run(
+    runner: CommandRunner,
+    command: Sequence[str],
+    *,
+    cwd: str | Path,
+    env: Mapping[str, str] | None,
+) -> subprocess.CompletedProcess[str]:
+    if env is None:
+        return runner.run(command, cwd=cwd)
+    return runner.run(command, cwd=cwd, env=env)
+
+
 def run_dbt_deps(
-    executable: str, project_dir: str | Path, target: str | None, runner: CommandRunner
+    executable: str,
+    project_dir: str | Path,
+    target: str | None,
+    runner: CommandRunner,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [executable, "deps", "--project-dir", str(project_dir)]
     if target:
         command.extend(["--target", target])
-    return runner.run(command, cwd=project_dir)
+    return _run(runner, command, cwd=project_dir, env=env)
 
 
 def run_dbt_parse(
-    executable: str, project_dir: str | Path, target: str | None, runner: CommandRunner
+    executable: str,
+    project_dir: str | Path,
+    target: str | None,
+    runner: CommandRunner,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [executable, "parse", "--project-dir", str(project_dir)]
     if target:
         command.extend(["--target", target])
-    return runner.run(command, cwd=project_dir)
+    return _run(runner, command, cwd=project_dir, env=env)
 
 
 def run_dbt_operation(
@@ -51,6 +77,7 @@ def run_dbt_operation(
     macro: str,
     arguments: dict[str, object],
     runner: CommandRunner,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [
         executable,
@@ -63,4 +90,4 @@ def run_dbt_operation(
     ]
     if target:
         command.extend(["--target", target])
-    return runner.run(command, cwd=project_dir)
+    return _run(runner, command, cwd=project_dir, env=env)

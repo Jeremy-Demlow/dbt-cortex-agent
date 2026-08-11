@@ -100,3 +100,9 @@
 - As a new adopter, I can complete the Agent-only path without adding or running an evaluation.
 - As an evaluation author, I can add an optional suite and prove it plans against the same Agent FQN without causing deployment.
 - As a security or cost reviewer, I can inspect deterministic evidence that the verifier stays outside connector, mutation, runtime, paid evaluation, and baseline boundaries.
+
+## REQ-015
+
+- As an operator, one explicit Snow CLI connection controls dbt rendering, stage operations, runtime invocation, and evaluation.
+- As a security reviewer, connection secrets remain in memory and are never printed, persisted, or copied into command arguments.
+- As a maintainer, unsupported authentication modes fail before any dbt or Snowflake operation begins.

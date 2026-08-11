@@ -193,7 +193,13 @@ def build_plan(
         return _plan_from_payload(plan_payload, agent_name, suite_name)
     command_runner = runner or CommandRunner()
     if parse:
-        parsed = run_dbt_parse(config.dbt_executable, config.project_dir, config.target, command_runner)
+        parsed = run_dbt_parse(
+            config.dbt_executable,
+            config.project_dir,
+            config.target,
+            command_runner,
+            config.dbt_env,
+        )
         if parsed.returncode != 0:
             raise RuntimeError(parsed.stderr.strip() or parsed.stdout.strip() or "dbt parse failed")
     rendered = run_dbt_operation(
@@ -203,6 +209,7 @@ def build_plan(
         "dbt_cortex_agent.cortex_eval__execution_plan",
         {"agent_name": agent_name, "suite_name": suite_name},
         command_runner,
+        config.dbt_env,
     )
     if rendered.returncode != 0:
         raise RuntimeError(rendered.stderr.strip() or rendered.stdout.strip() or "dbt evaluation plan render failed")

@@ -191,3 +191,12 @@
     immutable Git SHA fixtures use only line-scoped allowlists, with no broad file or detector exclusion.
 12. Run the workflow tracked-file scan and the absolute-path documentation test from outside the
     repository; verify both remain anchored to the package checkout and report no false self-findings.
+
+## REQ-015: Authoritative Snow/dbt execution context
+
+1. Resolve one file-based `SNOWFLAKE_JWT` connection into an isolated dbt child environment.
+2. Verify explicit database and warehouse options override connection defaults while unrelated ambient values do not.
+3. Reject missing connections, missing key files, and unsupported or conflicting authentication modes before execution.
+4. Verify masked Snow CLI secret values are never forwarded and parent environment state is never mutated.
+5. Verify manifest parse, Agent lifecycle macros, skill operations, dbt deps, and evaluation planning receive the same child environment.
+6. Verify an installed wheel resolves a fake named connection and runs from outside the source checkout.

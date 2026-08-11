@@ -24,6 +24,8 @@ def test_config_resolves_project_relative_defaults(tmp_path):
     assert config.snow_executable == "snow"
     assert config.target is None
     assert config.connection_explicit is False
+    assert config.database_explicit is False
+    assert config.warehouse_explicit is False
 
 
 def test_explicit_config_wins_over_environment(tmp_path):
@@ -34,6 +36,7 @@ def test_explicit_config_wins_over_environment(tmp_path):
 
     assert config.target == "explicit"
     assert config.database == "CLI_DB"
+    assert config.database_explicit is True
     assert config.dbt_executable == "dbt2"
 
 

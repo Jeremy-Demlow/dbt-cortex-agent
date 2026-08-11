@@ -19,6 +19,7 @@ the provenance of the current package; current release scope is v0.3.1.
 | [REQ-012](REQ-012_guided_cortex_code_adoption_skill.md) | Guided Cortex Code adoption and immutable-SHA doctor | Complete (v0.3.1) |
 | [REQ-013](REQ-013_single_physical_agent_evaluation.md) | One physical Agent per enabled exposure and target, with optional same-Agent evaluations | Complete |
 | [REQ-014](REQ-014_installed_wheel_single_agent_verifier.md) | Installed-wheel Agent-only and optional-eval end-to-end verification | Complete |
+| [REQ-015](REQ-015_authoritative_snow_dbt_execution_context.md) | Authoritative Snow CLI connection context for dbt, Snow CLI, and runtime operations | Complete |
 
 See [user stories](user_stories.md), [test cases](../tests/test_cases.md), and
 [regression coverage](../tests/regression.md) for the linked behavioral evidence.

@@ -54,7 +54,11 @@ def _run_operation_result(
         command.extend(
             ["--vars", json.dumps(variables, separators=(",", ":"), sort_keys=True)]
         )
-    result = (runner or CommandRunner()).run(command, cwd=config.project_dir)
+    command_runner = runner or CommandRunner()
+    if config.dbt_env is None:
+        result = command_runner.run(command, cwd=config.project_dir)
+    else:
+        result = command_runner.run(command, cwd=config.project_dir, env=config.dbt_env)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or result.stdout.strip() or f"dbt macro failed: {macro}")
     return tuple(command), result

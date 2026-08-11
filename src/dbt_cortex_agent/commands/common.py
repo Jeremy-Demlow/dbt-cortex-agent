@@ -40,7 +40,11 @@ def fresh_manifest(
 ) -> dict[str, Any]:
     if not no_parse:
         result = run_dbt_parse(
-            config.dbt_executable, config.project_dir, config.target, runner or CommandRunner()
+            config.dbt_executable,
+            config.project_dir,
+            config.target,
+            runner or CommandRunner(),
+            config.dbt_env,
         )
         if result.returncode != 0:
             raise RuntimeError(

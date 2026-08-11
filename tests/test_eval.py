@@ -194,6 +194,36 @@ def test_build_plan_runs_fresh_parse_then_package_qualified_plan_macro(tmp_path)
     ]
 
 
+def test_build_plan_passes_resolved_environment_to_parse_and_macro(tmp_path):
+    payload = _plan_payload()
+
+    class FakeRunner:
+        def __init__(self):
+            self.envs = []
+
+        def run(self, command, *, cwd=None, env=None):
+            self.envs.append(env)
+            stdout = (
+                f"CORTEX_EVAL_PLAN_JSON={json.dumps(payload, separators=(',', ':'))}\n"
+                if "run-operation" in command else ""
+            )
+            return subprocess.CompletedProcess(command, 0, stdout, "")
+
+    config = _config(tmp_path, _manifest())
+    context = type("Context", (), {"dbt_env": {"SNOWFLAKE_ACCOUNT": "acct"}})()
+    config = __import__("dataclasses").replace(config, execution_context=context)
+    fake = FakeRunner()
+
+    build_plan(
+        config, agent_name="orders_assistant", suite_name="core", runner=fake
+    )
+
+    assert fake.envs == [
+        {"SNOWFLAKE_ACCOUNT": "acct"},
+        {"SNOWFLAKE_ACCOUNT": "acct"},
+    ]
+
+
 def test_build_plan_fails_closed_for_tampered_or_duplicate_refs(tmp_path):
     payload = _plan_payload()
     payload["identity"]["agent_fqn"] = "DB.AGENT_SCHEMA.WRONG"

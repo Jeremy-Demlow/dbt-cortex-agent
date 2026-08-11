@@ -7,6 +7,8 @@ from typing import Any, Mapping
 
 import yaml
 
+from .execution_context import SnowflakeExecutionContext
+
 
 @dataclass(frozen=True)
 class Config:
@@ -16,11 +18,18 @@ class Config:
     connection: str | None
     connection_explicit: bool
     database: str | None
+    database_explicit: bool
     schema: str | None
     warehouse: str | None
+    warehouse_explicit: bool
     artifact_dir: Path
     dbt_executable: str
     snow_executable: str
+    execution_context: SnowflakeExecutionContext | None = None
+
+    @property
+    def dbt_env(self) -> Mapping[str, str] | None:
+        return self.execution_context.dbt_env if self.execution_context else None
 
 
 def load_yaml_mapping(path: Path, *, strict: bool = True) -> dict[str, Any]:
@@ -59,8 +68,10 @@ def resolve_config(args: object, env: Mapping[str, str] | None = None) -> Config
         connection=_value(getattr(args, "connection", None), values, "SNOWFLAKE_CONNECTION_NAME"),
         connection_explicit=getattr(args, "connection", None) is not None,
         database=_value(getattr(args, "database", None), values, "SNOWFLAKE_DATABASE"),
+        database_explicit=getattr(args, "database", None) is not None,
         schema=_value(getattr(args, "schema", None), values, "SNOWFLAKE_SCHEMA"),
         warehouse=_value(getattr(args, "warehouse", None), values, "SNOWFLAKE_WAREHOUSE"),
+        warehouse_explicit=getattr(args, "warehouse", None) is not None,
         artifact_dir=(
             artifact_dir.resolve()
             if artifact_dir.is_absolute()

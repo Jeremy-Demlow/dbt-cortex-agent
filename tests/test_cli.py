@@ -325,6 +325,14 @@ def test_agent_smoke_apply_reuses_invoker_and_exact_tool_assertion(
         "dbt_cortex_agent.commands.agent.invoke_agent",
         lambda *args: calls.append(args) or response,
     )
+    monkeypatch.setattr(
+        "dbt_cortex_agent.cli.resolve_execution_context",
+        lambda **kwargs: type(
+            "Context",
+            (),
+            {"database": "DB", "warehouse": None, "dbt_env": {}},
+        )(),
+    )
 
     argv = [
         "agent", "smoke", "--project-dir", str(tmp_path), "--no-parse",
@@ -529,7 +537,7 @@ def test_manifest_commands_parse_by_default_and_no_parse_is_explicit(monkeypatch
     )
     calls = []
 
-    def fake_parse(executable, project_dir, target_name, runner):
+    def fake_parse(executable, project_dir, target_name, runner, env=None):
         calls.append((executable, project_dir, target_name))
         return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
@@ -543,7 +551,7 @@ def test_manifest_commands_parse_by_default_and_no_parse_is_explicit(monkeypatch
 def test_parse_failure_prevents_manifest_load(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "dbt_cortex_agent.commands.common.run_dbt_parse",
-        lambda *args: type(
+        lambda *args, **kwargs: type(
             "Result", (), {"returncode": 1, "stdout": "", "stderr": "parse failed"}
         )(),
     )
@@ -710,7 +718,7 @@ def test_cli_module_is_thin_domain_dispatcher():
     root = Path(__file__).parents[1]
     cli = (root / "src/dbt_cortex_agent/cli.py").read_text(encoding="utf-8")
 
-    assert "args.handler(args, resolve_config(args))" in cli
+    assert "args.handler(args, config)" in cli
     assert "if args.command" not in cli
     for module in ("bootstrap", "manifest", "skill", "agent", "eval"):
         assert (root / f"src/dbt_cortex_agent/commands/{module}.py").is_file()

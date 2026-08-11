@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from urllib.error import HTTPError, URLError
 
 import yaml
@@ -11,6 +12,7 @@ from . import __version__
 from .commands import agent, bootstrap, eval, manifest, skill
 from .commands.common import shared_parser
 from .config import resolve_config
+from .execution_context import resolve_execution_context
 
 
 EXIT_SUCCESS = 0
@@ -58,7 +60,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
-        exit_code = int(args.handler(args, resolve_config(args)))
+        config = resolve_config(args)
+        if config.connection_explicit and config.connection:
+            context = resolve_execution_context(
+                connection=config.connection,
+                snow_executable=config.snow_executable,
+                target=config.target,
+                database=config.database if config.database_explicit else None,
+                warehouse=config.warehouse if config.warehouse_explicit else None,
+            )
+            config = replace(
+                config,
+                database=context.database,
+                warehouse=context.warehouse,
+                execution_context=context,
+            )
+        exit_code = int(args.handler(args, config))
         if exit_code not in VALID_HANDLER_EXIT_CODES:
             raise RuntimeError(f"Command handler returned unsupported exit code {exit_code}")
         return exit_code
