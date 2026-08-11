@@ -69,7 +69,7 @@ def test_resolves_key_pair_connection_into_isolated_dbt_environment(tmp_path, mo
         "SNOWFLAKE_ACCOUNT": "acct",
         "SNOWFLAKE_USER": "user",
         "SNOWFLAKE_PRIVATE_KEY_PATH": str(key),
-        "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE": "real-passphrase",
+        "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE": "real-passphrase",  # pragma: allowlist secret
         "SNOWFLAKE_DATABASE": "CLI_DB",
         "SNOWFLAKE_ROLE": "ROLE",
         "SNOWFLAKE_WAREHOUSE": "CLI_WH",
