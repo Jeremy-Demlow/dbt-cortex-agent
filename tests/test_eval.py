@@ -167,7 +167,7 @@ def test_build_plan_consumes_dbt_payload_without_reconstructing_identity(tmp_pat
     assert plan.thresholds == {"answer_correctness": 0.6, "tool_selection_accuracy": 0.8}
 
 
-def test_build_plan_runs_fresh_parse_then_exact_plan_macro(tmp_path):
+def test_build_plan_runs_fresh_parse_then_package_qualified_plan_macro(tmp_path):
     payload = _plan_payload()
 
     class FakeRunner:
@@ -188,7 +188,10 @@ def test_build_plan_runs_fresh_parse_then_exact_plan_macro(tmp_path):
         runner=fake,
     )
     assert fake.calls[0][1] == "parse"
-    assert fake.calls[1][1:3] == ["run-operation", "cortex_eval__execution_plan"]
+    assert fake.calls[1][1:3] == [
+        "run-operation",
+        "dbt_cortex_agent.cortex_eval__execution_plan",
+    ]
 
 
 def test_build_plan_fails_closed_for_tampered_or_duplicate_refs(tmp_path):

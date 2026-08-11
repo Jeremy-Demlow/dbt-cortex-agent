@@ -192,8 +192,10 @@ def validate_project_evidence(evidence: ProjectEvidence, *, include_eval: bool) 
             raise AssertionError(f"{evidence.name}: eval plan identity or paid boundary mismatch")
         if contains_key(evidence.eval_plan, "projection"):
             raise AssertionError(f"{evidence.name}: eval plan contains projection metadata")
-        if "cortex_eval__execution_plan" not in evidence.eval_log:
-            raise AssertionError(f"{evidence.name}: eval plan macro was not observed")
+        if "dbt_cortex_agent.cortex_eval__execution_plan" not in evidence.eval_log:
+            raise AssertionError(
+                f"{evidence.name}: package-qualified eval plan macro was not observed"
+            )
         forbidden_macros = ("cortex_agent__deploy", "cortex_agent__render_spec")
         if any(macro in evidence.eval_log for macro in forbidden_macros):
             raise AssertionError(f"{evidence.name}: eval preview invoked Agent lifecycle macro")

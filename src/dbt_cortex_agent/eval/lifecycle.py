@@ -200,7 +200,7 @@ def build_plan(
         config.dbt_executable,
         config.project_dir,
         config.target,
-        "cortex_eval__execution_plan",
+        "dbt_cortex_agent.cortex_eval__execution_plan",
         {"agent_name": agent_name, "suite_name": suite_name},
         command_runner,
     )

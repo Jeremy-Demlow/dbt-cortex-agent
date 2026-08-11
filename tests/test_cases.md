@@ -33,7 +33,7 @@
 ## REQ-005: dbt-rendered evaluation execution plan
 
 1. Verify the dbt plan macro reuses authoritative validation, target Agent, dataset, config, stage, target context, metrics, thresholds, tolerances, and ordered refs without remote queries.
-2. Verify Python parses exactly one schema-v1 plan from `dbt run-operation` output after fresh parse and preserves injectable plan/command fakes.
+2. Verify Python parses exactly one schema-v1 plan from the package-qualified `dbt run-operation` output after fresh parse and preserves injectable plan/command fakes, including installed-package resolution under dbt 1.12.
 3. Verify malformed, duplicate, or mismatched plan identity/signature fields fail closed before evaluation.
 4. Verify table validation rejects duplicate/missing refs and duplicate input queries, and result annotation uses stable unique refs.
 5. Verify pre-start DEFAULT is retained as the evaluated version and post-run DEFAULT drift creates an indeterminate failed artifact.

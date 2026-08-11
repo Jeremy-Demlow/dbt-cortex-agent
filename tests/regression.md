@@ -143,3 +143,9 @@
 - Root cause: the tracked-file scan produced package-relative names with `git ls-files` but opened them from the caller working directory, while the documentation test compared an absolute test path with relative discovered paths. Running either command from another checkout could scan unrelated same-named files or include `test_docs.py` in its own forbidden-text corpus.
 - Fix summary: the workflow scan opens tracked paths from `GITHUB_WORKSPACE`, and the documentation test compares resolved paths. No secret detector, baseline, file, or path exclusion was added.
 - Verification: CI contract coverage pins the workspace anchor; the exact scan and absolute-path documentation test run from an external directory, followed by the full package suite.
+
+## REQ-005: Installed-package eval preview used an ambiguous unqualified macro
+
+- Root cause: the CLI invoked `cortex_eval__execution_plan` without the owning package namespace, leaving run-operation resolution dependent on the consumer project's macro namespace and dbt package dispatch behavior.
+- Fix summary: the CLI now invokes `dbt_cortex_agent.cortex_eval__execution_plan`; the public unqualified macro remains available for direct dbt usage.
+- Verification: focused command construction and an installed-package consumer regression under dbt Core 1.12 prove the package-qualified run-operation renders the read-only plan. Existing dbt `>=1.10,<2.0` support documentation is unchanged.

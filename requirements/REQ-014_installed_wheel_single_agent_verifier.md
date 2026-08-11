@@ -39,7 +39,7 @@ Agent with evaluation remaining optional.
    plan preview. Render, deploy preview, smoke preview, and eval plan report the same Agent FQN.
 5. Both projects expose the `single_agent` lifecycle contract, contain no projection field or
    `_EVAL` physical identity, and render the same Agent specification.
-6. Eval preview is non-paid and invokes only fresh parse plus `cortex_eval__execution_plan`; it does
+6. Eval preview is non-paid and invokes only fresh parse plus the package-qualified `dbt_cortex_agent.cortex_eval__execution_plan`; it does
    not invoke any Agent lifecycle macro, alter the render artifact, connect through Snow CLI, deploy,
    invoke runtime, accept a baseline, or mutate Snowflake.
 7. Script unit tests cover isolated project construction, command/result validation, prohibited

@@ -26,6 +26,7 @@
 - As a baseline owner, a candidate cannot relax the accepted regression policy to pass its own comparison.
 - As an evaluation operator, an applied run cannot connect until its dbt-rendered target and database are explicitly allowlisted, and it executes under the role dbt resolved.
 - As a baseline owner, I can preview a deterministic migration of known legacy accepted evidence without silently overwriting a current baseline or paying for a new evaluation.
+- As an installed-package consumer, I can render an eval plan under supported dbt versions without consumer macro namespace or dispatch ambiguity.
 
 ## REQ-006
 

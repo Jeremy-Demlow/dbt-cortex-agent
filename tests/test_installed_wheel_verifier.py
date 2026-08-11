@@ -57,7 +57,7 @@ def _evidence(tmp_path, *, include_eval, fqn="WHEEL_VERIFY_DB.AGENTS.ORDERS_ASSI
             if include_eval
             else None
         ),
-        "cortex_eval__execution_plan" if include_eval else "",
+        "dbt_cortex_agent.cortex_eval__execution_plan" if include_eval else "",
         "digest",
         "digest",
     )
@@ -94,7 +94,14 @@ def test_validate_pair_proves_same_agent_and_optional_eval(tmp_path):
     [
         (lambda item: item.render["renders"][0].update(projection="native_eval"), "projection"),
         (lambda item: item.smoke.update(agent_object="OTHER"), "FQN drift"),
-        (lambda item: object.__setattr__(item, "eval_log", "cortex_eval__execution_plan cortex_agent__deploy"), "lifecycle"),
+        (
+            lambda item: object.__setattr__(
+                item,
+                "eval_log",
+                "dbt_cortex_agent.cortex_eval__execution_plan cortex_agent__deploy",
+            ),
+            "lifecycle",
+        ),
         (lambda item: object.__setattr__(item, "render_digest_after_eval", "changed"), "changed"),
     ],
 )
@@ -107,7 +114,7 @@ def test_optional_eval_validation_fails_closed(tmp_path, mutation, message):
 
 def test_agent_only_rejects_eval_action(tmp_path):
     evidence = _evidence(tmp_path, include_eval=False)
-    object.__setattr__(evidence, "eval_log", "cortex_eval__execution_plan")
+    object.__setattr__(evidence, "eval_log", "dbt_cortex_agent.cortex_eval__execution_plan")
     with pytest.raises(AssertionError, match="eval action"):
         verifier.validate_project_evidence(evidence, include_eval=False)
 
