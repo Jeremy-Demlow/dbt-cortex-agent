@@ -54,7 +54,10 @@ def test_resolves_key_pair_connection_into_isolated_dbt_environment(tmp_path, mo
         target="sandbox",
         database="CLI_DB",
         warehouse="CLI_WH",
-        parent_env={"KEEP": "yes", "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE": "real-passphrase"},
+        parent_env={
+            "KEEP": "yes",
+            "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE": "real-passphrase",  # pragma: allowlist secret
+        },
         runner=CommandRunner(fake),
     )
 
@@ -101,8 +104,8 @@ def test_missing_connection_fails_without_leaking_parameters(tmp_path):
         ({"private_key_file": None}, "file-based key-pair authentication"),
         ({"authenticator": None}, "must use authenticator SNOWFLAKE_JWT"),
         ({"authenticator": "externalbrowser"}, "must use authenticator SNOWFLAKE_JWT"),
-        ({"password": "active-password"}, "unsupported authentication parameter"),
-        ({"private_key": "inline-key"}, "unsupported authentication parameter"),
+        ({"password": "active-password"}, "unsupported authentication parameter"),  # pragma: allowlist secret
+        ({"private_key": "inline-key"}, "unsupported authentication parameter"),  # pragma: allowlist secret
     ],
 )
 def test_rejects_incomplete_or_unsupported_connection(tmp_path, overrides, message):
