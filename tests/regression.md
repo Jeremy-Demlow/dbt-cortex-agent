@@ -1,5 +1,11 @@
 # Regression tests
 
+## REQ-016: Evaluation role lacked Agent monitoring access
+
+- Root cause: the package grant lifecycle modeled only `USAGE ON AGENT`, while Snowflake Agent evaluations also require `MONITOR` or `OWNERSHIP` on the evaluated Agent.
+- Fix summary: Agent metadata now supports separate `access.monitor_roles`, and the existing sandbox-guarded grant macro renders/applies `MONITOR ON AGENT` alongside usage grants.
+- Verification: package lifecycle tests pin the new statement type; the Orders starter and integration fixture demonstrate distinct runtime and monitor roles; the reference consumer proves the protected asynchronous evaluation path.
+
 ## REQ-003: Bootstrap inherited maintainer-owned defaults
 
 - Root cause: init supplied a personal Git URL, fixed revision, implicit sandbox target, empty database allowlist, and conventional schemas when adopters omitted configuration.

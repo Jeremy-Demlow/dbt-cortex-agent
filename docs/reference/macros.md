@@ -11,7 +11,7 @@ macros resolve one full specification and one target-selected physical Agent.
 | `cortex_agent__render_spec` | `agent_name` | Non-mutating full-spec render |
 | `cortex_agent__deploy` | `agent_name`, `dry_run=true`, `alias` | Apply is sandbox-guarded |
 | `cortex_agent__build` | `dry_run=true`, `alias` | Iterates enabled exposures |
-| `cortex_agent__grant_usage` | `agent_name`, `dry_run=true` | Apply grants Agent usage |
+| `cortex_agent__grant_usage` | `agent_name`, `dry_run=true` | Apply Agent usage and monitor grants |
 | `cortex_agent__set_alias` | `agent_name`, `alias`, `to_version` or `from_alias`, `dry_run=true` | Apply moves alias |
 | `cortex_agent__promote_alias` | `agent_name`, `from_alias`, `to_alias`, `dry_run=true` | Alias wrapper |
 | `cortex_agent__rollback_alias` | `agent_name`, `alias`, `to_version`, `dry_run=true` | Alias wrapper |

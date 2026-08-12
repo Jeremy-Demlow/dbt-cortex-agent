@@ -119,7 +119,7 @@ configuration, and expected-tool assertion failures exit `2`.
 
 ### `dbt-cortex-agent agent grant` — MUTATION with `--apply`
 
-Dry-run or grant Agent usage. Options: shared options, repeatable `--agent`, both
+Dry-run or grant Agent usage and monitor access. Options: shared options, repeatable `--agent`, both
 allowlists, and `--apply`.
 
 ### `dbt-cortex-agent agent promote` — MUTATION with `--apply`

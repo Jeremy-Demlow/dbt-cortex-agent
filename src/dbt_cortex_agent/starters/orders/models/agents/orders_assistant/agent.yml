@@ -21,6 +21,9 @@ exposures:
           access:
             usage_roles:
               - "{{ env_var('CORTEX_AGENT_RUNTIME_ROLE', 'ORDERS_AGENT_USER') }}"
+              - "{{ env_var('CORTEX_AGENT_MONITOR_ROLE', 'ORDERS_AGENT_MONITOR') }}"
+            monitor_roles:
+              - "{{ env_var('CORTEX_AGENT_MONITOR_ROLE', 'ORDERS_AGENT_MONITOR') }}"
           model:
             orchestration: claude-sonnet-4-5
           orchestration:

@@ -350,6 +350,10 @@ def test_public_agent_macros_have_no_projection_interface():
     assert "{% macro cortex_agent__render_spec(agent_name) %}" in sources["agent_render.sql"]
     assert "{% macro cortex_agent__deploy(agent_name, dry_run=True, alias=None) %}" in sources["agent_render.sql"]
     assert "{% macro cortex_agent__grant_usage(agent_name, dry_run=True) %}" in sources["agent_grants.sql"]
+    assert "GRANT MONITOR ON AGENT" in sources["agent_grants.sql"]
+    assert "monitor_roles" in sources["agent_grants.sql"]
+    assert 'statements.append("GRANT USAGE ON AGENT "' in sources["agent_grants.sql"]
+    assert 'statements.append("GRANT MONITOR ON AGENT "' in sources["agent_grants.sql"]
     assert "{% macro cortex_agent__set_alias(agent_name, alias, to_version=none, from_alias=none, dry_run=true) %}" in sources["agent_versioning.sql"]
 
 

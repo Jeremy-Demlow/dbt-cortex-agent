@@ -16,6 +16,7 @@ Agent metadata lives at `exposures[].config.meta.cortex_agent`.
 |---|---|---|
 | `naming.<target>` | string | Explicit target-specific Agent name |
 | `access.usage_roles` | list | Used by Agent-object grant macro |
+| `access.monitor_roles` | list | Roles that inspect or evaluate Agent observability |
 | `model.orchestration` | string | Orchestration model; package default applies when absent |
 | `orchestration.budget.seconds/tokens` | number | Rendered budget |
 | `instructions.orchestration` | string | Orchestration instructions |
@@ -34,6 +35,7 @@ metadata; they are not rendered into the Agent specification.
 | `naming.<target>` | string | No | Falls back to environment suffix rules |
 | `description` | string | No | Documentary only |
 | `access.usage_roles[]` | string | No | Used only by `cortex_agent__grant_usage` |
+| `access.monitor_roles[]` | string | No | Grants `MONITOR ON AGENT` through `cortex_agent__grant_usage` |
 | `versioning.strategy` | string | No | Documentary only |
 | `versioning.<target>.deploy_alias` | string | No | Alias applied after commit |
 | `versioning.<target>.promotion_alias` | string | No | Documentary promotion intent |

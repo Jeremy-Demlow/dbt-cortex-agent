@@ -1,5 +1,11 @@
 # Test cases
 
+## REQ-016: Agent monitor access contract
+
+1. Verify `access.usage_roles` renders `GRANT USAGE ON AGENT` and `access.monitor_roles` renders `GRANT MONITOR ON AGENT` through the same sandbox-guarded macro.
+2. Verify the starter demonstrates an evaluation/monitor role under both lists while keeping a separate runtime-only role.
+3. Verify access metadata does not leak into rendered Agent specifications and unrelated privileges remain consumer-owned.
+
 ## REQ-002: v0.3.0 identity and Python ownership
 
 1. Verify the historical v0.3.0 identity and ownership boundary remains the foundation of the current package while active release surfaces identify v0.3.1.

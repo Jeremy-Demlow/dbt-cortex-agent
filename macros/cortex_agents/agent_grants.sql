@@ -1,7 +1,7 @@
 {% macro cortex_agent__grant_usage(agent_name, dry_run=True) %}
-  {# Render (and, on the sandbox-guarded apply path, execute) USAGE grants for a
+  {# Render (and, on the sandbox-guarded apply path, execute) Agent grants for a
      deployed Cortex Agent. Access is declared in meta.cortex_agent.access.usage_roles
-     (a flat list of role names). Grants are DDL, not part of the agent spec, so this
+     and monitor_roles (flat lists of role names). Grants are DDL, not part of the agent spec, so this
      is a separate path from cortex_agent__deploy and does not affect spec rendering
      or the goldens (same treatment as MCP ADD MCP_SERVER).
 
@@ -11,6 +11,7 @@
   {% set agent = exposure.meta.get('cortex_agent', {}) %}
   {% set agent_fqn = cortex_agent__target_agent_fqn(agent) %}
   {% set usage_roles = agent.get('access', {}).get('usage_roles', []) %}
+  {% set monitor_roles = agent.get('access', {}).get('monitor_roles', []) %}
 
   {% set statements = [] %}
   {% for role in usage_roles %}
@@ -19,14 +20,20 @@
       {% do statements.append("GRANT USAGE ON AGENT " ~ agent_fqn ~ " TO ROLE " ~ safe_role) %}
     {% endif %}
   {% endfor %}
+  {% for role in monitor_roles %}
+    {% if role %}
+      {% set safe_role = cortex_agent__unquoted_identifier(role, 'monitor role') %}
+      {% do statements.append("GRANT MONITOR ON AGENT " ~ agent_fqn ~ " TO ROLE " ~ safe_role) %}
+    {% endif %}
+  {% endfor %}
 
   {% if statements | length == 0 %}
-    {% do log("[cortex_agent__grant_usage] no access.usage_roles declared for " ~ agent_name ~ " -- nothing to grant", info=True) %}
+    {% do log("[cortex_agent__grant_usage] no access usage_roles or monitor_roles declared for " ~ agent_name ~ " -- nothing to grant", info=True) %}
     {{ return([]) }}
   {% endif %}
 
   {% if dry_run %}
-    {% do log("[DRY RUN] would grant USAGE on " ~ agent_fqn ~ " to " ~ (usage_roles | length) ~ " role(s):", info=True) %}
+    {% do log("[DRY RUN] would apply " ~ (statements | length) ~ " Agent grant(s) on " ~ agent_fqn ~ ":", info=True) %}
     {% for stmt in statements %}
       {% do log("[DRY RUN] " ~ stmt, info=True) %}
     {% endfor %}
