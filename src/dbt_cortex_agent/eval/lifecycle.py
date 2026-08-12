@@ -388,7 +388,7 @@ def run_evaluation(
         status = PollResult("FAILED", "evaluation was not started")
         pre_start: dict[str, Any] | None = None
         for retry in range(transient_retries + 1):
-            final_run = base_run if retry == 0 else f"{base_run}-r{retry}"
+            final_run = base_run if retry == 0 else f"{base_run}_r{retry}"
             dataset_name = f"{final_run}_dataset"
             filename = plan.config_filename_template.replace("__RUN_NAME__", final_run)
             stage_path = _upload_config(cursor, plan, filename, render_eval_config(plan, dataset_name))

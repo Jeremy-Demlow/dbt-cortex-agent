@@ -6,6 +6,12 @@
 - Fix summary: Agent metadata now supports separate `access.monitor_roles`, and the existing sandbox-guarded grant macro renders/applies `MONITOR ON AGENT` alongside usage grants.
 - Verification: package lifecycle tests pin the new statement type; the Orders starter and integration fixture demonstrate distinct runtime and monitor roles; the reference consumer proves the protected asynchronous evaluation path.
 
+## Evaluation retry generated an invalid dataset identifier
+
+- Root cause: transient retries appended `-rN` to the run name, and the same token became an unquoted Snowflake dataset identifier.
+- Fix summary: retry suffixes now use `_rN`, preserving unique run names while remaining valid unquoted identifiers.
+- Verification: `tests/test_eval.py::test_apply_retries_once_and_persists_candidate` pins the retry run name used by the generated dataset configuration.
+
 ## REQ-003: Bootstrap inherited maintainer-owned defaults
 
 - Root cause: init supplied a personal Git URL, fixed revision, implicit sandbox target, empty database allowlist, and conventional schemas when adopters omitted configuration.

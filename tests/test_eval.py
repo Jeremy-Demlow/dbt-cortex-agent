@@ -651,7 +651,7 @@ def test_apply_retries_once_and_persists_candidate(tmp_path):
         "USE SCHEMA AGENT_SCHEMA",
     ]
     candidate = load_result(output)
-    assert candidate["run_name"] == "candidate_run-r1"
+    assert candidate["run_name"] == "candidate_run_r1"
     assert candidate["run_metadata"]["evaluated_version"] == "VERSION$9"
     assert candidate["run_metadata"]["plan_identity"]["agent_fqn"] == plan.agent_fqn
     assert "projection" not in candidate
