@@ -55,6 +55,7 @@ metadata; they are not rendered into the Agent specification.
 | `tools[].query_timeout` | number | No | `300` |
 | `tools[].semantic_view_model` | string | Analyst only | Manifest-resolved semantic view |
 | `tools[].search_service` | string | Search only | Pre-existing service FQN |
+| `tools[].access.usage_roles[]` | string | Search only | Roles granted `USAGE` on the exact Search service by the Agent grant lifecycle |
 | `tools[].identifier` | string | Generic only | Pre-existing procedure FQN |
 | `capabilities.web_search.enabled` | boolean | No | Disabled when absent |
 | `capabilities.web_search.max_results` | number | No | Resource omitted when absent |
@@ -83,7 +84,7 @@ Common fields are listed in the complete inventory above.
 | Type | Required field | Resource rendering |
 |---|---|---|
 | `cortex_analyst_text_to_sql` | `semantic_view_model` | Manifest-resolved semantic-view FQN plus warehouse |
-| `cortex_search` | `search_service` | Pre-existing service FQN |
+| `cortex_search` | `search_service` | Pre-existing three-part service FQN; optional `access.usage_roles` declares least-privilege query access |
 | `generic` | `identifier` | Pre-existing procedure identifier |
 
 Unknown tool types fail validation. Analyst model names must resolve uniquely to a

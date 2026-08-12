@@ -1,5 +1,12 @@
 # Regression tests
 
+## REQ-017: Native evaluation ingestion could not query an Agent Search tool
+
+- Symptom: Agent deployment, provenance, grants, preflight, and smoke succeeded, but native evaluation ingestion failed with Search error `399502`.
+- Root cause: Agent grants covered the Agent object only; `tools[].search_service` was rendered into the specification without a declarative role-access contract.
+- Fix summary: Cortex Search tools now support strict `access.usage_roles`, and the sandbox-guarded Agent grant lifecycle grants `USAGE` on exactly the declared Search service.
+- Verification: package contract/lifecycle tests and the reference consumer preflight prove the missing Search grant blocks before paid evaluation.
+
 ## REQ-016: Evaluation role lacked Agent monitoring access
 
 - Root cause: the package grant lifecycle modeled only `USAGE ON AGENT`, while Snowflake Agent evaluations also require `MONITOR` or `OWNERSHIP` on the evaluated Agent.

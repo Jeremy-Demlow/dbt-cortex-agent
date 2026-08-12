@@ -5,6 +5,11 @@
 - As a runtime operator, I can declare roles that receive `USAGE ON AGENT` without putting grants in the Agent specification.
 - As an evaluation operator, I can declare a role under both usage and monitor access so asynchronous Agent evaluation tasks receive Snowflake's required Agent privileges.
 
+## REQ-017
+
+- As an Agent operator, I can declare the roles that receive `USAGE` on each pre-existing Cortex Search Service used by an Agent tool.
+- As an evaluation operator, missing tool access blocks before paid ingestion and identifies the exact tool dependency.
+
 ## REQ-002
 
 - As a package consumer, I can identify the dbt and Python components as one product; REQ-002 established this boundary in v0.3.0 and v0.3.1 preserves it.

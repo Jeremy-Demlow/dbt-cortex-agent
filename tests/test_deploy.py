@@ -354,6 +354,9 @@ def test_public_agent_macros_have_no_projection_interface():
     assert "monitor_roles" in sources["agent_grants.sql"]
     assert 'statements.append("GRANT USAGE ON AGENT "' in sources["agent_grants.sql"]
     assert 'statements.append("GRANT MONITOR ON AGENT "' in sources["agent_grants.sql"]
+    assert 'statements.append("GRANT USAGE ON CORTEX SEARCH SERVICE "' in sources["agent_grants.sql"]
+    assert "tool.get('access', {}).get('usage_roles', [])" in sources["agent_grants.sql"]
+    assert "cortex_agent__unquoted_fqn" in sources["agent_grants.sql"]
     assert "{% macro cortex_agent__set_alias(agent_name, alias, to_version=none, from_alias=none, dry_run=true) %}" in sources["agent_versioning.sql"]
 
 
@@ -442,3 +445,17 @@ def test_grant_macro_validates_roles_as_unquoted_identifiers():
 
     assert "cortex_agent__unquoted_identifier(role, 'usage role')" in macro
     assert 'TO ROLE " ~ safe_role' in macro
+
+
+def test_search_tool_access_is_strict_and_exact_object_only():
+    root = Path(__file__).parents[1] / "macros/cortex_agents"
+    contract = (root / "agent_contract.sql").read_text(encoding="utf-8")
+    grants = (root / "agent_grants.sql").read_text(encoding="utf-8")
+    render = (root / "agent_render.sql").read_text(encoding="utf-8")
+
+    assert "parts | length != 3" in render
+    assert "cortex_agent__unquoted_identifier(part, label ~ ' part')" in render
+    assert "access.usage_roles must be a list" in contract
+    assert 'GRANT USAGE ON CORTEX SEARCH SERVICE " ~ search_fqn' in grants
+    assert "FUTURE CORTEX SEARCH" not in grants
+    assert "ALL CORTEX SEARCH" not in grants

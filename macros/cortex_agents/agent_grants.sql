@@ -26,6 +26,17 @@
       {% do statements.append("GRANT MONITOR ON AGENT " ~ agent_fqn ~ " TO ROLE " ~ safe_role) %}
     {% endif %}
   {% endfor %}
+  {% for tool in agent.get('tools', []) %}
+    {% if tool.get('type') == 'cortex_search' %}
+      {% set search_fqn = cortex_agent__unquoted_fqn(tool.get('search_service'), "Tool '" ~ tool.get('name') ~ "' search_service") %}
+      {% for role in tool.get('access', {}).get('usage_roles', []) %}
+        {% if role %}
+          {% set safe_role = cortex_agent__unquoted_identifier(role, "Tool '" ~ tool.get('name') ~ "' usage role") %}
+          {% do statements.append("GRANT USAGE ON CORTEX SEARCH SERVICE " ~ search_fqn ~ " TO ROLE " ~ safe_role) %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+  {% endfor %}
 
   {% if statements | length == 0 %}
     {% do log("[cortex_agent__grant_usage] no access usage_roles or monitor_roles declared for " ~ agent_name ~ " -- nothing to grant", info=True) %}
@@ -33,7 +44,7 @@
   {% endif %}
 
   {% if dry_run %}
-    {% do log("[DRY RUN] would apply " ~ (statements | length) ~ " Agent grant(s) on " ~ agent_fqn ~ ":", info=True) %}
+    {% do log("[DRY RUN] would apply " ~ (statements | length) ~ " Agent/tool grant(s) for " ~ agent_fqn ~ ":", info=True) %}
     {% for stmt in statements %}
       {% do log("[DRY RUN] " ~ stmt, info=True) %}
     {% endfor %}

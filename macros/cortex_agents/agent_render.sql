@@ -6,6 +6,19 @@
   {{ return(text | upper) }}
 {% endmacro %}
 
+{% macro cortex_agent__unquoted_fqn(value, label='object') %}
+  {% set text = value | string %}
+  {% set parts = text.split('.') %}
+  {% if parts | length != 3 %}
+    {{ exceptions.raise_compiler_error(label ~ " must be a three-part Snowflake identifier, got '" ~ text ~ "'") }}
+  {% endif %}
+  {% set safe_parts = [] %}
+  {% for part in parts %}
+    {% do safe_parts.append(cortex_agent__unquoted_identifier(part, label ~ ' part')) %}
+  {% endfor %}
+  {{ return(safe_parts | join('.')) }}
+{% endmacro %}
+
 {% macro cortex_agent__target_agent_name(agent) %}
   {% set naming = agent.get('naming', {}) %}
   {% set explicit = naming.get(target.name) %}

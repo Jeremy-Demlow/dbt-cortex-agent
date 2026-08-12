@@ -77,6 +77,14 @@
       {% if not tool.get('search_service') %}
         {{ exceptions.raise_compiler_error("Tool '" ~ tool.get('name') ~ "' missing search_service") }}
       {% endif %}
+      {% do cortex_agent__unquoted_fqn(tool.get('search_service'), "Tool '" ~ tool.get('name') ~ "' search_service") %}
+      {% set usage_roles = tool.get('access', {}).get('usage_roles', []) %}
+      {% if usage_roles is string or usage_roles is mapping %}
+        {{ exceptions.raise_compiler_error("Tool '" ~ tool.get('name') ~ "' access.usage_roles must be a list") }}
+      {% endif %}
+      {% for role in usage_roles %}
+        {% do cortex_agent__unquoted_identifier(role, "Tool '" ~ tool.get('name') ~ "' usage role") %}
+      {% endfor %}
     {% elif tool.get('type') == 'generic' %}
       {% if not tool.get('identifier') %}
         {{ exceptions.raise_compiler_error("Tool '" ~ tool.get('name') ~ "' missing identifier") }}

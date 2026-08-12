@@ -6,6 +6,12 @@
 2. Verify the starter demonstrates an evaluation/monitor role under both lists while keeping a separate runtime-only role.
 3. Verify access metadata does not leak into rendered Agent specifications and unrelated privileges remain consumer-owned.
 
+## REQ-017: Tool dependency access contract
+
+1. Verify Cortex Search tools accept only a strict three-part `search_service` identifier.
+2. Verify `tools[].access.usage_roles` is a list of safe role identifiers.
+3. Verify the sandbox-guarded Agent grant lifecycle renders/applies `USAGE` on exactly the declared Cortex Search Service and does not create broad schema or future grants.
+
 ## REQ-002: v0.3.0 identity and Python ownership
 
 1. Verify the historical v0.3.0 identity and ownership boundary remains the foundation of the current package while active release surfaces identify v0.3.1.
