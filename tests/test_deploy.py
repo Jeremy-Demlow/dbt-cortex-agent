@@ -468,6 +468,23 @@ def test_cortex_agent_materialization_requires_explicit_orchestration():
     assert "'$'" not in materialization
 
 
+def test_materialization_helper_call_graph_is_package_qualified():
+    root = Path(__file__).parents[1] / "macros/cortex_agents"
+    render = (root / "agent_render.sql").read_text(encoding="utf-8")
+    guard = (root / "sandbox_guard.sql").read_text(encoding="utf-8")
+
+    for call in (
+        "cortex_agent__unquoted_identifier(part",
+        "cortex_agent__assert_deploy_target('cortex_agent__apply_deploy')",
+        "cortex_agent__agent_exists(agent_fqn)",
+        "cortex_agent__current_deploy_hashes(agent_fqn)",
+        "cortex_agent__live_draft_exists(agent_fqn)",
+    ):
+        assert f"dbt_cortex_agent.{call}" in render
+    assert "dbt_cortex_agent.cortex_agent__allowed_targets()" in guard
+    assert "dbt_cortex_agent.cortex_agent__allowed_databases()" in guard
+
+
 def test_model_agents_fail_closed_from_legacy_render_deploy_cli(tmp_path):
     manifest = {
         "metadata": {

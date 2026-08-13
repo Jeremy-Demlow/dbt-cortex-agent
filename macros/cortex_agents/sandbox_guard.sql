@@ -4,7 +4,7 @@
 {% endmacro %}
 
 {% macro cortex_agent__allowed_targets() %}
-  {{ return(var('cortex_agent_allowed_targets', [cortex_agent__deploy_target()])) }}
+  {{ return(var('cortex_agent_allowed_targets', [dbt_cortex_agent.cortex_agent__deploy_target()])) }}
 {% endmacro %}
 
 {% macro cortex_agent__allowed_databases() %}
@@ -12,8 +12,8 @@
 {% endmacro %}
 
 {% macro cortex_agent__assert_deploy_target(context) %}
-  {% set allowed_targets = cortex_agent__allowed_targets() %}
-  {% set allowed_databases = cortex_agent__allowed_databases() | map('upper') | list %}
+  {% set allowed_targets = dbt_cortex_agent.cortex_agent__allowed_targets() %}
+  {% set allowed_databases = dbt_cortex_agent.cortex_agent__allowed_databases() | map('upper') | list %}
   {% if target.name not in allowed_targets %}
     {{ exceptions.raise_compiler_error(context ~ " mutating path target '" ~ target.name ~ "' is not in cortex_agent_allowed_targets=" ~ tojson(allowed_targets) ~ ". Use dry_run=true elsewhere.") }}
   {% endif %}

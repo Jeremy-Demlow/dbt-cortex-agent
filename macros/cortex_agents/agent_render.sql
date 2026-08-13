@@ -14,7 +14,7 @@
   {% endif %}
   {% set safe_parts = [] %}
   {% for part in parts %}
-    {% do safe_parts.append(cortex_agent__unquoted_identifier(part, label ~ ' part')) %}
+    {% do safe_parts.append(dbt_cortex_agent.cortex_agent__unquoted_identifier(part, label ~ ' part')) %}
   {% endfor %}
   {{ return(safe_parts | join('.')) }}
 {% endmacro %}
@@ -381,7 +381,7 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {% if not execute %}
     {{ return({}) }}
   {% endif %}
-  {% set aliases = cortex_agent__describe_aliases(agent_fqn) %}
+  {% set aliases = dbt_cortex_agent.cortex_agent__describe_aliases(agent_fqn) %}
   {% set default_version = aliases.get('DEFAULT') %}
   {% if not default_version %}
     {{ return({}) }}
@@ -438,13 +438,13 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
 
   {# Fail-closed: this primitive mutates, so guard it directly rather than
      trusting the caller. #}
-  {% do cortex_agent__assert_deploy_target('cortex_agent__apply_deploy') %}
+  {% do dbt_cortex_agent.cortex_agent__assert_deploy_target('cortex_agent__apply_deploy') %}
   {% if '$$' in spec_json %}
     {{ exceptions.raise_compiler_error("Rendered agent spec contains '$$' delimiter") }}
   {% endif %}
 
   {% set spec_hash = local_md5(spec_json) %}
-  {% set existed = cortex_agent__agent_exists(agent_fqn) %}
+  {% set existed = dbt_cortex_agent.cortex_agent__agent_exists(agent_fqn) %}
 
   {# Idempotency: skip minting a new version when the rendered spec matches the
      currently deployed DEFAULT version, unless force_agent_recreate is set.
@@ -453,9 +453,9 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
      (MCP is DDL, not spec), so to (re)attach MCP on an unchanged spec+skill,
      use force_agent_recreate=true. #}
   {% if existed and not var('force_agent_recreate', false) %}
-    {% set current_hashes = cortex_agent__current_deploy_hashes(agent_fqn) %}
+    {% set current_hashes = dbt_cortex_agent.cortex_agent__current_deploy_hashes(agent_fqn) %}
     {% if current_hashes.get('spec_md5') == spec_hash and current_hashes.get('skill_md5', '') == skill_hash %}
-      {% set aliases = cortex_agent__describe_aliases(agent_fqn) %}
+      {% set aliases = dbt_cortex_agent.cortex_agent__describe_aliases(agent_fqn) %}
       {% set default_version = aliases.get('DEFAULT') %}
       {% set alias_key = deploy_alias | upper %}
       {% if reconcile_alias and default_version and aliases.get(alias_key) != default_version %}
@@ -472,7 +472,7 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
     {% do log("Created agent shell " ~ agent_fqn, info=True) %}
   {% endif %}
 
-  {% set has_draft = cortex_agent__live_draft_exists(agent_fqn) %}
+  {% set has_draft = dbt_cortex_agent.cortex_agent__live_draft_exists(agent_fqn) %}
   {% if not has_draft %}
     {% do run_query("ALTER AGENT " ~ agent_fqn ~ " ADD LIVE VERSION FROM LAST") %}
   {% endif %}
