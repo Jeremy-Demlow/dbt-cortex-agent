@@ -91,8 +91,8 @@
 {% macro cortex_eval__build_config(model_name, run_name=none, dataset_name=none, execute_checks=false, include_dataset=none) %}
   {% do cortex_eval__validate(model_name, execute_checks) %}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
-  {% set exposure = cortex_agent__get_agent(eval_meta.get('agent')) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set resource = cortex_agent__get_agent(eval_meta.get('agent')) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
   {% set dataset_fqn = cortex_eval__dataset_fqn(model_name) %}
   {% set content_hash = cortex_eval__dataset_content_hash(model_name) %}
   {% set eval_dataset_name = cortex_eval__hash_named_dataset_name(dataset_name, content_hash) or cortex_eval__default_dataset_name(model_name, eval_meta, content_hash) %}
@@ -100,7 +100,7 @@
   {% if include_dataset_block is none %}
     {% set include_dataset_block = not cortex_eval__dataset_exists(eval_dataset_name) %}
   {% endif %}
-  {% set agent_fqn = cortex_agent__target_agent_fqn(agent) %}
+  {% set agent_fqn = cortex_agent__resource_agent_fqn(resource, agent) %}
   {% set label = run_name or (agent.get('snowflake_name') ~ ' ' ~ eval_meta.get('name') ~ ' evaluation') %}
 
   {{ return(cortex_eval__native_config(eval_meta, agent_fqn, dataset_fqn, eval_dataset_name, label, include_dataset_block)) }}
@@ -131,14 +131,14 @@
   {% set model_name = node.name %}
   {% do cortex_eval__validate(model_name, false) %}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
-  {% set exposure = cortex_agent__get_agent(agent_name) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set resource = cortex_agent__get_agent(agent_name) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
   {% set metrics = eval_meta.get('metrics', []) %}
   {% set metric_names = cortex_eval__metric_names(metrics) %}
   {% set thresholds = eval_meta.get('thresholds', {}) %}
   {% set tolerances = eval_meta.get('regression_tolerances', {}) %}
   {% set dataset_fqn = cortex_eval__dataset_fqn(model_name) %}
-  {% set agent_fqn = cortex_agent__target_agent_fqn(agent) %}
+  {% set agent_fqn = cortex_agent__resource_agent_fqn(resource, agent) %}
   {% set stage_fqn = cortex_eval__default_stage_fqn() %}
   {% set config_filename_template = model_name ~ '__RUN_NAME__.json' %}
   {% set ordered_refs = [] %}

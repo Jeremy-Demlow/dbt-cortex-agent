@@ -11,7 +11,7 @@ def test_execution_plan_macro_is_offline_and_reuses_authoritative_helpers():
     for helper in (
         "cortex_eval__get_suite",
         "cortex_eval__validate",
-        "cortex_agent__target_agent_fqn",
+        "cortex_agent__resource_agent_fqn",
         "cortex_eval__dataset_fqn",
         "cortex_eval__native_config",
         "cortex_eval__default_stage_fqn",

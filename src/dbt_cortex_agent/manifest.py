@@ -112,6 +112,17 @@ def _relation_fqn(node: dict[str, Any]) -> str:
     return fqn(f"{database}.{schema}.{relation}", "eval model")
 
 
+def _model_agent_spec(node: dict[str, Any]) -> dict[str, Any]:
+    compiled = node.get("compiled_code")
+    if not isinstance(compiled, str) or not compiled.strip():
+        return {}
+    try:
+        value = json.loads(compiled)
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def _stage_suffix(stage_path: str) -> Path:
     _, suffix = stage_path_parts(stage_path)
     return Path(suffix)
@@ -136,6 +147,43 @@ def local_skill_dir(project_dir: str | Path, stage_path: str) -> Path:
 
 def cortex_agents(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     agents: list[dict[str, Any]] = []
+    nodes = manifest.get("nodes") or {}
+    for node in nodes.values():
+        config = node.get("config") if isinstance(node, dict) else None
+        if not isinstance(config, dict) or config.get("materialized") != "cortex_agent":
+            continue
+        agent_meta = _meta(node).get("cortex_agent", {})
+        if agent_meta is None:
+            agent_meta = {}
+        if not isinstance(agent_meta, dict):
+            raise ValueError(
+                f"cortex_agent model {node.get('unique_id')!r} meta.cortex_agent must be a mapping"
+            )
+        if agent_meta.get("enabled") is False:
+            continue
+        name = node.get("name")
+        if not name:
+            raise ValueError("Enabled cortex_agent model is missing a name")
+        database = identifier(str(node.get("database") or ""), "cortex_agent model database")
+        schema = identifier(str(node.get("schema") or ""), "cortex_agent model schema")
+        physical_name = identifier(
+            str(node.get("alias") or name), f"physical Agent for {name}"
+        )
+        normalized_meta = {
+            **agent_meta,
+            "compiled_spec": _model_agent_spec(node),
+            "snowflake_name": physical_name,
+            "naming": {**(agent_meta.get("naming") or {}), "__model__": physical_name},
+        }
+        agents.append(
+            {
+                "name": str(name),
+                "meta": normalized_meta,
+                "resource_type": "model",
+                "unique_id": node.get("unique_id"),
+                "physical_fqn": f"{database}.{schema}.{physical_name}",
+            }
+        )
     exposures = manifest.get("exposures") or {}
     for exposure in exposures.values():
         agent_meta = _meta(exposure).get("cortex_agent", {})
@@ -143,7 +191,14 @@ def cortex_agents(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             name = exposure.get("name")
             if not name:
                 raise ValueError("Enabled cortex_agent exposure is missing a name")
-            agents.append({"name": str(name), "meta": agent_meta})
+            agents.append(
+                {
+                    "name": str(name),
+                    "meta": agent_meta,
+                    "resource_type": "exposure",
+                    "unique_id": exposure.get("unique_id"),
+                }
+            )
     return sorted(agents, key=lambda item: item["name"])
 
 
@@ -156,7 +211,23 @@ def select_agents(
         by_name.setdefault(agent["name"], []).append(agent)
     duplicates = sorted(name for name, values in by_name.items() if len(values) > 1)
     if duplicates:
-        raise ValueError(f"Enabled cortex_agent exposure names must be unique: {', '.join(duplicates)}")
+        raise ValueError(
+            "Enabled cortex_agent model/exposure names must be unique: "
+            f"{', '.join(duplicates)}"
+        )
+    physical: dict[str, list[str]] = {}
+    for agent in agents:
+        physical_name = agent.get("physical_fqn")
+        if physical_name:
+            physical.setdefault(str(physical_name).upper(), []).append(agent["name"])
+    duplicate_physical = sorted(
+        name for name, logical_names in physical.items() if len(logical_names) > 1
+    )
+    if duplicate_physical:
+        raise ValueError(
+            "Enabled cortex_agent physical identities must be unique: "
+            f"{', '.join(duplicate_physical)}"
+        )
     if not names:
         return agents
     requested = list(dict.fromkeys(names))
@@ -174,8 +245,11 @@ def skill_declarations(
 ) -> list[SkillDeclaration]:
     declarations: list[SkillDeclaration] = []
     for agent in select_agents(manifest, agent_names):
-        capabilities = agent["meta"].get("capabilities") or {}
-        for skill in capabilities.get("skills", []) or []:
+        configured = agent["meta"].get("skills") or []
+        spec_skills = agent["meta"].get("compiled_spec", {}).get("skills") or []
+        legacy_skills = (agent["meta"].get("capabilities") or {}).get("skills") or []
+        skills = configured or spec_skills or legacy_skills
+        for skill in skills:
             source = skill.get("source") or {}
             if str(source.get("type", "")).lower() != "stage":
                 continue
@@ -209,6 +283,11 @@ def cortex_evals(manifest: dict[str, Any]) -> list[EvalDeclaration]:
 
 
 def physical_agent_name(agent: dict[str, Any], target: str | None) -> str:
+    if agent.get("resource_type") == "model":
+        return identifier(
+            agent["meta"].get("snowflake_name"),
+            f"physical Agent for {agent['name']}",
+        )
     meta = agent["meta"]
     naming = meta.get("naming") or {}
     value = naming.get(target) if target else meta.get("snowflake_name")

@@ -346,14 +346,12 @@ def test_single_line_cli_examples_parse(path: Path) -> None:
 def test_yaml_examples_parse_and_preserve_metadata_contracts() -> None:
     path = ROOT / "docs/guides/configuration-model.md"
     documents = [yaml.safe_load(block) for block in _fenced_blocks(path, "yaml")]
-    exposure_doc = next(doc for doc in documents if isinstance(doc, dict) and "exposures" in doc)
     eval_doc = next(doc for doc in documents if isinstance(doc, dict) and "models" in doc)
-    agent = exposure_doc["exposures"][0]["config"]["meta"]["cortex_agent"]
     suite = eval_doc["models"][0]["config"]["meta"]["cortex_eval"]
-    assert agent["enabled"] is True
-    assert agent["snowflake_name"]
-    assert agent["tools"]
-    assert suite["agent"] == exposure_doc["exposures"][0]["name"]
+    text = path.read_text(encoding="utf-8")
+    assert "materialized='cortex_agent'" in text
+    assert "models:\n  orchestration: claude-sonnet-4-6" in text
+    assert suite["agent"] == "orders_assistant"
     assert "projection" not in suite
     assert suite["metrics"] and suite["questions"]
 

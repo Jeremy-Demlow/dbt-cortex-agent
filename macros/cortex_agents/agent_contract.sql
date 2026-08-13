@@ -1,5 +1,13 @@
 {% macro cortex_agent__get_agent(agent_name) %}
   {% set matches = [] %}
+  {% for node in graph.nodes.values() %}
+    {% if node.resource_type == 'model' and node.config.get('materialized') == 'cortex_agent' and node.name == agent_name %}
+      {% set cortex_agent = node.config.get('meta', {}).get('cortex_agent', {}) %}
+      {% if cortex_agent.get('enabled', true) %}
+        {% do matches.append(node) %}
+      {% endif %}
+    {% endif %}
+  {% endfor %}
   {% for exposure in graph.exposures.values() %}
     {% set cortex_agent = exposure.meta.get('cortex_agent', {}) %}
     {% if cortex_agent.get('enabled') and exposure.name == agent_name %}
@@ -8,13 +16,24 @@
   {% endfor %}
 
   {% if matches | length == 0 %}
-    {{ exceptions.raise_compiler_error("No enabled cortex_agent exposure found for '" ~ agent_name ~ "'") }}
+    {{ exceptions.raise_compiler_error("No enabled cortex_agent model or exposure found for '" ~ agent_name ~ "'") }}
   {% endif %}
   {% if matches | length > 1 %}
-    {{ exceptions.raise_compiler_error("Multiple enabled cortex_agent exposures found for '" ~ agent_name ~ "'") }}
+    {{ exceptions.raise_compiler_error("Multiple enabled cortex_agent models/exposures found for '" ~ agent_name ~ "'") }}
   {% endif %}
 
   {{ return(matches[0]) }}
+{% endmacro %}
+
+{% macro cortex_agent__agent_meta(resource) %}
+  {% if resource.resource_type == 'model' %}
+    {{ return(resource.config.get('meta', {}).get('cortex_agent', {})) }}
+  {% endif %}
+  {{ return(resource.meta.get('cortex_agent', {})) }}
+{% endmacro %}
+
+{% macro cortex_agent__is_model(resource) %}
+  {{ return(resource.resource_type == 'model' and resource.config.get('materialized') == 'cortex_agent') }}
 {% endmacro %}
 
 {% macro cortex_agent__get_model_node(model_name) %}
@@ -50,12 +69,18 @@
 {% endmacro %}
 
 {% macro cortex_agent__validate(agent_name) %}
-  {% set exposure = cortex_agent__get_agent(agent_name) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set resource = cortex_agent__get_agent(agent_name) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
+  {% if cortex_agent__is_model(resource) %}
+    {{ exceptions.raise_compiler_error("cortex_agent model '" ~ agent_name ~ "' is deployed by dbt build, not cortex_agent__render_spec or cortex_agent__deploy") }}
+  {% endif %}
   {% set tools = agent.get('tools', []) %}
 
   {% if not agent.get('snowflake_name') %}
     {{ exceptions.raise_compiler_error("Agent '" ~ agent_name ~ "' missing meta.cortex_agent.snowflake_name") }}
+  {% endif %}
+  {% if not (agent.get('model', {}).get('orchestration') | default('', true) | trim) %}
+    {{ exceptions.raise_compiler_error("Agent '" ~ agent_name ~ "' must explicitly define model.orchestration") }}
   {% endif %}
   {% if tools | length == 0 %}
     {{ exceptions.raise_compiler_error("Agent '" ~ agent_name ~ "' must define at least one tool") }}

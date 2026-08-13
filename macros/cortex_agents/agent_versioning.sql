@@ -24,9 +24,9 @@
      version either from an explicit VERSION$N (to_version) or from the version
      another alias currently points at (from_alias). No spec change. Dry-run by
      default and sandbox-guarded. promote_alias/rollback_alias are thin wrappers. #}
-  {% set exposure = cortex_agent__get_agent(agent_name) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
-  {% set agent_fqn = cortex_agent__target_agent_fqn(agent) %}
+  {% set resource = cortex_agent__get_agent(agent_name) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
+  {% set agent_fqn = cortex_agent__resource_agent_fqn(resource, agent) %}
   {% set alias = cortex_agent__unquoted_identifier(alias, 'alias') %}
 
   {% if not execute %}

@@ -7,9 +7,9 @@
 
      dry_run (default true): log the GRANT statements only. dry_run=false: enforce the
      sandbox guard and execute each grant. Returns the list of rendered statements. #}
-  {% set exposure = cortex_agent__get_agent(agent_name) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
-  {% set agent_fqn = cortex_agent__target_agent_fqn(agent) %}
+  {% set resource = cortex_agent__get_agent(agent_name) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
+  {% set agent_fqn = cortex_agent__resource_agent_fqn(resource, agent) %}
   {% set usage_roles = agent.get('access', {}).get('usage_roles', []) %}
   {% set monitor_roles = agent.get('access', {}).get('monitor_roles', []) %}
 

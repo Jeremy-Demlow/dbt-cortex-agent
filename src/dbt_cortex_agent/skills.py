@@ -52,7 +52,10 @@ def build_upload_plan(
     project_path = Path(project_dir).resolve()
     for agent in select_agents(manifest, agent_names):
         names: set[str] = set()
-        for skill in agent["meta"].get("capabilities", {}).get("skills", []) or []:
+        configured = agent["meta"].get("skills") or []
+        spec_skills = agent["meta"].get("compiled_spec", {}).get("skills") or []
+        legacy_skills = (agent["meta"].get("capabilities") or {}).get("skills") or []
+        for skill in configured or spec_skills or legacy_skills:
             skill_name = skill.get("name")
             if skill_name in names:
                 raise ValueError(

@@ -42,6 +42,16 @@
   {{ return(database_name ~ '.' ~ schema_name ~ '.' ~ agent_name) }}
 {% endmacro %}
 
+{% macro cortex_agent__resource_agent_fqn(resource, agent) %}
+  {% if cortex_agent__is_model(resource) %}
+    {% set database_name = cortex_agent__unquoted_identifier(resource.database, 'database') %}
+    {% set schema_name = cortex_agent__unquoted_identifier(resource.schema, 'schema') %}
+    {% set agent_name = cortex_agent__unquoted_identifier(resource.alias or resource.name, 'Agent object') %}
+    {{ return(database_name ~ '.' ~ schema_name ~ '.' ~ agent_name) }}
+  {% endif %}
+  {{ return(cortex_agent__target_agent_fqn(agent)) }}
+{% endmacro %}
+
 {% macro cortex_agent__deploy_alias(agent) %}
   {% set versioning = agent.get('versioning', {}) %}
   {% set env_versioning = versioning.get(target.name, {}) %}
@@ -154,8 +164,11 @@
      insertion-order stable: declared tools (YAML order) then capability tools;
      tool_resources follow the same order. #}
   {% do cortex_agent__validate(agent_name) %}
-  {% set exposure = cortex_agent__get_agent(agent_name) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set resource = cortex_agent__get_agent(agent_name) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
+  {% if cortex_agent__is_model(resource) %}
+    {{ exceptions.raise_compiler_error("cortex_agent model '" ~ agent_name ~ "' is rendered and deployed by dbt build") }}
+  {% endif %}
   {% set tools = [] %}
   {% set tool_resources = {} %}
 
@@ -174,7 +187,7 @@
   {% do tool_resources.update(capabilities.resources) %}
 
   {% set spec = {
-    'models': {'orchestration': agent.get('model', {}).get('orchestration', var('cortex_agent_default_model', 'claude-sonnet-4-5'))},
+    'models': {'orchestration': agent.get('model', {}).get('orchestration')},
     'orchestration': {'budget': agent.get('orchestration', {}).get('budget', {'seconds': 300, 'tokens': 50000})},
     'instructions': cortex_agent__render_instructions(agent),
     'tools': tools,
@@ -199,12 +212,12 @@
 {% endmacro %}
 
 {% macro cortex_agent__render_spec(agent_name) %}
-  {% set exposure = cortex_agent__get_agent(agent_name) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set resource = cortex_agent__get_agent(agent_name) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
   {% set spec = cortex_agent__build_spec(agent_name) %}
   {% set payload = {
     'agent': agent_name,
-    'physical_agent': cortex_agent__target_agent_fqn(agent),
+    'physical_agent': cortex_agent__resource_agent_fqn(resource, agent),
     'lifecycle_contract': 'single_agent',
     'spec': spec,
     'target': target.name
@@ -215,11 +228,11 @@
 {% endmacro %}
 
 {% macro cortex_agent__deploy(agent_name, dry_run=True, alias=None) %}
-  {% set exposure = cortex_agent__get_agent(agent_name) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set resource = cortex_agent__get_agent(agent_name) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
   {% set spec = cortex_agent__build_spec(agent_name) %}
   {% set spec_json = tojson(spec) %}
-  {% set agent_fqn = cortex_agent__target_agent_fqn(agent) %}
+  {% set agent_fqn = cortex_agent__resource_agent_fqn(resource, agent) %}
   {% set deploy_alias = alias or cortex_agent__deploy_alias(agent) %}
   {% set deploy_alias = cortex_agent__unquoted_identifier(deploy_alias, 'deploy alias') %}
   {% set mcp_statements = cortex_agent__render_mcp_ddl(agent, agent_fqn) %}
@@ -279,7 +292,8 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {% if not execute %}
     {{ return(none) }}
   {% endif %}
-  {% for skill in agent.get('capabilities', {}).get('skills', []) %}
+  {% set skills = agent.get('skills', agent.get('capabilities', {}).get('skills', [])) %}
+  {% for skill in skills %}
     {% set source = skill.get('source', {}) %}
     {% if (source.get('type') | string | lower) == 'stage' %}
       {% set ls_result = run_query("LIST " ~ source.get('path') ~ " PATTERN='.*SKILL[.]md'") %}
@@ -401,7 +415,8 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
     {{ return('') }}
   {% endif %}
   {% set entries = [] %}
-  {% for skill in agent.get('capabilities', {}).get('skills', []) %}
+  {% set skills = agent.get('skills', agent.get('capabilities', {}).get('skills', [])) %}
+  {% for skill in skills %}
     {% set source = skill.get('source', {}) %}
     {% if (source.get('type') | string | lower) == 'stage' %}
       {% set rows = run_query("LIST " ~ source.get('path')) %}
@@ -499,10 +514,19 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {{ return(agent_fqn) }}
 {% endmacro %}
 {% macro cortex_agent__build(dry_run=true, alias=None) %}
-  {# One-command orchestrator: deploy every enabled cortex_agent exposure. Each
+  {# One-command orchestrator: deploy every enabled cortex_agent model/exposure. Each
      deploy is idempotent and sandbox-guarded, so this is safe to re-run. Pass
      dry_run=false to apply. #}
   {% set deployed = [] %}
+  {% for node in graph.nodes.values() %}
+    {% if node.resource_type == 'model' and node.config.get('materialized') == 'cortex_agent' %}
+      {% set ca = node.config.get('meta', {}).get('cortex_agent', {}) %}
+      {% if ca.get('enabled', true) %}
+        {% do cortex_agent__deploy(node.name, dry_run, alias) %}
+        {% do deployed.append(node.name) %}
+      {% endif %}
+    {% endif %}
+  {% endfor %}
   {% for exposure in graph.exposures.values() %}
     {% set ca = exposure.meta.get('cortex_agent', {}) %}
     {% if ca.get('enabled') %}
@@ -511,7 +535,7 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
     {% endif %}
   {% endfor %}
   {% if deployed | length == 0 %}
-    {% do log("cortex_agent__build found no enabled cortex_agent exposures", info=True) %}
+    {% do log("cortex_agent__build found no enabled cortex_agent models/exposures", info=True) %}
   {% else %}
     {% do log("cortex_agent__build " ~ ('previewed' if dry_run else 'deployed') ~ ": " ~ (deployed | join(', ')), info=True) %}
   {% endif %}

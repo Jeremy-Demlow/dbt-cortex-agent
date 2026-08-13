@@ -152,6 +152,11 @@ def render_agents(
     commands = []
     renders = []
     for agent in agents:
+        if agent.get("resource_type") == "model":
+            raise ValueError(
+                f"Agent {agent['name']!r} is a cortex_agent model; use dbt build --select "
+                f"{agent['name']} for render/deploy"
+            )
         command, result = _run_operation_result(
             config,
             "cortex_agent__render_spec",
@@ -190,6 +195,11 @@ def deploy_agents(
     commands = []
     renders = []
     for agent in agents:
+        if agent.get("resource_type") == "model":
+            raise ValueError(
+                f"Agent {agent['name']!r} is a cortex_agent model; use dbt build --select "
+                f"{agent['name']} for deployment"
+            )
         arguments = {
             "agent_name": agent["name"],
             "dry_run": not apply,

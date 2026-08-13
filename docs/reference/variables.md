@@ -12,7 +12,6 @@ do not replace them.
 | `cortex_agent_schema` | `AGENTS` | Agent objects and `EVAL_CONFIG_STAGE`. |
 | `cortex_eval_schema` | `EVAL` | Materialized eval tables and result tables. |
 | `cortex_agent_skill_stage` | `SKILL_STAGE` | Consumer property-YAML convention for skill paths. |
-| `cortex_agent_default_model` | `claude-sonnet-4-5` | Orchestration model when exposure metadata omits one. |
 | `code_execution_enabled` | `false` | Global code-execution render gate. |
 | `force_agent_recreate` | `false` | Bypass no-change skip; review version impact before use. |
 | `mcp_deploy_enabled` | `false` | Permit separate MCP attachment DDL. |

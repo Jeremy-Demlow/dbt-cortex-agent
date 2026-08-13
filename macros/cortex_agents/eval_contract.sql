@@ -85,8 +85,11 @@
 {% endmacro %}
 
 {% macro cortex_eval__native_supported_tool_names(agent_name) %}
-  {% set exposure = cortex_agent__get_agent(agent_name) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set resource = cortex_agent__get_agent(agent_name) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
+  {% if cortex_agent__is_model(resource) %}
+    {{ return(agent.get('evaluation', {}).get('native_tools', [])) }}
+  {% endif %}
   {% set supported = [] %}
   {% for tool in agent.get('tools', []) %}
     {% if tool.get('type') in ['cortex_analyst_text_to_sql', 'cortex_search', 'generic'] %}
@@ -100,8 +103,11 @@
 {% endmacro %}
 
 {% macro cortex_eval__unsupported_native_tool_claims(agent_name) %}
-  {% set exposure = cortex_agent__get_agent(agent_name) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set resource = cortex_agent__get_agent(agent_name) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
+  {% if cortex_agent__is_model(resource) %}
+    {{ return(agent.get('evaluation', {}).get('unsupported_tools', {})) }}
+  {% endif %}
   {% set capabilities = agent.get('capabilities', {}) %}
   {% set unsupported = {} %}
   {% for skill in capabilities.get('skills', []) %}
@@ -122,8 +128,26 @@
 {% endmacro %}
 
 {% macro cortex_eval__capability_evidence(agent_name, invoked_tools=[], evaluation_completed=false) %}
-  {% set exposure = cortex_agent__get_agent(agent_name) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
+  {% set resource = cortex_agent__get_agent(agent_name) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
+  {% if cortex_agent__is_model(resource) %}
+    {% set evidence = [] %}
+    {% for tool_name in agent.get('evaluation', {}).get('native_tools', []) %}
+      {% do evidence.append({
+        'capability': 'tool',
+        'name': tool_name,
+        'classification': 'invoked' if tool_name in invoked_tools else ('completed_with_attachment' if evaluation_completed else 'attached')
+      }) %}
+    {% endfor %}
+    {% for capability_name, capability_type in agent.get('evaluation', {}).get('unsupported_tools', {}).items() %}
+      {% do evidence.append({
+        'capability': capability_type,
+        'name': capability_name,
+        'classification': 'invoked' if capability_name in invoked_tools else 'indeterminate'
+      }) %}
+    {% endfor %}
+    {{ return(evidence) }}
+  {% endif %}
   {% set capabilities = agent.get('capabilities', {}) %}
   {% set spec = cortex_agent__build_spec(agent_name) %}
   {% set evidence = [] %}
@@ -185,8 +209,8 @@
     {% endif %}
   {% endfor %}
 
-  {% set agent_exposure = cortex_agent__get_agent(eval_meta.get('agent')) %}
-  {% set agent = agent_exposure.meta.get('cortex_agent', {}) %}
+  {% set resource = cortex_agent__get_agent(eval_meta.get('agent')) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
   {% set metrics = eval_meta.get('metrics', []) %}
   {% set questions = eval_meta.get('questions', []) %}
   {% set metric_names = cortex_eval__metric_names(metrics) %}

@@ -20,6 +20,7 @@ SEMANTIC_VIEW_PACKAGE = {
 STARTER_PATHS = (
     "models/semantic/sem_orders.sql",
     "models/agents/orders_assistant/agent.yml",
+    "models/agents/orders_assistant/orders_assistant.sql",
     "models/agents/orders_assistant/evals/orders_assistant_core.sql",
     "models/agents/orders_assistant/evals/core.yml",
     "seeds/orders.csv",

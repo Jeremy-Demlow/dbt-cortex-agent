@@ -33,6 +33,7 @@ EXPECTED_PACKAGE_FILES = {
     "dbt_cortex_agent/skills.py",
     "dbt_cortex_agent/snow.py",
     "dbt_cortex_agent/starters/orders/models/agents/orders_assistant/agent.yml",
+    "dbt_cortex_agent/starters/orders/models/agents/orders_assistant/orders_assistant.sql",
     "dbt_cortex_agent/starters/orders/models/agents/orders_assistant/evals/core.yml",
     "dbt_cortex_agent/starters/orders/models/agents/orders_assistant/evals/orders_assistant_core.sql",
     "dbt_cortex_agent/starters/orders/models/semantic/sem_orders.sql",

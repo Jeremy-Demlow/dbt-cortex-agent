@@ -78,6 +78,76 @@ def test_selected_agents_are_exact_and_fail_closed():
         select_agents(manifest, ["orders"])
 
 
+def test_cortex_agent_models_are_primary_manifest_declarations():
+    manifest = _manifest()
+    manifest["exposures"] = {}
+    manifest["nodes"]["model.consumer.orders_assistant"] = {
+        "unique_id": "model.consumer.orders_assistant",
+        "resource_type": "model",
+        "name": "orders_assistant",
+        "alias": "ORDERS_ASSISTANT_DBT_FOCUS",
+        "database": "db",
+        "schema": "agents",
+        "config": {
+            "materialized": "cortex_agent",
+            "meta": {
+                "cortex_agent": {
+                    "skills": [
+                        {
+                            "name": "triage",
+                            "source": {
+                                "type": "stage",
+                                "path": "@DB.AGENTS.SKILLS/agents/orders_assistant/triage",
+                            },
+                        }
+                    ]
+                }
+            },
+        },
+    }
+
+    agent = select_agents(manifest)[0]
+
+    assert agent["resource_type"] == "model"
+    assert agent["physical_fqn"] == "DB.AGENTS.ORDERS_ASSISTANT_DBT_FOCUS"
+    assert physical_agent_name(agent, "dbt_focus") == "ORDERS_ASSISTANT_DBT_FOCUS"
+    assert skill_declarations(manifest, ".")[0].agent_name == "orders_assistant"
+
+
+def test_model_and_exposure_duplicate_agent_fails_closed():
+    manifest = _manifest()
+    manifest["nodes"]["model.consumer.orders_assistant"] = {
+        "unique_id": "model.consumer.orders_assistant",
+        "resource_type": "model",
+        "name": "orders_assistant",
+        "database": "DB",
+        "schema": "AGENTS",
+        "alias": "ORDERS_ASSISTANT",
+        "config": {"materialized": "cortex_agent"},
+    }
+
+    with pytest.raises(ValueError, match="model/exposure names must be unique"):
+        select_agents(manifest)
+
+
+def test_duplicate_model_physical_agent_fails_closed():
+    manifest = _manifest()
+    manifest["exposures"] = {}
+    for logical_name in ("orders", "sales"):
+        manifest["nodes"][f"model.consumer.{logical_name}"] = {
+            "unique_id": f"model.consumer.{logical_name}",
+            "resource_type": "model",
+            "name": logical_name,
+            "database": "DB",
+            "schema": "AGENTS",
+            "alias": "SHARED_AGENT",
+            "config": {"materialized": "cortex_agent"},
+        }
+
+    with pytest.raises(ValueError, match="physical identities must be unique"):
+        select_agents(manifest)
+
+
 def test_eval_discovery_requires_nonempty_enabled_mapping():
     manifest = _manifest()
     manifest["nodes"].update(

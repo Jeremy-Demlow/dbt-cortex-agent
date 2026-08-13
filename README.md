@@ -1,11 +1,11 @@
 # dbt_cortex_agent
 
 `dbt_cortex_agent` 0.3.1 is a Snowflake-only dbt package and Python CLI for
-defining, validating, rendering, versioning, and evaluating Cortex Agents from
-dbt metadata. Agents are dbt exposures; semantic views and evaluation datasets
-remain dbt models. dbt owns the specification and lifecycle macros, while the
-CLI consumes `target/manifest.json`, delegates Agent changes to those macros,
-and manages local files, runtime clients, and evaluation artifacts.
+defining, versioning, and evaluating Cortex Agents from dbt models. A
+`materialized='cortex_agent'` model body is the native Agent YAML specification.
+dbt owns Agent creation and immutable version lifecycle; the CLI consumes
+`target/manifest.json` and manages local skills, runtime clients, and evaluation
+artifacts. Legacy exposure declarations remain supported during migration.
 
 ## Install one immutable version on two surfaces
 
@@ -45,7 +45,7 @@ and [installation](docs/getting-started/installation.md).
 The CLI also requires the Snowflake CLI (`snow`) on `PATH`; `doctor` checks both
 the `dbt` and `snow` executables. By default, `dbt-cortex-agent init` configures an existing
 dbt project by appending missing dependency and safety-variable entries. It does
-not create a dbt project or scaffold Agent exposures, semantic views, evaluation
+not create a dbt project or scaffold Agent models, semantic views, evaluation
 models, seeds, or skill files.
 
 For the fixed synthetic tutorial, preview the package-owned Orders starter in an
@@ -64,18 +64,16 @@ force mode and is not a generic project or Agent wizard.
 
 ## Five-minute non-mutating quickstart
 
-From a consumer dbt project with an Agent exposure:
+From a consumer dbt project with a full-body Agent model:
 
 ```bash
 dbt-cortex-agent doctor --project-dir . --target sandbox --json
 dbt-cortex-agent manifest validate --project-dir . --target sandbox --json
-dbt-cortex-agent agent render --project-dir . --target sandbox --agent orders_assistant --json
-dbt-cortex-agent agent deploy --project-dir . --target sandbox --agent orders_assistant \
-  --allow-target sandbox --allow-database ANALYTICS_DEV --json
+dbt compile --select orders_assistant
 ```
 
-These commands run a fresh `dbt parse`; none uses `--apply`. The final command
-renders the controlled deploy path without mutating Snowflake. Follow the
+These commands do not mutate Snowflake. `dbt compile` renders and validates the
+full Agent body without invoking its materialization. Follow the
 [quickstart](docs/getting-started/quickstart.md) to create the metadata and
 bootstrap explicit allowlists.
 
@@ -90,24 +88,20 @@ catalog publication or live Snowflake verification.
 
 ## Controlled deploy
 
-Review the dry run, use an isolated target/database, then opt in explicitly:
+Upload declared skills, use an isolated target/database, then build explicitly:
 
 ```bash
-dbt-cortex-agent agent deploy --project-dir . --target sandbox \
+dbt-cortex-agent skill upload --project-dir . --target sandbox \
   --agent orders_assistant --connection sandbox --database ANALYTICS_DEV \
   --allow-target sandbox --allow-database ANALYTICS_DEV --apply
+dbt build --select orders_assistant
 ```
 
-Render and deploy resolve the exposure's one physical Agent and complete
-specification. Render writes it to
-`target/dbt_cortex_agent/renders/<target>/<agent>/spec.json` and returns
-the specification, logical Agent, physical Agent, lifecycle marker, target, and
-artifact path in JSON. `--apply` requires an explicit `--connection`; the configured database must
-match dbt's resolved target, and the target/database must pass both CLI and dbt
-allowlists. CLI deploy also plans and uploads every declared local
-stage-backed skill before invoking the deploy macro; a failed upload prevents
-deployment. Deployment updates
-LIVE, commits `VERSION$N`, and may move an alias.
+The model relation determines the physical Agent FQN. The model body is passed
+directly to the materialization, which validates explicit orchestration, checks
+staged skills, updates LIVE, commits immutable `VERSION$N`, and reconciles the
+configured alias. Skill upload remains a separate Python responsibility and
+must succeed before `dbt build`.
 Read [lifecycle](docs/guides/lifecycle.md) and [Snowflake setup](docs/getting-started/snowflake-setup.md)
 before crossing this boundary.
 
@@ -117,22 +111,18 @@ before crossing this boundary.
 |---|---|---|
 | Diagnose a project | `doctor` | — |
 | Validate resolved metadata | `manifest validate` | `cortex_agent__validate` |
-| Render the full Agent spec | `agent render` | `cortex_agent__render_spec` |
-| Deploy/version an Agent | `agent deploy` | `cortex_agent__deploy` |
+| Render the full Agent spec | — | `dbt compile --select <agent_model>` |
+| Deploy/version an Agent | — | `dbt build --select <agent_model>` |
 | Preview/invoke any Agent | `agent smoke` | — |
 | Grant, promote, roll back | `agent grant/promote/rollback` | lifecycle macros |
 | Plan/upload/smoke skills | `skill plan/upload/smoke` | deploy validates staged skills |
 | Render/run optional evaluation | `eval run` | `cortex_eval__execution_plan`, `cortex_eval__run` |
 | Compare/gate/accept artifacts | `eval compare/gate/accept-baseline` | threshold macros only |
 
-Use macros inside dbt-native automation. Use the CLI when local file upload,
+Use dbt for model Agent render/deploy. Use the CLI when local file upload,
 stable process exits/JSON, connector clients, or durable evaluation artifacts
-are required. Both paths consume the same dbt metadata; Python does not own a
-second Agent DDL implementation. The CLI adds fresh-parse, explicit-connection,
-resolved-database, and CLI allowlist gates around applied operations. Direct
-`dbt run-operation` calls do not add those CLI gates or upload local skills; they
-rely on the package macro's dbt target/database allowlists and staged-skill
-readiness checks.
+are required. Python does not own a second Agent DDL implementation. Legacy
+exposure Agents retain the older render/deploy commands during migration.
 
 ## Lifecycle and evaluation
 
@@ -141,8 +131,8 @@ skips unchanged versions, modifies LIVE, commits an immutable version, and
 applies the requested alias. Promotion, rollback, grants, MCP attachment, and
 skill smoke remain explicit operations.
 
-Evaluation is optional and targets the same Agent selected by the exposure and
-target. `eval run` is a client for that already deployed Agent, a materialized
+Evaluation is optional and targets the same Agent selected by the model relation.
+`eval run` is a client for that already deployed Agent, a materialized
 eval table, and an evaluation stage; `--apply` incurs Cortex spend. It never
 deploys or changes an Agent. It writes candidate JSON with plan identity,
 ordered ground-truth refs, policy, and pre/post DEFAULT provenance for threshold
@@ -159,7 +149,7 @@ and accepted-baseline gates. See [evaluations](docs/guides/evaluations.md).
 ## Limitations and policies
 
 - Snowflake and dbt Core with `dbt-snowflake` are the release authority; DuckDB is unsupported and Fusion is advisory.
-- `dbt run` does not deploy exposures. Agent lifecycle requires explicit CLI commands or `dbt run-operation` macros.
+- `dbt build --select <agent_model>` deploys model Agents; `dbt compile` is the non-mutating preview.
 - Property YAML may use `target`, `var`, and `env_var`, but cannot call package macros.
 - Skills and MCP connectors are excluded from built-in native Agent Evaluation and require separate smoke/integration proof.
 - Live mutation, runtime smoke, and evaluation spend are never default operations.

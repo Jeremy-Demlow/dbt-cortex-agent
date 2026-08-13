@@ -1,52 +1,73 @@
 # Configuration model
 
-dbt metadata is authoritative. The CLI runs `dbt parse` and consumes the resolved
-`target/manifest.json`; it does not parse source YAML into a second model.
+dbt is authoritative. A Cortex Agent is a model with
+`materialized='cortex_agent'`; the model body is the native Agent YAML
+specification. Python reads operational metadata from `target/manifest.json`
+for skills, runtime, and evaluations, but never reparses the model source.
 
-## Agent-only example
+## Full-body Agent model
 
-Store Agent metadata at `exposures[].config.meta.cortex_agent`:
+```jinja
+{% do ref('sem_orders') %}
+{{
+  config(
+    materialized='cortex_agent',
+    database=target.database,
+    schema='AGENTS',
+    alias='ORDERS_ASSISTANT',
+    meta={
+      'agent_display_name': 'Orders Assistant',
+      'deploy_alias': 'latest',
+      'cortex_agent': {
+        'enabled': true,
+        'access': {'usage_roles': ['ORDERS_AGENT_USER']},
+        'evaluation': {'native_tools': ['OrdersAnalytics']}
+      }
+    }
+  )
+}}
 
-```yaml
-version: 2
-exposures:
-  - name: orders_assistant
-    type: application
-    maturity: medium
-    owner:
-      name: analytics
-      email: analytics@example.com
-    depends_on:
-      - ref('sem_orders')
-    config:
-      meta:
-        cortex_agent:
-          enabled: true
-          snowflake_name: ORDERS_ASSISTANT
-          naming:
-            sandbox: ORDERS_ASSISTANT_SANDBOX
-          access:
-            usage_roles: [ORDERS_AGENT_USER]
-          instructions:
-            orchestration: Use OrdersAnalytics for governed order questions.
-            response: Answer concisely and state the requested time scope.
-          tools:
-            - name: OrdersAnalytics
-              type: cortex_analyst_text_to_sql
-              semantic_view_model: sem_orders
-              description: Analyzes governed order revenue and volume.
+models:
+  orchestration: claude-sonnet-4-6
+
+instructions:
+  orchestration: Use OrdersAnalytics for governed order questions.
+  response: Answer concisely and state the requested time scope.
+
+tools:
+  - tool_spec:
+      type: cortex_analyst_text_to_sql
+      name: OrdersAnalytics
+      description: Analyzes governed order revenue and volume.
+
+tool_resources:
+  OrdersAnalytics:
+    semantic_view: "{{ target.database }}.SEMANTIC.SEM_ORDERS"
+    execution_environment:
+      type: warehouse
+      warehouse: "{{ target.warehouse }}"
+      query_timeout: 60
 ```
 
-`depends_on` creates dbt lineage. `semantic_view_model` is a dbt model name and
-must resolve uniquely to a `semantic_view` relation. See the full
-[Agent metadata reference](../reference/agent-metadata.md).
+Every model must explicitly declare `models.orchestration`. Values such as
+`claude-sonnet-4-6`, `claude-opus-4-6`, or `auto` are preserved unchanged;
+missing orchestration fails compilation.
 
-This exposure is sufficient for validation, rendering, deployment, versioning,
-grants, and smoke. An evaluation model is not required.
+Use no-output `ref()` calls for Agent dependencies. The relation database,
+schema, and alias are the physical Agent identity. `config.meta.cortex_agent`
+contains operational metadata that is not part of the deployed specification:
+access hints, local skill mapping, and native-evaluation classifications.
 
-## Agent-plus-eval example
+Build the Agent with:
 
-Store suite metadata at `models[].config.meta.cortex_eval` on a table model:
+```bash
+dbt compile --select orders_assistant  # non-mutating preview
+dbt build --select orders_assistant    # immutable deploy
+```
+
+## Optional evaluation model
+
+Suite metadata remains at `models[].config.meta.cortex_eval` on a table model:
 
 ```yaml
 version: 2
@@ -61,8 +82,6 @@ models:
           metrics: [answer_correctness, tool_selection_accuracy]
           thresholds:
             answer_correctness: 0.8
-          regression_tolerances:
-            answer_correctness: 0.01
           questions:
             - id: revenue_last_month
               test_type: in_scope
@@ -70,14 +89,17 @@ models:
               ground_truth_ref: revenue_last_month
 ```
 
-The optional table targets the same `orders_assistant` exposure and never creates
-or deploys another Agent. It must expose `INPUT_QUERY` and one `OUTPUT` VARIANT containing
-`ground_truth_output`, `ground_truth_invocations`, and stable custom criteria.
-See [eval metadata](../reference/eval-metadata.md).
+The optional table evaluates the same physical Agent and never creates another
+Agent. It exposes `INPUT_QUERY` and an `OUTPUT` VARIANT containing ground truth,
+expected invocations, and stable criteria.
+
+## Legacy exposures
+
+Enabled `exposures[].config.meta.cortex_agent` declarations remain readable for
+migration compatibility. New projects should use full-body models. Model Agents
+cannot be deployed through the legacy Python `agent render/deploy` commands.
 
 ## dbt variables
-
-Set project policy in the consumer `dbt_project.yml`:
 
 ```yaml
 vars:
@@ -86,36 +108,7 @@ vars:
   cortex_agent_allowed_databases: [ANALYTICS_DEV]
   cortex_agent_schema: AGENTS
   cortex_eval_schema: EVAL
-  cortex_agent_skill_stage: SKILL_STAGE
 ```
 
-The deploy target defaults internally to `dbt_focus` for backward compatibility,
-but adoption must set it explicitly. The allowed-target list defaults to the
-deploy target; the allowed-database list defaults empty and blocks mutation.
-Schemas and the skill stage name are conventions, not grants or object creation.
-Built-in evaluation uses `<target.database>.<cortex_agent_schema>.EVAL_CONFIG_STAGE`.
-See
-[variables](../reference/variables.md).
-
-## CLI flags and environment precedence
-
-Configuration precedence is **CLI option > environment variable > built-in
-default**. Source metadata and dbt vars are not overridden by similarly named CLI
-flags; CLI flags select execution context and enforce an additional safety layer.
-
-| CLI option | Environment | Built-in default |
-|---|---|---|
-| `--project-dir` | `DBT_PROJECT_DIR` | current directory |
-| `--manifest` | `DBT_MANIFEST` | `target/manifest.json` under project |
-| `--target` | `DBT_TARGET` | unset |
-| `--connection` | `SNOWFLAKE_CONNECTION_NAME` | unset; apply still requires the CLI flag |
-| `--database` | `SNOWFLAKE_DATABASE` | unset |
-| `--schema` | `SNOWFLAKE_SCHEMA` | unset |
-| `--warehouse` | `SNOWFLAKE_WAREHOUSE` | unset |
-| `--artifact-dir` | `DBT_CORTEX_AGENT_ARTIFACT_DIR` | `target/dbt_cortex_agent` |
-| `--dbt-executable` | `DBT_EXECUTABLE` | `dbt` |
-| `--snow-executable` | `SNOW_EXECUTABLE` | `snow` |
-
-`--allow-target` and `--allow-database` are repeatable command-local gates and
-have no environment fallback. `--no-parse` is only for controlled test fixtures;
-normal manifest-dependent operations always parse first. See [CLI reference](../reference/cli.md).
+The allowed-database list defaults empty and blocks mutation. Built-in
+evaluation uses `<target.database>.<cortex_agent_schema>.EVAL_CONFIG_STAGE`.

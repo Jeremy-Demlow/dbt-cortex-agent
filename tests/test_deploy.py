@@ -19,12 +19,12 @@ from dbt_cortex_agent.deploy import (
 )
 
 
-def _project(tmp_path, *, include_skill=True):
+def _project(tmp_path, *, include_skill=True, manifest=None):
     skill = {
         "name": "shared",
         "source": {"type": "stage", "path": "@DB.AGENTS.SKILL_STAGE/library/shared"},
     }
-    manifest = {
+    default_manifest = {
         "metadata": {"dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"},
         "nodes": {
             "model.test.anchor": {
@@ -46,6 +46,7 @@ def _project(tmp_path, *, include_skill=True):
             }
         },
     }
+    manifest = manifest or default_manifest
     target = tmp_path / "target"
     target.mkdir()
     (target / "manifest.json").write_text(json.dumps(manifest))
@@ -365,9 +366,9 @@ def test_eval_macros_target_single_agent_without_deploying_it():
     render = (root / "eval_render.sql").read_text(encoding="utf-8")
     run = (root / "eval_run.sql").read_text(encoding="utf-8")
 
-    assert "cortex_agent__target_agent_fqn(agent)" in render
+    assert "cortex_agent__resource_agent_fqn(resource, agent)" in render
     assert "projection" not in render
-    assert "cortex_agent__target_agent_fqn(agent)" in run
+    assert "cortex_agent__resource_agent_fqn(resource, agent)" in run
     for forbidden in ("cortex_agent__deploy", "cortex_agent__build(", "CREATE AGENT", "ALTER AGENT"):
         assert forbidden not in render + run
 
@@ -423,6 +424,92 @@ def test_python_source_contains_no_mutating_agent_ddl():
     ]
 
     assert offenders == []
+
+
+def test_cortex_agent_materialization_reuses_immutable_lifecycle():
+    materialization = (
+        Path(__file__).parents[1]
+        / "macros/materializations/cortex_agent.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "{% materialization cortex_agent, adapter='snowflake' %}" in materialization
+    assert "cortex_agent__apply_deploy" in materialization
+    assert "cortex_agent__assert_staged_skills_ready(spec)" in materialization
+    assert "cortex_agent__skills_hash(spec)" in materialization
+    assert "CREATE AGENT" not in materialization
+    assert "MODIFY LIVE VERSION" not in materialization
+    assert "COMMIT" not in materialization
+    assert "return({'relations': []})" in materialization
+    assert "run_hooks(pre_hooks, inside_transaction=False)" in materialization
+    assert "run_hooks(post_hooks, inside_transaction=False)" in materialization
+    assert "USE ROLE {{ safe_agent_role }}" in materialization
+    assert "USE ROLE {{ safe_original_role }}" in materialization
+
+    render = (
+        Path(__file__).parents[1] / "macros/cortex_agents/agent_render.sql"
+    ).read_text(encoding="utf-8")
+    assert render.count(
+        "agent.get('skills', agent.get('capabilities', {}).get('skills', []))"
+    ) == 2
+
+
+def test_cortex_agent_materialization_requires_explicit_orchestration():
+    materialization = (
+        Path(__file__).parents[1]
+        / "macros/materializations/cortex_agent.sql"
+    ).read_text(encoding="utf-8")
+
+    assert "must explicitly define models.orchestration" in materialization
+    assert "cortex_agent_default_model" not in materialization
+    assert "claude-sonnet-4-6" not in materialization
+    assert "'$'" not in materialization
+
+
+def test_model_agents_fail_closed_from_legacy_render_deploy_cli(tmp_path):
+    manifest = {
+        "metadata": {
+            "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"
+        },
+        "exposures": {},
+        "nodes": {
+            "model.consumer.agent": {
+                "unique_id": "model.consumer.agent",
+                "resource_type": "model",
+                "name": "agent",
+                "database": "DB",
+                "schema": "AGENTS",
+                "alias": "AGENT",
+                "config": {"materialized": "cortex_agent"},
+            }
+        },
+    }
+    _project(tmp_path, include_skill=False, manifest=manifest)
+
+    with pytest.raises(ValueError, match="use dbt build --select agent"):
+        render_agents(_config(tmp_path), ["agent"], CommandRunner(FakeRunner()))
+    with pytest.raises(ValueError, match="use dbt build --select agent"):
+        deploy_agents(
+            _config(tmp_path),
+            ["agent"],
+            apply=False,
+            allowed_targets=[],
+            allowed_databases=[],
+            runner=CommandRunner(FakeRunner()),
+        )
+
+
+def test_legacy_exposure_contract_also_requires_explicit_orchestration():
+    root = Path(__file__).parents[1]
+    contract = (root / "macros/cortex_agents/agent_contract.sql").read_text(
+        encoding="utf-8"
+    )
+    render = (root / "macros/cortex_agents/agent_render.sql").read_text(
+        encoding="utf-8"
+    )
+
+    assert "must explicitly define model.orchestration" in contract
+    assert "cortex_agent_default_model" not in render
+    assert "claude-sonnet-4-5" not in render
 
 
 def test_no_change_deploy_reconciles_only_explicit_alias_without_commit():

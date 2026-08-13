@@ -55,9 +55,9 @@
      run_metadata VARIANT (evaluated DEFAULT version, alias map, spec hash,
      dataset FQN, account, git sha, invocation) for auditability. #}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
-  {% set exposure = cortex_agent__get_agent(eval_meta.get('agent')) %}
-  {% set agent = exposure.meta.get('cortex_agent', {}) %}
-  {% set agent_fqn = cortex_agent__target_agent_fqn(agent) %}
+  {% set resource = cortex_agent__get_agent(eval_meta.get('agent')) %}
+  {% set agent = cortex_agent__agent_meta(resource) %}
+  {% set agent_fqn = cortex_agent__resource_agent_fqn(resource, agent) %}
   {% set parts = agent_fqn.split('.') %}
   {% set aliases = cortex_agent__describe_aliases(agent_fqn) %}
   {% set evaluated_version = aliases.get('DEFAULT', '') %}
