@@ -434,6 +434,7 @@ def test_cortex_agent_materialization_reuses_immutable_lifecycle():
 
     assert "{% materialization cortex_agent, adapter='snowflake' %}" in materialization
     assert "cortex_agent__apply_deploy" in materialization
+    assert "{% call statement('main') %}" in materialization
     assert "cortex_agent__assert_staged_skills_ready(spec)" in materialization
     assert "cortex_agent__skills_hash(spec)" in materialization
     assert "CREATE AGENT" not in materialization

@@ -65,7 +65,7 @@
   {% set skill_hash = cortex_agent__skills_hash(spec) %}
   {% do cortex_agent__apply_deploy(safe_agent_fqn, spec_json, safe_alias, [], skill_hash, true) %}
 
-  {% call statement('set_cortex_agent_comment') %}
+  {% call statement('main') %}
     ALTER AGENT {{ safe_agent_fqn }} SET COMMENT = {{ cortex_agent__sql_literal(agent_comment, 'agent_comment') }}
   {% endcall %}
   {% call statement('set_cortex_agent_profile') %}
