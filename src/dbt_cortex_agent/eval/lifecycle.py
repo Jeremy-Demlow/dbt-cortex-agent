@@ -14,7 +14,7 @@ from ..dbt_runner import CommandRunner, run_dbt_operation, run_dbt_parse
 from ..identifiers import fqn, identifier
 from ..skills import assert_apply_safety
 from .dataset import annotate_rows, validate_table
-from .results import build_candidate, write_candidate
+from .results import build_candidate, write_candidate, write_diagnostic
 
 
 TERMINAL_SUCCESS = {"COMPLETED", "SUCCEEDED", "DONE"}
@@ -61,6 +61,9 @@ class EvalPlan:
 class PollResult:
     status: str
     details: str
+    request_ids: tuple[str, ...] = ()
+    inference_ids: tuple[str, ...] = ()
+    error_code: str | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -268,11 +271,55 @@ def poll(
             details = flatten_status_details(
                 row[columns.index("STATUS_DETAILS")] if "STATUS_DETAILS" in columns else row[4] if len(row) > 4 else ""
             )
+            request_ids = _status_identifiers(row, columns, "REQUEST_ID")
+            inference_ids = _status_identifiers(row, columns, "INFERENCE_ID")
+            error_code = _status_value(row, columns, "ERROR_CODE")
             if status in TERMINAL_SUCCESS | TERMINAL_FAILURE:
-                return PollResult(status, details)
+                return PollResult(status, details, request_ids, inference_ids, error_code)
         if attempt + 1 < attempts:
             sleep(interval)
     return PollResult("TIMEOUT", "poll attempts exhausted")
+
+
+def _status_value(row: tuple[Any, ...], columns: list[str], name: str) -> str | None:
+    if name not in columns:
+        return None
+    value = row[columns.index(name)]
+    if value in (None, ""):
+        return None
+    return str(value)
+
+
+def _status_identifiers(
+    row: tuple[Any, ...], columns: list[str], name: str
+) -> tuple[str, ...]:
+    value = _status_value(row, columns, name)
+    return (value,) if value else ()
+
+
+def _diagnostic_category(status: PollResult) -> str:
+    if status.status == "TIMEOUT":
+        return "timeout"
+    if is_retryable(status.details):
+        return "transient_platform_failure"
+    return "terminal_evaluation_failure"
+
+
+def _failure_diagnostic(plan: EvalPlan, run_name: str, status: PollResult) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "artifact_type": "evaluation_diagnostic",
+        "agent": plan.agent_name,
+        "suite": plan.suite_name,
+        "run_name": run_name,
+        "status": status.status,
+        "request_ids": list(status.request_ids),
+        "inference_ids": list(status.inference_ids),
+        "error": {
+            "category": _diagnostic_category(status),
+            "code": status.error_code,
+        },
+    }
 
 
 def _upload_config(cursor, plan: EvalPlan, filename: str, content: str) -> str:
@@ -407,6 +454,7 @@ def run_evaluation(
             if status.succeeded or not is_retryable(status.details) or retry == transient_retries:
                 break
         if not status.succeeded:
+            write_diagnostic(_failure_diagnostic(plan, final_run, status), config.artifact_dir)
             raise RuntimeError(f"Evaluation {final_run} ended in {status.status}: {status.details}")
         rows = _fetch_rows(cursor, plan, final_run, retries=2, sleep=sleep)
         if not rows or not any(row.get("metric_name") for row in rows):

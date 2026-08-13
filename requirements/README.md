@@ -22,6 +22,7 @@ the provenance of the current package; current release scope is v0.3.1.
 | [REQ-015](REQ-015_authoritative_snow_dbt_execution_context.md) | Authoritative Snow CLI connection context for dbt, Snow CLI, and runtime operations | Complete |
 | [REQ-016](REQ-016_agent_monitor_access_contract.md) | Agent USAGE and MONITOR grant lifecycle for runtime and evaluation roles | In progress |
 | [REQ-017](REQ-017_tool_dependency_access_contract.md) | Least-privilege access contract for Agent tool dependencies | In progress |
+| [REQ-018](REQ-018_sanitized_evaluation_failure_diagnostics.md) | Whitelist-only terminal evaluation diagnostics | Complete |
 
 See [user stories](user_stories.md), [test cases](../tests/test_cases.md), and
 [regression coverage](../tests/regression.md) for the linked behavioral evidence.

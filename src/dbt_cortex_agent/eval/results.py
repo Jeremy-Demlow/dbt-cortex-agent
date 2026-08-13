@@ -89,6 +89,21 @@ def write_candidate(candidate: dict[str, Any], artifact_dir: str | Path) -> Path
     return target
 
 
+def write_diagnostic(diagnostic: dict[str, Any], artifact_dir: str | Path) -> Path:
+    if diagnostic.get("artifact_type") != "evaluation_diagnostic":
+        raise ValueError("Expected evaluation_diagnostic artifact")
+    target = contained_path(
+        artifact_dir,
+        "diagnostics",
+        diagnostic["agent"],
+        diagnostic["suite"],
+        f"{diagnostic['run_name']}.json",
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(diagnostic, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return target
+
+
 def validate_result(value: dict[str, Any], expected_type: str | None = None) -> dict[str, Any]:
     if value.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
         raise ValueError(

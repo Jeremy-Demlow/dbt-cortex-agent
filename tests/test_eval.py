@@ -330,6 +330,32 @@ def test_status_detail_classification_handles_json_and_is_bounded():
     assert is_retryable("Metric logical_consistency failed") is False
 
 
+def test_poll_whitelists_native_diagnostic_identifiers():
+    class DiagnosticCursor:
+        description = [
+            ("STATUS",),
+            ("STATUS_DETAILS",),
+            ("REQUEST_ID",),
+            ("INFERENCE_ID",),
+            ("ERROR_CODE",),
+            ("INPUT",),
+        ]
+
+        def execute(self, sql, params=None):
+            return None
+
+        def fetchall(self):
+            return [("FAILED", "private failure text", "request-1", "inference-1", 399502, "secret")]
+
+    result = poll(
+        DiagnosticCursor(), "run", "@stage/config", attempts=1, interval=0, sleep=lambda _: None
+    )
+
+    assert result.request_ids == ("request-1",)
+    assert result.inference_ids == ("inference-1",)
+    assert result.error_code == "399502"
+
+
 def test_result_fetch_retries_empty_and_unscored_rows_to_bound():
     class Cursor:
         description = [("METRIC_NAME",)]
@@ -621,6 +647,38 @@ class LifecycleConnection:
         pass
 
 
+class FailedLifecycleCursor(LifecycleCursor):
+    def execute(self, sql, params=None):
+        normalized = " ".join(sql.split()).upper()
+        if "'STATUS'" not in normalized:
+            super().execute(sql, params)
+            return
+        self.calls.append(normalized)
+        self.description = [
+            ("STATUS",),
+            ("STATUS_DETAILS",),
+            ("REQUEST_ID",),
+            ("INFERENCE_ID",),
+            ("ERROR_CODE",),
+            ("OUTPUT",),
+        ]
+        self.rows = [
+            (
+                "FAILED",
+                "Metric failed with private details",
+                "request-1",
+                "inference-1",
+                399502,
+                "secret",
+            )
+        ]
+
+
+class FailedLifecycleConnection(LifecycleConnection):
+    def __init__(self):
+        self.cursor_value = FailedLifecycleCursor()
+
+
 def test_apply_retries_once_and_persists_candidate(tmp_path):
     config = _config(tmp_path, _manifest())
     plan = build_plan(
@@ -657,6 +715,53 @@ def test_apply_retries_once_and_persists_candidate(tmp_path):
     assert "projection" not in candidate
     assert candidate["ordered_ground_truth_refs"] == ["total_revenue"]
     assert output.parent.name == "core"
+
+
+def test_terminal_failure_writes_whitelist_only_diagnostic(tmp_path):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"]),
+    )
+
+    with pytest.raises(RuntimeError, match="ended in FAILED"):
+        run_evaluation(
+            config,
+            plan,
+            apply=True,
+            run_name="failed_run",
+            poll_attempts=1,
+            poll_interval=0,
+            transient_retries=0,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: FailedLifecycleConnection(),
+            sleep=lambda _: None,
+        )
+
+    path = (
+        config.artifact_dir
+        / "diagnostics"
+        / "orders_assistant"
+        / "core"
+        / "failed_run.json"
+    )
+    diagnostic = json.loads(path.read_text())
+    assert diagnostic == {
+        "agent": "orders_assistant",
+        "artifact_type": "evaluation_diagnostic",
+        "error": {"category": "terminal_evaluation_failure", "code": "399502"},
+        "inference_ids": ["inference-1"],
+        "request_ids": ["request-1"],
+        "run_name": "failed_run",
+        "schema_version": 1,
+        "status": "FAILED",
+        "suite": "core",
+    }
+    assert "private" not in path.read_text().lower()
+    assert "secret" not in path.read_text().lower()
 
 
 def test_apply_rejects_unallowlisted_plan_before_connector_use(tmp_path):
