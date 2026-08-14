@@ -485,7 +485,6 @@ def test_enterprise_materialization_shape_is_supported_by_compile_only_fixture()
         "GRANT USAGE ON AGENT {{ this }} TO ROLE",
         "'agent_role': 'EXAMPLE_CLONE_OWNER' if target.name",
         "{{ enterprise_compatibility_orchestration_instructions() | indent(4) }}",
-        "experimental:",
         "type: cortex_analyst_text_to_sql",
         "type: cortex_search",
         "type: generic",
@@ -507,7 +506,7 @@ def test_enterprise_materialization_shape_is_supported_by_compile_only_fixture()
     )
     offline_spec = yaml.safe_load(offline_render)
     assert offline_spec["models"]["orchestration"] == "claude-opus-4-8"
-    assert offline_spec["experimental"]["EnableVQRFastPath"] is True
+    assert "experimental" not in offline_spec
     assert {tool["tool_spec"]["type"] for tool in offline_spec["tools"]} == {
         "cortex_analyst_text_to_sql",
         "cortex_search",
@@ -516,24 +515,6 @@ def test_enterprise_materialization_shape_is_supported_by_compile_only_fixture()
         "code_execution",
     }
     assert offline_spec["mcp_servers"] and offline_spec["skills"]
-
-    compiled_path = (
-        root
-        / "integration_tests/target/compiled/cortex_agent_starter/models/agents/enterprise_compatibility_probe.sql"
-    )
-    if compiled_path.exists():
-        spec = yaml.safe_load(compiled_path.read_text(encoding="utf-8"))
-        assert spec["models"]["orchestration"] == "claude-opus-4-8"
-        assert spec["experimental"]["EnableVQRFastPath"] is True
-        assert {tool["tool_spec"]["type"] for tool in spec["tools"]} == {
-            "cortex_analyst_text_to_sql",
-            "cortex_search",
-            "generic",
-            "web_search",
-            "code_execution",
-        }
-        assert spec["mcp_servers"] and spec["skills"]
-
 
 def test_materialization_runs_post_hooks_under_agent_role_and_restores_on_success():
     materialization = (

@@ -35,12 +35,6 @@
 models:
   orchestration: claude-opus-4-8
 
-experimental:
-  EnableUnstructuredAnalytics: false
-  EnableVQRFastPath: true
-  EnableAgenticCharting: true
-  EnableUnrestrictedChartTool: true
-
 orchestration:
   budget:
     seconds: 300
