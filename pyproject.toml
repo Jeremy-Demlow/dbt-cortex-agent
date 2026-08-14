@@ -19,7 +19,7 @@ Repository = "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
 Issues = "https://github.com/Jeremy-Demlow/dbt-cortex-agent/issues"
 
 [project.optional-dependencies]
-test = ["build>=1.2", "pytest>=8", "tomli>=2; python_version < '3.11'"]
+test = ["build>=1.2", "Jinja2>=3.1,<4", "pytest>=8", "tomli>=2; python_version < '3.11'"]
 runtime = ["snowflake-connector-python>=3.18,<5"]
 
 [project.scripts]

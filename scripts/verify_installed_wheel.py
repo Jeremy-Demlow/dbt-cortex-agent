@@ -10,7 +10,11 @@ import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Sequence
+
+import yaml
+from jinja2 import Environment, StrictUndefined
 
 
 AGENT = "orders_assistant"
@@ -62,6 +66,27 @@ def run_checked(
         detail = result.stderr.strip() or result.stdout.strip()
         raise RuntimeError(f"command failed ({result.returncode}): {' '.join(command)}\n{detail}")
     return result
+
+
+def run_expected_failure(
+    command: Sequence[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    expected: str,
+) -> None:
+    if "--apply" in command or any(
+        argument in FORBIDDEN_ARGUMENTS for argument in command
+    ):
+        raise ValueError(f"unsafe verifier command: {' '.join(command)}")
+    result = subprocess.run(
+        list(command), cwd=cwd, env=env, text=True, capture_output=True, check=False
+    )
+    detail = "\n".join((result.stdout, result.stderr))
+    if result.returncode == 0 or expected not in detail:
+        raise AssertionError(
+            f"command did not fail with expected guidance: {' '.join(command)}\n{detail.strip()}"
+        )
 
 
 def parse_json_output(result: subprocess.CompletedProcess[str], label: str) -> dict[str, Any]:
@@ -117,7 +142,7 @@ models:
       type: snowflake
       account: offline
       user: offline
-      private_key_path: /nonexistent/wheel-verifier-key.p8
+      password: offline
       role: OFFLINE_ROLE
       warehouse: OFFLINE_WAREHOUSE
       database: WHEEL_VERIFY_DB
@@ -139,6 +164,49 @@ models:
             target = project_dir / relative_path
             if target.exists():
                 target.unlink()
+
+
+def compiled_agent_evidence(project_dir: Path) -> tuple[dict[str, Any], str]:
+    manifest = json.loads((project_dir / "target/manifest.json").read_text(encoding="utf-8"))
+    nodes = [
+        node
+        for node in manifest.get("nodes", {}).values()
+        if node.get("resource_type") == "model" and node.get("name") == AGENT
+    ]
+    if len(nodes) != 1:
+        raise AssertionError(f"expected one compiled {AGENT} model, found {len(nodes)}")
+    node = nodes[0]
+    raw_code = node.get("raw_code")
+    if not isinstance(raw_code, str):
+        raise AssertionError(f"parsed {AGENT} model has no raw_code")
+    rendered = Environment(
+        extensions=["jinja2.ext.do"], undefined=StrictUndefined
+    ).from_string(raw_code).render(
+        config=lambda **_kwargs: "",
+        ref=lambda *_args, **_kwargs: "",
+        env_var=lambda _name, default=None: default,
+        target=SimpleNamespace(
+            database=DATABASE,
+            warehouse="OFFLINE_WAREHOUSE",
+            name=TARGET,
+        ),
+    )
+    spec = yaml.safe_load(rendered)
+    if not isinstance(spec, dict):
+        raise AssertionError(f"compiled {AGENT} model body is not a mapping")
+    alias = node.get("alias") or node.get("name")
+    return (
+        {
+            "agent": AGENT,
+            "physical_agent": ".".join((node["database"], node["schema"], alias)),
+            "lifecycle_contract": "single_agent",
+            "target": TARGET,
+            "spec": spec,
+        },
+        hashlib.sha256(
+            json.dumps(spec, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+    )
 
 
 def validate_project_evidence(evidence: ProjectEvidence, *, include_eval: bool) -> str:
@@ -282,18 +350,25 @@ def exercise_project(
         cwd=project_dir,
         env=env,
     )
-    render = _cli_json(
-        cli,
-        ["agent", "render", *common, "--dbt-executable", str(dbt), "--agent", AGENT],
-        cwd=project_dir,
-        env=env,
-    )
-    deploy = _cli_json(
-        cli,
-        ["agent", "deploy", *common, "--dbt-executable", str(dbt), "--agent", AGENT],
-        cwd=project_dir,
-        env=env,
-    )
+    compiled_agent, before = compiled_agent_evidence(project_dir)
+    for operation in ("render", "deploy"):
+        run_expected_failure(
+            [
+                str(cli),
+                "agent",
+                operation,
+                *common,
+                "--dbt-executable",
+                str(dbt),
+                "--agent",
+                AGENT,
+            ],
+            cwd=project_dir,
+            env=env,
+            expected=f"use dbt build --select {AGENT}",
+        )
+    render = {"renders": [compiled_agent]}
+    deploy = {"applied": False, "renders": [compiled_agent]}
     smoke = _cli_json(
         cli,
         [
@@ -310,8 +385,6 @@ def exercise_project(
         cwd=project_dir,
         env=env,
     )
-    artifact = project_dir / "target/dbt_cortex_agent/renders/sandbox/orders_assistant/spec.json"
-    before = file_digest(artifact)
     eval_plan = None
     eval_log = ""
     if include_eval:
@@ -335,7 +408,9 @@ def exercise_project(
         )
         log_file = log_dir / "dbt.log"
         eval_log = log_file.read_text(encoding="utf-8") if log_file.is_file() else ""
-    after = file_digest(artifact)
+    compiled_after, after = compiled_agent_evidence(project_dir)
+    if compiled_after["spec"] != compiled_agent["spec"]:
+        raise AssertionError(f"{project_dir.name}: eval preview changed the parsed Agent spec")
     return ProjectEvidence(
         project_dir.name,
         project_dir,

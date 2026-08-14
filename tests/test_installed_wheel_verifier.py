@@ -141,6 +141,22 @@ def test_run_checked_allows_only_cli_init_apply(tmp_path):
     assert result.stdout.strip() == "ok"
 
 
+def test_expected_failure_requires_nonzero_exit_and_guidance(tmp_path):
+    verifier.run_expected_failure(
+        [str(Path(sys.executable)), "-c", "print('use dbt build'); raise SystemExit(2)"],
+        cwd=tmp_path,
+        env=dict(os.environ),
+        expected="use dbt build",
+    )
+    with pytest.raises(AssertionError, match="expected guidance"):
+        verifier.run_expected_failure(
+            [str(Path(sys.executable)), "-c", "print('ok')"],
+            cwd=tmp_path,
+            env=dict(os.environ),
+            expected="use dbt build",
+        )
+
+
 def test_run_checked_reports_command_failure(tmp_path):
     with pytest.raises(RuntimeError, match=r"command failed \(7\)"):
         verifier.run_checked(
