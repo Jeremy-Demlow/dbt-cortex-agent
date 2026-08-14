@@ -108,10 +108,8 @@
 
 {% macro cortex_eval__render_config(model_name, run_name=none, dataset_name=none, execute_checks=false) %}
   {% set eval_config = cortex_eval__build_config(model_name, run_name, dataset_name, execute_checks) %}
-  {# JSON is valid YAML and was empirically accepted by EXECUTE_AI_EVALUATION
-     on the dbt_focus sandbox (json_probe_* START succeeded on 2026-07-21).
-     Use adapter-native serialization rather than hand-built indentation and
-     quoting, eliminating an entire class of YAML corruption bugs. #}
+  {# JSON is valid YAML. Use adapter-native serialization rather than hand-built
+     indentation and quoting, eliminating a class of YAML corruption bugs. #}
   {% set rendered = tojson(eval_config) %}
   {% if '$$' in rendered %}
     {{ exceptions.raise_compiler_error("Rendered eval config contains '$$' delimiter") }}

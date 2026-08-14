@@ -67,10 +67,10 @@ dbt-cortex-agent skill upload --project-dir . --target sandbox \
 ```bash
 dbt-cortex-agent agent promote --project-dir . --target sandbox \
   --agent orders_assistant --from-alias validated --to-alias production \
-  --allow-target sandbox --allow-database AM_SKI_RESORT_DBT_FOCUS
+  --allow-target sandbox --allow-database DBT_CORTEX_AGENT_SANDBOX
 dbt-cortex-agent agent rollback --project-dir . --target sandbox \
   --agent orders_assistant --alias production --to-version 'VERSION$1' \
-  --allow-target sandbox --allow-database AM_SKI_RESORT_DBT_FOCUS
+  --allow-target sandbox --allow-database DBT_CORTEX_AGENT_SANDBOX
 ```
 
 Review dry-run output before applying either operation.

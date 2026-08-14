@@ -33,3 +33,4 @@ dbt_cortex_agent = ["starters/orders/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = ["--ignore=tests/test_req_013_contract.py"]

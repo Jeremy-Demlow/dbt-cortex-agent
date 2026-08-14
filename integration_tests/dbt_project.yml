@@ -16,7 +16,7 @@ clean-targets:
 vars:
   cortex_agent_deploy_target: sandbox
   cortex_agent_allowed_targets: [sandbox]
-  cortex_agent_allowed_databases: [AM_SKI_RESORT_DBT_FOCUS]
+  cortex_agent_allowed_databases: [DBT_CORTEX_AGENT_SANDBOX]
   cortex_agent_schema: AGENTS
   cortex_eval_schema: EVAL
 

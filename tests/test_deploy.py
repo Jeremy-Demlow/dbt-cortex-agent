@@ -7,6 +7,7 @@ from argparse import Namespace
 from pathlib import Path
 
 import pytest
+import yaml
 
 from dbt_cortex_agent.config import resolve_config
 from dbt_cortex_agent.dbt_runner import CommandRunner
@@ -466,6 +467,96 @@ def test_cortex_agent_materialization_requires_explicit_orchestration():
     assert "cortex_agent_default_model" not in materialization
     assert "claude-sonnet-4-6" not in materialization
     assert "'$'" not in materialization
+
+
+def test_enterprise_materialization_shape_is_supported_by_compile_only_fixture():
+    root = Path(__file__).parents[1]
+    fixture = (
+        root / "integration_tests/models/agents/enterprise_compatibility_probe.sql"
+    ).read_text(encoding="utf-8")
+    helper = (
+        root / "integration_tests/macros/enterprise_compatibility.sql"
+    ).read_text(encoding="utf-8")
+
+    for contract in (
+        "materialized='cortex_agent'",
+        "database='EXAMPLE_CLONE' if target.name == 'clone'",
+        "schema='EXAMPLE_LAB' if target.name == 'clone'",
+        "GRANT USAGE ON AGENT {{ this }} TO ROLE",
+        "'agent_role': 'EXAMPLE_CLONE_OWNER' if target.name",
+        "{{ enterprise_compatibility_orchestration_instructions() | indent(4) }}",
+        "experimental:",
+        "type: cortex_analyst_text_to_sql",
+        "type: cortex_search",
+        "type: generic",
+        "type: web_search",
+        "type: code_execution",
+        "mcp_servers:",
+        "skills:",
+    ):
+        assert contract in fixture
+    assert "enabled=false" not in fixture
+    assert "macro enterprise_compatibility_orchestration_instructions" in helper
+
+    helper_body = helper.split("%}", 1)[1].rsplit("{% endmacro", 1)[0].strip()
+    body = "models:\n" + fixture.split("\nmodels:\n", 1)[1]
+    invocation = "{{ enterprise_compatibility_orchestration_instructions() | indent(4) }}"
+    offline_render = body.replace(
+        invocation,
+        "\n" + "\n".join("    " + line for line in helper_body.splitlines()),
+    )
+    offline_spec = yaml.safe_load(offline_render)
+    assert offline_spec["models"]["orchestration"] == "claude-opus-4-8"
+    assert offline_spec["experimental"]["EnableVQRFastPath"] is True
+    assert {tool["tool_spec"]["type"] for tool in offline_spec["tools"]} == {
+        "cortex_analyst_text_to_sql",
+        "cortex_search",
+        "generic",
+        "web_search",
+        "code_execution",
+    }
+    assert offline_spec["mcp_servers"] and offline_spec["skills"]
+
+    compiled_path = (
+        root
+        / "integration_tests/target/compiled/cortex_agent_starter/models/agents/enterprise_compatibility_probe.sql"
+    )
+    if compiled_path.exists():
+        spec = yaml.safe_load(compiled_path.read_text(encoding="utf-8"))
+        assert spec["models"]["orchestration"] == "claude-opus-4-8"
+        assert spec["experimental"]["EnableVQRFastPath"] is True
+        assert {tool["tool_spec"]["type"] for tool in spec["tools"]} == {
+            "cortex_analyst_text_to_sql",
+            "cortex_search",
+            "generic",
+            "web_search",
+            "code_execution",
+        }
+        assert spec["mcp_servers"] and spec["skills"]
+
+
+def test_materialization_runs_post_hooks_under_agent_role_and_restores_on_success():
+    materialization = (
+        Path(__file__).parents[1]
+        / "macros/materializations/cortex_agent.sql"
+    ).read_text(encoding="utf-8")
+
+    set_role = materialization.index("USE ROLE {{ safe_agent_role }}")
+    apply_deploy = materialization.index("cortex_agent__apply_deploy")
+    post_hook = materialization.index("run_hooks(post_hooks, inside_transaction=True)")
+    restore_role = materialization.index("USE ROLE {{ safe_original_role }}")
+    assert set_role < apply_deploy < post_hook < restore_role
+    assert "try" not in materialization and "finally" not in materialization
+
+
+def test_stage_paths_are_validated_before_dynamic_list_sql():
+    render = (
+        Path(__file__).parents[1] / "macros/cortex_agents/agent_render.sql"
+    ).read_text(encoding="utf-8")
+    assert "macro cortex_agent__stage_path" in render
+    assert render.count("dbt_cortex_agent.cortex_agent__stage_path(") == 2
+    assert 'run_query("LIST " ~ source.get(\'path\')' not in render
+    assert "part in ['.', '..']" in render
 
 
 def test_materialization_helper_call_graph_is_package_qualified():

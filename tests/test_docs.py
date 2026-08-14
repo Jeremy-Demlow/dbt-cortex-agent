@@ -30,9 +30,6 @@ POLICY_FILES = [
     ROOT / ".github/PULL_REQUEST_TEMPLATE.md",
     ROOT / ".github/CODEOWNERS",
 ]
-REQ_011 = ROOT / "requirements/REQ-011_tutorial_product_readiness.md"
-REQ_012 = ROOT / "requirements/REQ-012_guided_cortex_code_adoption_skill.md"
-REQUIREMENTS_INDEX = ROOT / "requirements/README.md"
 
 
 def _parser_contract() -> tuple[set[str], set[str]]:
@@ -127,52 +124,12 @@ def test_project_policy_retains_license_security_and_support_contracts() -> None
     assert "Apache License 2.0 Section 5" in contributing
     assert "right to license" in contributing
     assert "Apache-2.0 Section 5" in pull_request
-    assert "email" in security
+    assert "github private vulnerability" in security
     assert "do not open a public issue" in security
     assert "best effort" in support
     assert "@Jeremy-Demlow" in codeowners
     assert "GOVERNANCE.md" not in codeowners
     assert "MAINTAINERS.md" not in codeowners
-
-
-def test_req_011_contracts_additive_tutorial_product_readiness() -> None:
-    text = REQ_011.read_text(encoding="utf-8").lower()
-    headings = (
-        "## summary",
-        "## business context",
-        "## objective",
-        "## acceptance criteria",
-        "## user stories",
-        "## dependencies",
-        "## out of scope",
-        "## notes",
-    )
-    required = (
-        "documentation defects",
-        "deterministic orders starter",
-        "not a generic project or agent wizard",
-        "superseded projection assumption",
-        "general agent smoke",
-        "backward-compatibility",
-        "non-mutating by default",
-        "package completion gate",
-        "companion cortex code/catalog skill",
-        "no snowflake connection",
-        "explicit operator opt-in",
-    )
-
-    assert all(heading in text for heading in headings)
-    assert all(phrase in text for phrase in required)
-    assert "implementation begins" in text
-
-
-def test_req_011_is_indexed_as_superseded_historical_projection_evidence() -> None:
-    requirement = REQ_011.read_text(encoding="utf-8").lower()
-    index = (ROOT / "requirements/README.md").read_text(encoding="utf-8").lower()
-
-    assert "complete historical record" in requirement
-    assert "projection-specific topology is superseded by\nreq-013" in requirement
-    assert "complete historical record; projection topology superseded by req-013" in index
 
 
 def test_general_agent_smoke_contract_is_documented() -> None:
@@ -229,27 +186,11 @@ def test_active_release_guidance_has_no_v020_or_current_v030_narrative() -> None
         ROOT / "docs/getting-started/quickstart.md",
         ROOT / "docs/getting-started/first-agent.md",
         ROOT / "docs/reference/compatibility.md",
-        ROOT / "requirements/user_stories.md",
-        ROOT / "tests/test_cases.md",
     )
     combined = "\n".join(path.read_text(encoding="utf-8").lower() for path in active_paths)
     assert "v0.2.0" not in combined
     assert "current v0.3.0" not in combined
     assert "0.3.1" in combined
-
-
-def test_completed_requirements_have_review_records_and_index_entries() -> None:
-    index = REQUIREMENTS_INDEX.read_text(encoding="utf-8")
-    for requirement in (REQ_011, REQ_012):
-        text = requirement.read_text(encoding="utf-8")
-        assert "## Status\n\nComplete" in text
-        assert "Maker record" in text
-        assert "Critic record" in text
-        assert "Verifier record" in text
-        assert requirement.name in index
-
-    for requirement in sorted((ROOT / "requirements").glob("REQ-*.md")):
-        assert requirement.name in index
 
 
 def test_immutable_sha_guidance_requires_consumer_install_metadata() -> None:
@@ -258,7 +199,6 @@ def test_immutable_sha_guidance_requires_consumer_install_metadata() -> None:
         ROOT / "UPGRADING.md",
         ROOT / "docs/getting-started/installation.md",
         ROOT / "docs/troubleshooting.md",
-        REQ_012,
     )
     combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
     assert "dbt_packages/dbt_cortex_agent" in combined
@@ -458,4 +398,4 @@ def test_v030_docs_state_current_scaffolding_deploy_and_output_boundaries() -> N
 
 def test_integration_fixture_has_explicit_database_allowlist() -> None:
     project = yaml.safe_load((ROOT / "integration_tests/dbt_project.yml").read_text(encoding="utf-8"))
-    assert project["vars"]["cortex_agent_allowed_databases"] == ["AM_SKI_RESORT_DBT_FOCUS"]
+    assert project["vars"]["cortex_agent_allowed_databases"] == ["DBT_CORTEX_AGENT_SANDBOX"]

@@ -15,7 +15,6 @@ from dbt_cortex_agent.cli import build_parser
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / ".cortex/skills"
 SKILL = SKILL_ROOT / "dbt-cortex-agent-project/SKILL.md"
-REQ = ROOT / "requirements/REQ-012_guided_cortex_code_adoption_skill.md"
 
 
 def _skill_parts() -> tuple[dict, str]:
@@ -134,7 +133,7 @@ def test_skill_has_no_parse_bypass_fixed_environment_or_lifecycle_copy() -> None
     forbidden = (
         "--no-parse",
         "analytics_dev",
-        "am_ski_resort_dbt_focus",
+        "dbt_cortex_agent_sandbox",
         "dbt_focus",
         "connection sandbox",
         "target sandbox",
@@ -233,20 +232,7 @@ def test_negative_trigger_corpus_does_not_select_skill(prompt: str) -> None:
     assert not _selects(frontmatter["description"], prompt)
 
 
-def test_req_012_and_adopter_surfaces_document_skill_contract() -> None:
-    requirement = REQ.read_text(encoding="utf-8").lower()
-    for heading in (
-        "## summary",
-        "## business context",
-        "## objective",
-        "## acceptance criteria",
-        "## user stories",
-        "## dependencies",
-        "## out of scope",
-        "## notes",
-    ):
-        assert heading in requirement
-
+def test_adopter_surfaces_document_skill_contract() -> None:
     surfaces = {
         "README.md": ROOT / "README.md",
         "first-agent": ROOT / "docs/getting-started/first-agent.md",

@@ -33,3 +33,13 @@ connections.toml
 *.p8
 *.pem
 *.key
+
+# Local governance and execution evidence. These files are maintained in the
+# working copy but are not part of the public product repository.
+requirements/
+evidence/
+.plans/
+.snowflake/
+tests/test_cases.md
+tests/regression.md
+tests/test_req_013_contract.py

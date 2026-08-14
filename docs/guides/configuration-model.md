@@ -65,6 +65,12 @@ dbt compile --select orders_assistant  # non-mutating preview
 dbt build --select orders_assistant    # immutable deploy
 ```
 
+When `meta.agent_role` is set, the materialization switches to that role for
+Agent lifecycle statements and post-hooks, then restores the original role on
+successful completion. dbt/Jinja materializations do not provide `try/finally`;
+if a statement or hook raises after `USE ROLE`, discard that failed dbt process
+instead of reusing its thread/session.
+
 ## Optional evaluation model
 
 Suite metadata remains at `models[].config.meta.cortex_eval` on a table model:

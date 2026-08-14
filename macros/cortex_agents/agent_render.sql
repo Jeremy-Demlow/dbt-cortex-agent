@@ -296,7 +296,8 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {% for skill in skills %}
     {% set source = skill.get('source', {}) %}
     {% if (source.get('type') | string | lower) == 'stage' %}
-      {% set ls_result = run_query("LIST " ~ source.get('path') ~ " PATTERN='.*SKILL[.]md'") %}
+      {% set safe_path = dbt_cortex_agent.cortex_agent__stage_path(source.get('path'), "Skill '" ~ skill.get('name') ~ "' stage path") %}
+      {% set ls_result = run_query("LIST " ~ safe_path ~ " PATTERN='.*SKILL[.]md'") %}
       {% if ls_result.rows | length == 0 %}
         {{ exceptions.raise_compiler_error("Refusing to deploy agent '" ~ agent.get('snowflake_name', '<agent>') ~ "': staged skill '" ~ skill.get('name') ~ "' has no SKILL.md at " ~ source.get('path') ~ ". Upload the declared skill with dbt-cortex-agent skill upload --apply, or set var('cortex_agent_validate_staged_skills', false) to override.") }}
       {% endif %}
@@ -313,6 +314,20 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {% set synthetic = {'snowflake_name': 'DEBUG_PROBE', 'capabilities': {'skills': [{'name': 'probe', 'source': {'type': 'stage', 'path': path}}]}} %}
   {% do cortex_agent__assert_staged_skills_ready(synthetic) %}
   {% do log('[OK] staged-skill path has SKILL.md: ' ~ path, info=True) %}
+{% endmacro %}
+
+{% macro cortex_agent__stage_path(value, label='stage path') %}
+  {% set text = value | string %}
+  {% if not modules.re.match('^@[A-Za-z_][A-Za-z0-9_$]*[.][A-Za-z_][A-Za-z0-9_$]*[.][A-Za-z_][A-Za-z0-9_$]*/[A-Za-z0-9_$.-]+(/[A-Za-z0-9_$.-]+)*$', text) %}
+    {{ exceptions.raise_compiler_error(label ~ " must be an unquoted three-part internal stage path with a safe folder suffix, got '" ~ text ~ "'") }}
+  {% endif %}
+  {% set suffix = text.split('/', 1)[1] %}
+  {% for part in suffix.split('/') %}
+    {% if part in ['.', '..'] %}
+      {{ exceptions.raise_compiler_error(label ~ " contains an unsafe folder component: '" ~ part ~ "'") }}
+    {% endif %}
+  {% endfor %}
+  {{ return(text) }}
 {% endmacro %}
 
 {% macro cortex_agent__live_draft_exists(agent_fqn) %}
@@ -419,7 +434,8 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {% for skill in skills %}
     {% set source = skill.get('source', {}) %}
     {% if (source.get('type') | string | lower) == 'stage' %}
-      {% set rows = run_query("LIST " ~ source.get('path')) %}
+      {% set safe_path = dbt_cortex_agent.cortex_agent__stage_path(source.get('path'), "Skill '" ~ skill.get('name') ~ "' stage path") %}
+      {% set rows = run_query("LIST " ~ safe_path) %}
       {% for row in rows %}
         {% do entries.append((row[0] | string) ~ ':' ~ (row[1] | string) ~ ':' ~ (row[2] | string)) %}
       {% endfor %}

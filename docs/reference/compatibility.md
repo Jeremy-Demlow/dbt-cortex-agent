@@ -43,10 +43,10 @@ remain Snowflake execution concerns.
 
 ### 2026-07-31 qualification result
 
-The independent starter passed Fusion dependency resolution, parse, compile, the
-package-qualified generic-test discovery, Agent rendering,
-and structural eval validation. Fusion produced manifest schema v12, which the
-strict `agent_management.dbt_manifest` adapter accepted unchanged.
+The independent starter passed Fusion dependency resolution, parse, compile,
+package-qualified generic-test discovery, Agent rendering, and structural eval
+validation. Fusion produced manifest schema v12, which a strict manifest
+compatibility adapter accepted unchanged.
 
 Normalized parity with dbt Core 1.11.11/dbt-snowflake 1.11.4 passed for:
 

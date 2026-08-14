@@ -95,7 +95,7 @@ jobs:
           SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/nonexistent-package-ci-key.p8
           SNOWFLAKE_ROLE: offline
           SNOWFLAKE_WAREHOUSE: offline
-          SNOWFLAKE_DATABASE: AM_SKI_RESORT_DBT_FOCUS
+          SNOWFLAKE_DATABASE: DBT_CORTEX_AGENT_SANDBOX
         run: dbt parse --project-dir integration_tests --profiles-dir integration_tests --no-partial-parse
       - name: Verify deterministic Agent, eval, and lifecycle contracts
         run: >-
@@ -154,7 +154,7 @@ jobs:
             --project-dir preview-project \
             --package-source https://example.invalid/dbt-cortex-agent.git \
             --target sandbox \
-            --allow-database AM_SKI_RESORT_DBT_FOCUS \
+            --allow-database DBT_CORTEX_AGENT_SANDBOX \
             --json > preview.json
       - name: Generate dependency license inventory and SBOM
         run: |
