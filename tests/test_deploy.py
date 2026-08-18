@@ -557,7 +557,49 @@ def test_materialization_helper_call_graph_is_package_qualified():
     assert "dbt_cortex_agent.cortex_agent__allowed_databases()" in guard
 
 
-def test_model_agents_fail_closed_from_legacy_render_deploy_cli(tmp_path):
+def test_model_agents_render_compiled_spec_but_fail_closed_from_legacy_deploy_cli(
+    tmp_path,
+):
+    manifest = {
+        "metadata": {
+            "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"
+        },
+        "exposures": {},
+        "nodes": {
+            "model.consumer.agent": {
+                "unique_id": "model.consumer.agent",
+                "resource_type": "model",
+                "name": "agent",
+                "database": "DB",
+                "schema": "AGENTS",
+                "alias": "AGENT",
+                "config": {"materialized": "cortex_agent"},
+                "compiled_code": '{"tools":[]}',
+            }
+        },
+    }
+    _project(tmp_path, include_skill=False, manifest=manifest)
+
+    result = render_agents(_config(tmp_path), ["agent"], CommandRunner(FakeRunner()))
+
+    assert result.commands == ()
+    assert result.renders[0]["physical_agent"] == "DB.AGENTS.AGENT"
+    assert result.renders[0]["spec"] == {"tools": []}
+    assert json.loads(Path(result.renders[0]["artifact"]).read_text()) == {
+        "tools": []
+    }
+    with pytest.raises(ValueError, match="use dbt build --select agent"):
+        deploy_agents(
+            _config(tmp_path),
+            ["agent"],
+            apply=False,
+            allowed_targets=[],
+            allowed_databases=[],
+            runner=CommandRunner(FakeRunner()),
+        )
+
+
+def test_model_agent_render_reads_compiled_spec_from_run_results(tmp_path):
     manifest = {
         "metadata": {
             "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"
@@ -576,18 +618,22 @@ def test_model_agents_fail_closed_from_legacy_render_deploy_cli(tmp_path):
         },
     }
     _project(tmp_path, include_skill=False, manifest=manifest)
-
-    with pytest.raises(ValueError, match="use dbt build --select agent"):
-        render_agents(_config(tmp_path), ["agent"], CommandRunner(FakeRunner()))
-    with pytest.raises(ValueError, match="use dbt build --select agent"):
-        deploy_agents(
-            _config(tmp_path),
-            ["agent"],
-            apply=False,
-            allowed_targets=[],
-            allowed_databases=[],
-            runner=CommandRunner(FakeRunner()),
+    (tmp_path / "target/run_results.json").write_text(
+        json.dumps(
+            {
+                "results": [
+                    {
+                        "unique_id": "model.consumer.agent",
+                        "compiled_code": "tools: []\n",
+                    }
+                ]
+            }
         )
+    )
+
+    result = render_agents(_config(tmp_path), ["agent"], CommandRunner(FakeRunner()))
+
+    assert result.renders[0]["spec"] == {"tools": []}
 
 
 def test_legacy_exposure_contract_also_requires_explicit_orchestration():

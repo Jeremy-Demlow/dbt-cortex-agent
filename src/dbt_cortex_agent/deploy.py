@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from .artifacts import contained_path
 from .config import Config
 from .dbt_runner import CommandRunner
@@ -142,6 +144,31 @@ def _selected(config: Config, agent_names: list[str] | None):
     return manifest, select_agents(manifest, agent_names)
 
 
+def _compiled_model_spec(config: Config, agent: dict) -> dict:
+    spec = agent["meta"].get("compiled_spec")
+    if isinstance(spec, dict) and spec:
+        return spec
+    run_results_path = config.manifest.parent / "run_results.json"
+    if not run_results_path.is_file():
+        return {}
+    run_results = json.loads(run_results_path.read_text(encoding="utf-8"))
+    matches = [
+        result
+        for result in run_results.get("results", [])
+        if result.get("unique_id") == agent.get("unique_id")
+    ]
+    if len(matches) != 1:
+        return {}
+    compiled = matches[0].get("compiled_code")
+    if not isinstance(compiled, str) or not compiled.strip():
+        return {}
+    try:
+        value = json.loads(compiled)
+    except json.JSONDecodeError:
+        value = yaml.safe_load(compiled)
+    return value if isinstance(value, dict) else {}
+
+
 def render_agents(
     config: Config,
     agent_names: list[str] | None,
@@ -153,10 +180,24 @@ def render_agents(
     renders = []
     for agent in agents:
         if agent.get("resource_type") == "model":
-            raise ValueError(
-                f"Agent {agent['name']!r} is a cortex_agent model; use dbt build --select "
-                f"{agent['name']} for render/deploy"
-            )
+            spec = _compiled_model_spec(config, agent)
+            if not spec:
+                raise ValueError(
+                    f"Agent {agent['name']!r} has no compiled specification; run dbt compile "
+                    "or dbt build before agent render"
+                )
+            if not config.target:
+                raise ValueError("Model Agent rendering requires an explicit dbt target")
+            payload = {
+                "agent": agent["name"],
+                "lifecycle_contract": "single_agent",
+                "physical_agent": agent["physical_fqn"],
+                "spec": spec,
+                "target": config.target,
+            }
+            artifact = _write_render_artifact(config, payload)
+            renders.append({**payload, "artifact": str(artifact)})
+            continue
         command, result = _run_operation_result(
             config,
             "cortex_agent__render_spec",
