@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 
 from ..config import Config
-from ..deploy import validate_deploy_context
 from ..identifiers import identifier
 from ..invoke import smoke_skills
 from ..manifest import (
@@ -68,7 +67,7 @@ def handle(args: argparse.Namespace, config: Config) -> int:
         if applied:
             require_explicit_connection(config, "Skill upload")
             assert_config_database(manifest, config.database)
-            validate_deploy_context(config, args.allow_target, args.allow_database)
+            assert_apply_safety(config, args.allow_target, args.allow_database)
             upload_skills(plan, config)
         payload = {"command": f"skill {args.skill_command}", "applied": applied, "uploads": _plan_payload(plan)}
         if args.json:

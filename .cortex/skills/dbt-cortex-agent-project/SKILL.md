@@ -1,6 +1,6 @@
 ---
 name: dbt-cortex-agent-project
-description: "Guide adoption or migration of a dbt-owned Snowflake Cortex Agent with dbt_cortex_agent 0.3.1. Use when a user wants to add Cortex Agents to a new or existing dbt project, adopt an existing semantic view, try the Orders starter, migrate an existing Agent into dbt, or optionally author manifest-owned Agent evaluations. Triggers: adopt dbt cortex agent, add cortex agent to dbt, migrate cortex agent to dbt, author dbt agent evaluation, dbt agent project, orders agent starter."
+description: "Guide adoption or migration of a dbt-owned Snowflake Cortex Agent with dbt_cortex_agent 0.0.1. Use when a user wants to add Cortex Agents to a new or existing dbt project, adopt an existing semantic view, try the Orders starter, migrate an existing Agent into dbt, or optionally author manifest-owned Agent evaluations. Triggers: adopt dbt cortex agent, add cortex agent to dbt, migrate cortex agent to dbt, author dbt agent evaluation, dbt agent project, orders agent starter."
 ---
 
 # dbt Cortex Agent project adoption
@@ -12,7 +12,9 @@ lifecycle logic.
 
 ## Authority and invariants
 
-- Use `dbt_cortex_agent` **0.3.1** commands and metadata contracts.
+- Use `dbt_cortex_agent` **0.0.1** commands and metadata contracts.
+- Define each Agent as a dbt model with `materialized='cortex_agent'`; dbt compile
+  renders it and dbt build is the only deployment path.
 - dbt Core with `dbt-snowflake` is authoritative for parse, graph, manifest, and release
   proof. Fusion/fdbt may provide advisory feedback but never replaces dbt Core evidence.
 - dbt owns Agent/eval definitions, rendering, physical naming, lifecycle macros, versions,
@@ -87,7 +89,7 @@ Preview package/dependency, safety-var, seed, semantic-view, Agent, eval, and `.
 actions:
 
 ```bash
-dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision v0.3.1 --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --json
+dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision v0.0.1 --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --json
 ```
 
 #### C. Existing Agent migration
@@ -149,7 +151,7 @@ revised packet and stop again.
 For route B, manual command parity is the reviewed preview plus `--apply`:
 
 ```bash
-dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision v0.3.1 --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
+dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision v0.0.1 --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
 ```
 
 For routes A, C, or D, use Cortex Code file tools to make only the approved metadata/model/test
@@ -163,8 +165,7 @@ dbt deps --project-dir <PROJECT_DIR>
 dbt parse --project-dir <PROJECT_DIR> --target <TARGET>
 dbt-cortex-agent doctor --project-dir <PROJECT_DIR> --target <TARGET> --json
 dbt-cortex-agent manifest validate --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --json
-dbt-cortex-agent agent render --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --json
-dbt-cortex-agent agent deploy --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --allow-target <TARGET> --allow-database <DATABASE> --json
+dbt compile --project-dir <PROJECT_DIR> --target <TARGET> --select <AGENT>
 ```
 
 Run the applicable commands through Cortex Code. The deploy command above is a preview: it does
@@ -184,7 +185,7 @@ Only when the user requests live proof, present separate exact plans for the nee
 Deployment manual parity:
 
 ```bash
-dbt-cortex-agent agent deploy --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --connection <CONNECTION> --database <DATABASE> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
+dbt build --project-dir <PROJECT_DIR> --target <TARGET> --select <AGENT>
 ```
 
 Runtime smoke manual parity:

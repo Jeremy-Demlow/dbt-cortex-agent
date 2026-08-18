@@ -24,11 +24,11 @@ VALID_HANDLER_EXIT_CODES = {EXIT_SUCCESS, EXIT_DIAGNOSTIC_FAILURE}
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dbt-cortex-agent",
-        description="Manage manifest-owned Cortex Agents with dry-run-safe dbt and local workflows.",
+        description="Operate skills and evaluations for dbt-materialized Cortex Agents.",
         epilog=(
             "Examples:\n"
             "  dbt-cortex-agent doctor --project-dir . --json\n"
-            "  dbt-cortex-agent agent deploy --agent orders_assistant\n"
+            "  dbt-cortex-agent skill plan --agent orders_assistant\n"
             "  dbt-cortex-agent eval run --agent orders_assistant --suite core\n\n"
             "Mutation and paid commands are dry-run by default and label the required --apply option."
         ),

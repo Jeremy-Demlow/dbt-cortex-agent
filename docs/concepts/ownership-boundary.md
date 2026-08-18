@@ -1,14 +1,21 @@
 # dbt and Python ownership boundary
 
-`dbt_cortex_agent` is one product with two implementation layers. dbt is the system of record; Python is a local and remote coordinator that consumes dbt-owned contracts.
+`dbt_cortex_agent` is one product with two deliberately narrow implementation
+layers. dbt is the system of record and the only Agent lifecycle authority.
+Python coordinates file-based skills, runtime smoke, and evaluations.
 
 | dbt owns | Python owns |
 |---|---|
 | Resolved graph and `meta` contracts | Local files and manifest consumption |
-| Agent and eval validation and rendering | Installed CLI and Snow CLI coordination, including skill upload |
-| Agent DDL and physical naming | REST/SSE client execution |
+| Agent model validation and materialization | Skill file planning and upload |
+| Agent DDL, physical naming, versions, aliases, profile, and comments | REST/SSE runtime and skill smoke |
 | LIVE versions, immutable versions, aliases, and grants | Polling, bounded retry, and result collection |
 | Same-Agent eval-plan rendering | Local artifacts, accepted baselines, and comparisons |
-| Public lifecycle macros | Thin delegation to public dbt macros |
+| Materialization and evaluation-plan macros | Paid evaluation coordination |
 
-Python must not implement mutating Agent DDL or reconstruct a second metadata model. Agent deploy, grant, promotion, and rollback enter Snowflake through package macros. Python may prepare local inputs, coordinate external clients, invoke those macros, and persist local evidence around the operation.
+Python must not render, create, alter, commit, alias, grant, promote, or roll back
+model-backed Agents. It must not provision infrastructure such as internal
+stages. Agent lifecycle enters Snowflake only through `dbt build` and the
+`cortex_agent` materialization. Python may validate and upload local skill files
+to an existing managed stage, invoke runtime clients, coordinate evaluation, and
+persist local evidence.

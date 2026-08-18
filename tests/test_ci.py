@@ -83,7 +83,7 @@ def test_workflow_covers_release_and_deterministic_contracts():
         "dbt deps",
         "dbt parse",
         "tests/test_eval_plan_macros.py",
-        "tests/test_deploy.py",
+        "tests/test_materialization.py",
         "python -m build",
         "python -m twine check",
         "tests/verify_wheel.py",
@@ -123,9 +123,9 @@ def test_current_product_versions_and_project_names_align():
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
 
     assert package["project"]["name"].replace("-", "_") == project["name"]
-    assert package["project"]["version"] == project["version"] == citation["version"] == "0.3.1"
-    assert '__version__ = "0.3.1"' in init_source
-    assert 'name = "dbt-cortex-agent"\nversion = "0.3.1"' in lock
+    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.1"
+    assert '__version__ = "0.0.1"' in init_source
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.1"' in lock
 
 
 def test_generated_residue_is_ignored_or_cleaned_by_workflow():
@@ -167,9 +167,9 @@ def test_release_workflow_builds_and_checks_artifacts_before_upload():
     steps = build["steps"]
     uses = [step.get("uses", "") for step in steps]
     commands = "\n".join(step.get("run", "") for step in steps)
-    assert "actions/checkout@v4" in uses
-    assert "actions/setup-python@v5" in uses
-    assert "actions/upload-artifact@v4" in uses
+    assert "actions/checkout@v7" in uses
+    assert "actions/setup-python@v7" in uses
+    assert "actions/upload-artifact@v7" in uses
     assert "build==1.3.0" in commands
     assert "twine==6.2.0" in commands
     assert "scripts/release_preflight.py" in commands
@@ -189,7 +189,7 @@ def test_release_publish_job_is_oidc_only_and_environment_protected():
     assert "github.event.action == 'published'" in publish["if"]
     assert "startsWith(github.event.release.tag_name, 'v')" in publish["if"]
     uses = [step.get("uses", "") for step in publish["steps"]]
-    assert uses == ["actions/download-artifact@v4", "pypa/gh-action-pypi-publish@release/v1"]
+    assert uses == ["actions/download-artifact@v8", "pypa/gh-action-pypi-publish@release/v1"]
 
 
 def test_release_workflow_has_no_long_lived_pypi_credentials():

@@ -173,7 +173,6 @@ def cortex_agents(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             **agent_meta,
             "compiled_spec": _model_agent_spec(node),
             "snowflake_name": physical_name,
-            "naming": {**(agent_meta.get("naming") or {}), "__model__": physical_name},
         }
         agents.append(
             {
@@ -184,21 +183,6 @@ def cortex_agents(manifest: dict[str, Any]) -> list[dict[str, Any]]:
                 "physical_fqn": f"{database}.{schema}.{physical_name}",
             }
         )
-    exposures = manifest.get("exposures") or {}
-    for exposure in exposures.values():
-        agent_meta = _meta(exposure).get("cortex_agent", {})
-        if isinstance(agent_meta, dict) and agent_meta.get("enabled"):
-            name = exposure.get("name")
-            if not name:
-                raise ValueError("Enabled cortex_agent exposure is missing a name")
-            agents.append(
-                {
-                    "name": str(name),
-                    "meta": agent_meta,
-                    "resource_type": "exposure",
-                    "unique_id": exposure.get("unique_id"),
-                }
-            )
     return sorted(agents, key=lambda item: item["name"])
 
 
@@ -212,7 +196,7 @@ def select_agents(
     duplicates = sorted(name for name, values in by_name.items() if len(values) > 1)
     if duplicates:
         raise ValueError(
-            "Enabled cortex_agent model/exposure names must be unique: "
+            "Enabled cortex_agent model names must be unique: "
             f"{', '.join(duplicates)}"
         )
     physical: dict[str, list[str]] = {}
@@ -247,8 +231,7 @@ def skill_declarations(
     for agent in select_agents(manifest, agent_names):
         configured = agent["meta"].get("skills") or []
         spec_skills = agent["meta"].get("compiled_spec", {}).get("skills") or []
-        legacy_skills = (agent["meta"].get("capabilities") or {}).get("skills") or []
-        skills = configured or spec_skills or legacy_skills
+        skills = configured or spec_skills
         for skill in skills:
             source = skill.get("source") or {}
             if str(source.get("type", "")).lower() != "stage":
@@ -283,18 +266,7 @@ def cortex_evals(manifest: dict[str, Any]) -> list[EvalDeclaration]:
 
 
 def physical_agent_name(agent: dict[str, Any], target: str | None) -> str:
-    if agent.get("resource_type") == "model":
-        return identifier(
-            agent["meta"].get("snowflake_name"),
-            f"physical Agent for {agent['name']}",
-        )
-    meta = agent["meta"]
-    naming = meta.get("naming") or {}
-    value = naming.get(target) if target else meta.get("snowflake_name")
-    if not value:
-        requirement = f"cortex_agent.naming.{target}" if target else "cortex_agent.snowflake_name"
-        raise ValueError(
-            f"Physical Agent is unresolved for logical Agent {agent['name']!r}; declare "
-            f"{requirement} so smoke does not guess macro suffix behavior"
-        )
-    return identifier(value, f"physical Agent for {agent['name']}")
+    return identifier(
+        agent["meta"].get("snowflake_name"),
+        f"physical Agent for {agent['name']}",
+    )

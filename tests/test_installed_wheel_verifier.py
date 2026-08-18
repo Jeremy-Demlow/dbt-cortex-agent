@@ -41,8 +41,7 @@ def _evidence(tmp_path, *, include_eval, fqn="WHEEL_VERIFY_DB.AGENTS.ORDERS_ASSI
         tmp_path,
         doctor,
         {"agents": ["orders_assistant"]},
-        {"renders": [render_item]},
-        {"applied": False, "renders": [render_item]},
+        render_item,
         {
             "applied": False,
             "agent_object": fqn.split(".")[-1],
@@ -92,7 +91,7 @@ def test_validate_pair_proves_same_agent_and_optional_eval(tmp_path):
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
-        (lambda item: item.render["renders"][0].update(projection="native_eval"), "projection"),
+        (lambda item: item.compiled_agent.update(projection="native_eval"), "projection"),
         (lambda item: item.smoke.update(agent_object="OTHER"), "FQN drift"),
         (
             lambda item: object.__setattr__(

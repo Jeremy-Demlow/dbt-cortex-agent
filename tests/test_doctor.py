@@ -15,12 +15,13 @@ SYNTHETIC_COMMIT_SHA = "8e8df8e9754a0089532fffea3dd7005242866c59"  # pragma: all
 def _manifest():
     return {
         "metadata": {"dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"},
-        "exposures": {
-            "exposure.p.agent": {
-                "name": "agent", "meta": {"cortex_agent": {"enabled": True}}
-            }
-        },
+        "exposures": {},
         "nodes": {
+            "model.p.agent": {
+                "unique_id": "model.p.agent", "resource_type": "model",
+                "name": "agent", "database": "DB", "schema": "AGENTS",
+                "alias": "AGENT", "config": {"materialized": "cortex_agent"},
+            },
             "model.p.eval": {
                 "name": "eval", "database": "DB", "schema": "EVAL", "alias": "EVAL",
                 "meta": {"cortex_eval": {"enabled": True}},
@@ -152,7 +153,7 @@ def test_doctor_accepts_immutable_sha_when_installed_dbt_version_matches(tmp_pat
     )
     installed = tmp_path / "dbt_packages/dbt_cortex_agent/dbt_project.yml"
     installed.parent.mkdir(parents=True)
-    installed.write_text("name: dbt_cortex_agent\nversion: 0.3.1\nconfig-version: 2\n")
+    installed.write_text("name: dbt_cortex_agent\nversion: 0.0.1\nconfig-version: 2\n")
 
     diagnostics = run_doctor(
         config,
@@ -190,7 +191,7 @@ def test_doctor_rejects_branch_revision_even_when_installed_dbt_version_matches(
     )
     installed = tmp_path / "dbt_packages/dbt_cortex_agent/dbt_project.yml"
     installed.parent.mkdir(parents=True)
-    installed.write_text("name: dbt_cortex_agent\nversion: 0.3.1\nconfig-version: 2\n")
+    installed.write_text("name: dbt_cortex_agent\nversion: 0.0.1\nconfig-version: 2\n")
 
     diagnostics = run_doctor(
         config,
@@ -227,7 +228,7 @@ def test_doctor_preserves_semantic_revision_direct_match(tmp_path):
     config = _config(tmp_path)
     (tmp_path / "packages.yml").write_text(
         "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
-        "    revision: v0.3.1\n"
+        "    revision: v0.0.1\n"
     )
 
     diagnostics = run_doctor(

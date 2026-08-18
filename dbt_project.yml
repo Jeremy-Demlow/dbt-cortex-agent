@@ -1,11 +1,10 @@
 name: 'dbt_cortex_agent'
-version: '0.3.1'
+version: '0.0.1'
 config-version: 2
 
-# Installable dbt package: Cortex Agent + eval macros and the generic
-# eval-question-coverage test. Public Agent/eval lifecycle macros are generic;
-# legacy season helpers are explicitly documented as domain-specific. Consumers
-# supply agents as exposures and eval datasets as models.
+# Installable dbt package: model-backed Cortex Agent materialization, evaluation
+# macros, and the generic eval-question-coverage test. Consumers define Agents
+# as dbt models and evaluation datasets as models.
 require-dbt-version: [">=1.10.0", "<2.0.0"]
 
 macro-paths: ["macros"]
@@ -19,7 +18,6 @@ vars:
   cortex_agent_schema: AGENTS
   cortex_eval_schema: EVAL
   cortex_agent_skill_stage: SKILL_STAGE
-  cortex_agent_default_model: claude-sonnet-4-5
   code_execution_enabled: false
   force_agent_recreate: false
   mcp_deploy_enabled: false

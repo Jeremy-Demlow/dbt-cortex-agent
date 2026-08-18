@@ -7,7 +7,7 @@ The project-local
 guides this workflow for a new or existing dbt project. It begins with read-only
 discovery and objective/levers/data/proof, supports an existing semantic view,
 the fixed Orders starter, or migration of an existing Agent, and can add eval
-authoring when ground truth exists. It uses stable 0.3.1 commands, shows manual
+authoring when ground truth exists. It uses stable 0.0.1 commands, shows manual
 command parity, and requires distinct approvals for local writes, Snowflake
 mutation/runtime, paid evaluation, and baseline movement.
 
