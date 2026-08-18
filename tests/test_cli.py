@@ -1,6 +1,9 @@
 from pathlib import Path
 import json
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 import pytest
 import yaml

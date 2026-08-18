@@ -101,7 +101,7 @@ jobs:
         run: >-
           pytest -q
           tests/test_eval_plan_macros.py
-          tests/test_deploy.py
+          tests/test_materialization.py
           tests/test_eval.py
           tests/test_cli.py
           tests/test_manifest.py
