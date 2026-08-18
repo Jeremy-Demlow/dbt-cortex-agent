@@ -167,9 +167,9 @@ def test_release_workflow_builds_and_checks_artifacts_before_upload():
     steps = build["steps"]
     uses = [step.get("uses", "") for step in steps]
     commands = "\n".join(step.get("run", "") for step in steps)
-    assert "actions/checkout@v4" in uses
-    assert "actions/setup-python@v5" in uses
-    assert "actions/upload-artifact@v4" in uses
+    assert "actions/checkout@v7" in uses
+    assert "actions/setup-python@v7" in uses
+    assert "actions/upload-artifact@v7" in uses
     assert "build==1.3.0" in commands
     assert "twine==6.2.0" in commands
     assert "scripts/release_preflight.py" in commands
@@ -189,7 +189,7 @@ def test_release_publish_job_is_oidc_only_and_environment_protected():
     assert "github.event.action == 'published'" in publish["if"]
     assert "startsWith(github.event.release.tag_name, 'v')" in publish["if"]
     uses = [step.get("uses", "") for step in publish["steps"]]
-    assert uses == ["actions/download-artifact@v4", "pypa/gh-action-pypi-publish@release/v1"]
+    assert uses == ["actions/download-artifact@v8", "pypa/gh-action-pypi-publish@release/v1"]
 
 
 def test_release_workflow_has_no_long_lived_pypi_credentials():

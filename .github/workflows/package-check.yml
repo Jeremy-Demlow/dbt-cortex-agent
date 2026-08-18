@@ -19,8 +19,8 @@ jobs:
   policy-and-project-health:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -50,8 +50,8 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
           cache: pip
@@ -73,8 +73,8 @@ jobs:
             dbt-core: "~=1.11.0"
             dbt-snowflake: "1.11.4"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
           cache: pip
@@ -121,8 +121,8 @@ jobs:
   distribution:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
@@ -163,7 +163,7 @@ jobs:
           python -m piplicenses --format=json --output-file="$RUNNER_TEMP/supply-chain/licenses.json"
           cyclonedx-py environment --output-format JSON --output-file "$RUNNER_TEMP/supply-chain/sbom.cdx.json"
       - name: Upload supply-chain evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: supply-chain-evidence
           path: ${{ runner.temp }}/supply-chain
