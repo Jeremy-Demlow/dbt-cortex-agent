@@ -83,7 +83,7 @@ def test_workflow_covers_release_and_deterministic_contracts():
         "dbt deps",
         "dbt parse",
         "tests/test_eval_plan_macros.py",
-        "tests/test_deploy.py",
+        "tests/test_materialization.py",
         "python -m build",
         "python -m twine check",
         "tests/verify_wheel.py",
