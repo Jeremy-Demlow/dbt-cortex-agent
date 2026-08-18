@@ -14,8 +14,6 @@ from dbt_cortex_agent.config import resolve_config
 from dbt_cortex_agent.eval.baseline import (
     accept_baseline,
     build_baseline,
-    build_migrated_baseline,
-    migrate_legacy_baseline,
 )
 from dbt_cortex_agent.eval.compare import compare_results
 from dbt_cortex_agent.eval.dataset import validate_eval_meta, validate_table
@@ -471,89 +469,6 @@ def test_baseline_acceptance_never_accepts_failed_and_requires_force(tmp_path):
     with pytest.raises(FileExistsError):
         accept_baseline(_result(), tmp_path)
     assert accept_baseline(_result(), tmp_path, force=True) == target
-
-
-def _legacy_baseline():
-    return {
-        "agent": "orders_assistant",
-        "suite": "core",
-        "run_name": "legacy_run",
-        "timestamp": "20260731_120000",
-        "run_metadata": {"evaluated_version": "VERSION$4", "git_sha": "legacy-sha"},
-        "summary": {
-            "answer_correctness": {"avg": 0.8, "n": 2},
-            "tool_selection_accuracy": {"avg": 1.0, "n": 2},
-        },
-        "passed": True,
-        "total_records": 2,
-    }
-
-
-def test_legacy_baseline_migration_uses_current_plan_and_preserves_provenance(tmp_path):
-    plan = build_plan(
-        _config(tmp_path, _manifest()),
-        agent_name="orders_assistant",
-        suite_name="core",
-        plan_payload=_plan_payload(),
-    )
-    source = tmp_path / "legacy.json"
-    source.write_text(json.dumps(_legacy_baseline()))
-
-    baseline, target = migrate_legacy_baseline(source, plan, tmp_path / "new-baselines")
-
-    assert not target.exists()
-    assert baseline["schema_version"] == ARTIFACT_SCHEMA_VERSION
-    assert baseline["thresholds"] == plan.thresholds
-    assert baseline["regression_tolerances"] == plan.regression_tolerances
-    assert baseline["ordered_ground_truth_refs"] == plan.ordered_ground_truth_refs
-    assert baseline["suite_signature"] == plan.suite_signature
-    assert baseline["run_metadata"]["evaluated_version"] == "VERSION$4"
-    assert baseline["run_metadata"]["legacy_migration"]["source"] == "legacy.json"
-    assert baseline["run_metadata"]["legacy_migration"]["run_metadata"]["git_sha"] == "legacy-sha"
-
-    _, written = migrate_legacy_baseline(
-        source, plan, tmp_path / "new-baselines", apply=True
-    )
-    assert load_result(written, "baseline")["summary"] == baseline["summary"]
-    assert migrate_legacy_baseline(source, plan, tmp_path / "new-baselines")[1] == written
-    with pytest.raises(FileExistsError):
-        migrate_legacy_baseline(source, plan, tmp_path / "new-baselines", apply=True)
-    assert migrate_legacy_baseline(
-        source, plan, tmp_path / "new-baselines", apply=True, force=True
-    )[1] == written
-
-    for legacy_agent in (plan.agent_fqn.rsplit(".", 1)[-1], plan.agent_fqn):
-        physical = _legacy_baseline()
-        physical["agent"] = legacy_agent
-        assert build_migrated_baseline(physical, plan, source)["agent"] == plan.agent_name
-
-    historical_eval = _legacy_baseline()
-    historical_eval["agent"] = "ORDERS_ASSISTANT_EVAL"
-    with pytest.raises(ValueError, match="_EVAL Agent identity is incompatible"):
-        build_migrated_baseline(historical_eval, plan, source)
-
-    near_match = _legacy_baseline()
-    near_match["agent"] = f"{plan.agent_fqn.rsplit('.', 1)[-1]}_OTHER"
-    with pytest.raises(ValueError, match="agent does not match"):
-        build_migrated_baseline(near_match, plan, source)
-
-
-def test_legacy_baseline_migration_rejects_unknown_shapes_and_policy_drift(tmp_path):
-    plan = build_plan(
-        _config(tmp_path, _manifest()),
-        agent_name="orders_assistant",
-        suite_name="core",
-        plan_payload=_plan_payload(),
-    )
-    wrong_metrics = _legacy_baseline()
-    wrong_metrics["summary"].pop("tool_selection_accuracy")
-    with pytest.raises(ValueError, match="metric set"):
-        build_migrated_baseline(wrong_metrics, plan, tmp_path / "legacy.json")
-
-    failed = _legacy_baseline()
-    failed["passed"] = False
-    with pytest.raises(ValueError, match="accepted passing baseline"):
-        build_migrated_baseline(failed, plan, tmp_path / "legacy.json")
 
 
 def test_artifacts_reject_legacy_schema_and_path_traversal(tmp_path):

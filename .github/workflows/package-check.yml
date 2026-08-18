@@ -147,7 +147,7 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           "$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" --help
-          test "$("$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" --version)" = "0.3.1"
+          test "$("$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" --version)" = "0.0.1"
           mkdir preview-project
           printf "name: preview_project\nversion: 1.0.0\nconfig-version: 2\n" > preview-project/dbt_project.yml
           "$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" init \

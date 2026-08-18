@@ -16,7 +16,6 @@ EXPECTED_PACKAGE_FILES = {
     "dbt_cortex_agent/commands/skill.py",
     "dbt_cortex_agent/config.py",
     "dbt_cortex_agent/dbt_runner.py",
-    "dbt_cortex_agent/deploy.py",
     "dbt_cortex_agent/doctor.py",
     "dbt_cortex_agent/execution_context.py",
     "dbt_cortex_agent/eval/__init__.py",

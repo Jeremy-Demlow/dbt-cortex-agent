@@ -54,8 +54,7 @@ def build_upload_plan(
         names: set[str] = set()
         configured = agent["meta"].get("skills") or []
         spec_skills = agent["meta"].get("compiled_spec", {}).get("skills") or []
-        legacy_skills = (agent["meta"].get("capabilities") or {}).get("skills") or []
-        for skill in configured or spec_skills or legacy_skills:
+        for skill in configured or spec_skills:
             skill_name = skill.get("name")
             if skill_name in names:
                 raise ValueError(
@@ -141,10 +140,10 @@ def upload_skills(
                 f"{stage_database(upload.stage_path)!r}, not {config.database!r}"
             )
 
-    created: set[str] = set()
+    validated: set[str] = set()
     for upload in plan:
         stage_key = upload.stage_fqn.casefold()
-        if stage_key in created:
+        if stage_key in validated:
             continue
         result = command_runner.run(
             [
@@ -153,14 +152,18 @@ def upload_skills(
                 "--connection",
                 str(config.connection),
                 "--query",
-                f"CREATE STAGE IF NOT EXISTS {upload.stage_fqn} "
-                "ENCRYPTION = (TYPE = 'SNOWFLAKE_SSE')",
+                f"DESCRIBE STAGE {upload.stage_fqn}",
             ],
             cwd=config.project_dir,
         )
         if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "stage creation failed")
-        created.add(stage_key)
+            detail = result.stderr.strip() or result.stdout.strip() or "stage is missing"
+            raise RuntimeError(
+                f"Skill stage {upload.stage_fqn} is missing or inaccessible; "
+                "provision it through the environment infrastructure owner before "
+                f"uploading skills: {detail}"
+            )
+        validated.add(stage_key)
 
     for upload in plan:
         result = command_runner.run(

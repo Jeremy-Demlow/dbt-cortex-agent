@@ -18,10 +18,16 @@ from dbt_cortex_agent.skills import (
 def _manifest(skills):
     return {
         "metadata": {"dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"},
-        "exposures": {
-            f"exposure.test.{name}": {
+        "exposures": {},
+        "nodes": {
+            f"model.test.{name}": {
+                "unique_id": f"model.test.{name}",
+                "resource_type": "model",
                 "name": name,
-                "meta": {"cortex_agent": {"enabled": True, "capabilities": {"skills": values}}},
+                "database": "DB",
+                "schema": "AGENTS",
+                "alias": name.upper(),
+                "config": {"materialized": "cortex_agent", "meta": {"cortex_agent": {"skills": values}}},
             }
             for name, values in skills.items()
         },
@@ -112,7 +118,7 @@ def test_plan_rejects_distinct_local_sources_for_same_stage(monkeypatch, tmp_pat
         build_upload_plan(_manifest({}), tmp_path)
 
 
-def test_upload_uses_sse_configurable_snow_and_orders_stage_before_copy(tmp_path):
+def test_upload_validates_existing_stage_before_copy(tmp_path):
     skill_dir = tmp_path / "skills/library/shared"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("# Shared\n")
@@ -129,8 +135,29 @@ def test_upload_uses_sse_configurable_snow_and_orders_stage_before_copy(tmp_path
     upload_skills(plan, _config(tmp_path), CommandRunner(fake_run))
 
     assert calls[0][0:2] == ["custom-snow", "sql"]
-    assert "SNOWFLAKE_SSE" in calls[0][-1]
+    assert calls[0][-1] == "DESCRIBE STAGE DB.AGENTS.SKILL_STAGE"
+    assert all("CREATE STAGE" not in " ".join(call) for call in calls)
     assert calls[1][0:3] == ["custom-snow", "stage", "copy"]
+
+
+def test_upload_fails_before_copy_when_stage_is_missing(tmp_path):
+    skill_dir = tmp_path / "skills/library/shared"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# Shared\n")
+    plan = build_upload_plan(
+        _manifest({"agent": [_skill("shared", "@DB.AGENTS.SKILL_STAGE/library/shared")]}),
+        tmp_path,
+    )
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 1, "", "does not exist")
+
+    with pytest.raises(RuntimeError, match="infrastructure owner"):
+        upload_skills(plan, _config(tmp_path), CommandRunner(fake_run))
+
+    assert len(calls) == 1
 
 
 def test_apply_safety_requires_both_allowlists(tmp_path):

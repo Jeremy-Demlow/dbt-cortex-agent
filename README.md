@@ -1,15 +1,14 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` 0.3.1 is a Snowflake-only dbt package and Python CLI for
+`dbt_cortex_agent` 0.0.1 is a Snowflake-only dbt package and Python companion for
 defining, versioning, and evaluating Cortex Agents from dbt models. A
 `materialized='cortex_agent'` model body is the native Agent YAML specification.
-dbt owns Agent creation and immutable version lifecycle; the CLI consumes
-`target/manifest.json` and manages local skills, runtime clients, and evaluation
-artifacts. Legacy exposure declarations remain supported during migration.
+dbt owns the complete Agent lifecycle; Python is limited to local skill files,
+runtime smoke, and evaluation coordination.
 
 ## Install one immutable version on two surfaces
 
-Version 0.3.1 is not published to PyPI yet. Install the reviewed Python CLI and
+Version 0.0.1 is not published to PyPI yet. Install the reviewed Python CLI and
 runtime support from a clean local checkout:
 
 ```bash
@@ -23,15 +22,15 @@ python -m pip install '/absolute/path/to/dbt-cortex-agent[runtime]'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
-public HTTPS `v0.3.1` Git tag in `packages.yml`:
+public HTTPS `v0.0.1` Git tag in `packages.yml`:
 
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.3.1
+    revision: v0.0.1
 ```
 
-The future PyPI version `0.3.1` and Git tag `v0.3.1` will identify the same immutable
+The future PyPI version `0.0.1` and Git tag `v0.0.1` will identify the same immutable
 release across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
 declared dbt dependency, and installed consumer dbt package versions align. A
@@ -81,7 +80,7 @@ For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
 It discovers an existing dbt project, establishes objective/levers/data/proof,
 and guides an existing semantic view, the fixed Orders starter, or an existing
-Agent into dbt-owned metadata. It is script-free, shows manual 0.3.1 command
+Agent into dbt-owned metadata. It is script-free, shows manual 0.0.1 command
 parity, and stops separately before local writes, Snowflake mutation/runtime,
 paid evaluation, and baseline movement. The checked-in skill is not a claim of
 catalog publication or live Snowflake verification.
@@ -114,19 +113,17 @@ before crossing this boundary.
 | Render the full Agent spec | — | `dbt compile --select <agent_model>` |
 | Deploy/version an Agent | — | `dbt build --select <agent_model>` |
 | Preview/invoke any Agent | `agent smoke` | — |
-| Grant, promote, roll back | `agent grant/promote/rollback` | lifecycle macros |
 | Plan/upload/smoke skills | `skill plan/upload/smoke` | deploy validates staged skills |
 | Render/run optional evaluation | `eval run` | `cortex_eval__execution_plan`, `cortex_eval__run` |
 | Compare/gate/accept artifacts | `eval compare/gate/accept-baseline` | threshold macros only |
 
-Use dbt for model Agent render/deploy. Use the CLI when local file upload,
+Use dbt for Agent render and deployment. Use Python when local file upload,
 stable process exits/JSON, connector clients, or durable evaluation artifacts
-are required. Python does not own a second Agent DDL implementation. Legacy
-exposure Agents retain the older render/deploy commands during migration.
+are required. Python owns no Agent lifecycle operation and provisions no stage.
 
 ## Lifecycle and evaluation
 
-Agent deploy validates and hashes the rendered spec plus staged skills,
+The materialization validates and hashes the rendered spec plus staged skills,
 skips unchanged versions, modifies LIVE, commits an immutable version, and
 applies the requested alias. Promotion, rollback, grants, MCP attachment, and
 skill smoke remain explicit operations.
@@ -144,7 +141,7 @@ and accepted-baseline gates. See [evaluations](docs/guides/evaluations.md).
 - Configure: [configuration model](docs/guides/configuration-model.md), [Agent metadata](docs/reference/agent-metadata.md), [eval metadata](docs/reference/eval-metadata.md), [variables](docs/reference/variables.md)
 - Operate: [lifecycle](docs/guides/lifecycle.md), [skills](docs/guides/skills.md), [evaluations](docs/guides/evaluations.md), [CI](docs/guides/ci.md), [releasing](docs/guides/releasing.md)
 - Reference: [CLI](docs/reference/cli.md), [macros](docs/reference/macros.md), [compatibility](docs/reference/compatibility.md), [architecture](docs/concepts/end-to-end-flow.md), [troubleshooting](docs/troubleshooting.md)
-- Change: [upgrade to v0.3.1](UPGRADING.md), [changelog](CHANGELOG.md)
+- Change: [changelog](CHANGELOG.md)
 
 ## Limitations and policies
 

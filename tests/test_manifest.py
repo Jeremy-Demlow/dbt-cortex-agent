@@ -13,21 +13,19 @@ from dbt_cortex_agent.manifest import (
 def _manifest():
     return {
         "metadata": {"dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"},
-        "exposures": {
-            "exposure.consumer.agent": {
+        "exposures": {},
+        "nodes": {
+            "model.consumer.orders_assistant": {
+                "unique_id": "model.consumer.orders_assistant",
+                "resource_type": "model",
                 "name": "orders_assistant",
-                "config": {"meta": {"cortex_agent": {
-                    "enabled": True,
-                    "capabilities": {"skills": [{
-                        "name": "triage", "source": {"type": "stage", "path": "@DB.AGENTS.SKILLS/agents/orders_assistant/triage"}
-                    }]},
+                "alias": "ORDERS_ASSISTANT",
+                "database": "db",
+                "schema": "agents",
+                "config": {"materialized": "cortex_agent", "meta": {"cortex_agent": {
+                    "skills": [{"name": "triage", "source": {"type": "stage", "path": "@DB.AGENTS.SKILLS/agents/orders_assistant/triage"}}]
                 }}},
             },
-            "exposure.consumer.disabled": {
-                "name": "disabled", "meta": {"cortex_agent": {"enabled": False}}
-            },
-        },
-        "nodes": {
             "model.consumer.eval_orders": {
                 "unique_id": "model.consumer.eval_orders", "name": "eval_orders",
                 "database": "db", "schema": "eval", "alias": "eval_orders_table",
@@ -114,10 +112,10 @@ def test_cortex_agent_models_are_primary_manifest_declarations():
     assert skill_declarations(manifest, ".")[0].agent_name == "orders_assistant"
 
 
-def test_model_and_exposure_duplicate_agent_fails_closed():
+def test_duplicate_model_logical_agent_fails_closed():
     manifest = _manifest()
-    manifest["nodes"]["model.consumer.orders_assistant"] = {
-        "unique_id": "model.consumer.orders_assistant",
+    manifest["nodes"]["model.other.orders_assistant"] = {
+        "unique_id": "model.other.orders_assistant",
         "resource_type": "model",
         "name": "orders_assistant",
         "database": "DB",
@@ -126,7 +124,7 @@ def test_model_and_exposure_duplicate_agent_fails_closed():
         "config": {"materialized": "cortex_agent"},
     }
 
-    with pytest.raises(ValueError, match="model/exposure names must be unique"):
+    with pytest.raises(ValueError, match="model names must be unique"):
         select_agents(manifest)
 
 
@@ -174,18 +172,12 @@ def test_eval_discovery_requires_nonempty_enabled_mapping():
 def test_manifest_database_and_physical_agent_validation():
     manifest = _manifest()
     manifest["nodes"]["model.consumer.eval_orders"]["resource_type"] = "model"
-    manifest["exposures"]["exposure.consumer.agent"]["config"]["meta"]["cortex_agent"].update(
-        {"snowflake_name": "ORDERS", "naming": {"sandbox": "ORDERS_SANDBOX"}}
-    )
 
     assert assert_config_database(manifest, "db") == "DB"
-    assert physical_agent_name(select_agents(manifest)[0], "sandbox") == "ORDERS_SANDBOX"
+    assert physical_agent_name(select_agents(manifest)[0], "sandbox") == "ORDERS_ASSISTANT"
     with pytest.raises(ValueError, match="does not match"):
         assert_config_database(manifest, "OTHER")
     with pytest.raises(ValueError, match="unquoted"):
-        manifest["exposures"]["exposure.consumer.agent"]["config"]["meta"]["cortex_agent"]["snowflake_name"] = "BAD;DROP"
-        physical_agent_name(select_agents(manifest)[0], None)
-
-    manifest["exposures"]["exposure.consumer.agent"]["config"]["meta"]["cortex_agent"]["naming"] = {}
-    with pytest.raises(ValueError, match="does not guess"):
-        physical_agent_name(select_agents(manifest)[0], "sandbox")
+        manifest["nodes"]["model.consumer.orders_assistant"]["alias"] = "BAD;DROP"
+        agents = cortex_agents(manifest)
+        physical_agent_name(agents[0], None)

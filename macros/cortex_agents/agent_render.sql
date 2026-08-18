@@ -19,46 +19,14 @@
   {{ return(safe_parts | join('.')) }}
 {% endmacro %}
 
-{% macro cortex_agent__target_agent_name(agent) %}
-  {% set naming = agent.get('naming', {}) %}
-  {% set explicit = naming.get(target.name) %}
-  {% if explicit %}
-    {% set base_name = explicit | upper %}
-  {% else %}
-    {% set base_name = agent.get('snowflake_name') | upper %}
-    {% set env_suffixes = var('cortex_agent_env_suffixes', {'dev': '_DEV', 'dbt_focus': '_DBT_FOCUS'}) %}
-    {% set suffix = env_suffixes.get(target.name, '') %}
-    {% if suffix and not base_name.endswith(suffix) %}
-      {% set base_name = base_name ~ suffix %}
-    {% endif %}
-  {% endif %}
-  {{ return(cortex_agent__unquoted_identifier(base_name, 'Agent object')) }}
-{% endmacro %}
-
-{% macro cortex_agent__target_agent_fqn(agent) %}
-  {% set database_name = cortex_agent__unquoted_identifier(target.database, 'database') %}
-  {% set schema_name = cortex_agent__unquoted_identifier(cortex_agent__schema(), 'schema') %}
-  {% set agent_name = cortex_agent__target_agent_name(agent) %}
+{% macro cortex_agent__resource_agent_fqn(resource, agent) %}
+  {% set database_name = cortex_agent__unquoted_identifier(resource.database, 'database') %}
+  {% set schema_name = cortex_agent__unquoted_identifier(resource.schema, 'schema') %}
+  {% set agent_name = cortex_agent__unquoted_identifier(resource.alias or resource.name, 'Agent object') %}
   {{ return(database_name ~ '.' ~ schema_name ~ '.' ~ agent_name) }}
 {% endmacro %}
 
-{% macro cortex_agent__resource_agent_fqn(resource, agent) %}
-  {% if cortex_agent__is_model(resource) %}
-    {% set database_name = cortex_agent__unquoted_identifier(resource.database, 'database') %}
-    {% set schema_name = cortex_agent__unquoted_identifier(resource.schema, 'schema') %}
-    {% set agent_name = cortex_agent__unquoted_identifier(resource.alias or resource.name, 'Agent object') %}
-    {{ return(database_name ~ '.' ~ schema_name ~ '.' ~ agent_name) }}
-  {% endif %}
-  {{ return(cortex_agent__target_agent_fqn(agent)) }}
-{% endmacro %}
-
-{% macro cortex_agent__deploy_alias(agent) %}
-  {% set versioning = agent.get('versioning', {}) %}
-  {% set env_versioning = versioning.get(target.name, {}) %}
-  {{ return(env_versioning.get('deploy_alias', 'latest')) }}
-{% endmacro %}
-
-{% macro cortex_agent__render_tool(tool) %}
+{% macro cortex_agent__legacy_render_tool(tool) %}
 
   {% set spec_entry = {
     'tool_spec': {
@@ -96,7 +64,7 @@
   {{ return({'spec_entry': spec_entry, 'resource_key': tool.get('name'), 'resource': resource}) }}
 {% endmacro %}
 
-{% macro cortex_agent__render_capabilities(caps) %}
+{% macro cortex_agent__legacy_render_capabilities(caps) %}
   {% set tools = [] %}
   {% set resources = {} %}
   {% set skills_out = [] %}
@@ -145,7 +113,7 @@
   {{ return({'tools': tools, 'resources': resources, 'skills': skills_out}) }}
 {% endmacro %}
 
-{% macro cortex_agent__render_instructions(agent) %}
+{% macro cortex_agent__legacy_render_instructions(agent) %}
   {# Build the instructions block (orchestration/response/sample_questions). #}
   {% set instructions = agent.get('instructions', {}) %}
   {% set sample_questions = [] %}
@@ -159,7 +127,7 @@
   }) }}
 {% endmacro %}
 
-{% macro cortex_agent__build_spec(agent_name) %}
+{% macro cortex_agent__legacy_build_spec(agent_name) %}
   {# Compose the deployable spec from single-responsibility renderers. Output is
      insertion-order stable: declared tools (YAML order) then capability tools;
      tool_resources follow the same order. #}
@@ -201,7 +169,7 @@
   {{ return(spec) }}
 {% endmacro %}
 
-{% macro cortex_agent__render_mcp_ddl(agent, agent_fqn) %}
+{% macro cortex_agent__legacy_render_mcp_ddl(agent, agent_fqn) %}
   {% set statements = [] %}
   {% for connector in agent.get('capabilities', {}).get('mcp_connectors', []) %}
     {% if connector.get('enabled') %}
@@ -211,7 +179,7 @@
   {{ return(statements) }}
 {% endmacro %}
 
-{% macro cortex_agent__render_spec(agent_name) %}
+{% macro cortex_agent__legacy_render_spec(agent_name) %}
   {% set resource = cortex_agent__get_agent(agent_name) %}
   {% set agent = cortex_agent__agent_meta(resource) %}
   {% set spec = cortex_agent__build_spec(agent_name) %}
@@ -227,7 +195,7 @@
   {{ return(tojson(spec)) }}
 {% endmacro %}
 
-{% macro cortex_agent__deploy(agent_name, dry_run=True, alias=None) %}
+{% macro cortex_agent__legacy_deploy(agent_name, dry_run=True, alias=None) %}
   {% set resource = cortex_agent__get_agent(agent_name) %}
   {% set agent = cortex_agent__agent_meta(resource) %}
   {% set spec = cortex_agent__build_spec(agent_name) %}
@@ -484,7 +452,7 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {% endif %}
 
   {% if not existed %}
-    {% do run_query("CREATE AGENT IF NOT EXISTS " ~ agent_fqn ~ " COMMENT = 'Managed by dbt cortex_agent__deploy (sandbox)'") %}
+    {% do run_query("CREATE AGENT IF NOT EXISTS " ~ agent_fqn ~ " COMMENT = 'Managed by dbt cortex_agent materialization'") %}
     {% do log("Created agent shell " ~ agent_fqn, info=True) %}
   {% endif %}
 
@@ -529,7 +497,7 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {% do log("Deployed " ~ agent_fqn ~ " (" ~ new_version ~ ", alias=" ~ deploy_alias ~ ", first_deploy=" ~ (not existed) ~ ")", info=True) %}
   {{ return(agent_fqn) }}
 {% endmacro %}
-{% macro cortex_agent__build(dry_run=true, alias=None) %}
+{% macro cortex_agent__legacy_build(dry_run=true, alias=None) %}
   {# One-command orchestrator: deploy every enabled cortex_agent model/exposure. Each
      deploy is idempotent and sandbox-guarded, so this is safe to re-run. Pass
      dry_run=false to apply. #}

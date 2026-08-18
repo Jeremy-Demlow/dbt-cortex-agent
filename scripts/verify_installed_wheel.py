@@ -35,8 +35,7 @@ class ProjectEvidence:
     project_dir: Path
     doctor: dict[str, Any]
     manifest: dict[str, Any]
-    render: dict[str, Any]
-    deploy: dict[str, Any]
+    compiled_agent: dict[str, Any]
     smoke: dict[str, Any]
     eval_plan: dict[str, Any] | None
     eval_log: str
@@ -221,31 +220,18 @@ def validate_project_evidence(evidence: ProjectEvidence, *, include_eval: bool) 
     if evidence.manifest.get("agents") != [AGENT]:
         raise AssertionError(f"{evidence.name}: manifest did not select exactly {AGENT}")
 
-    render = evidence.render.get("renders", [])
-    deploy = evidence.deploy.get("renders", [])
-    if len(render) != 1 or len(deploy) != 1:
-        raise AssertionError(f"{evidence.name}: expected one render and one deploy preview")
-    render_item, deploy_item = render[0], deploy[0]
-    if render_item.get("lifecycle_contract") != "single_agent":
-        raise AssertionError(f"{evidence.name}: missing single_agent lifecycle contract")
-    fqn = render_item.get("physical_agent")
+    fqn = evidence.compiled_agent.get("physical_agent")
     if not isinstance(fqn, str):
-        raise AssertionError(f"{evidence.name}: render has no physical Agent FQN")
-    if deploy_item.get("physical_agent") != fqn:
-        raise AssertionError(f"{evidence.name}: deploy Agent FQN drift")
+        raise AssertionError(f"{evidence.name}: compiled model has no physical Agent FQN")
     smoke_object = evidence.smoke.get("agent_object")
     if not isinstance(smoke_object, str) or fqn.split(".")[-1] != smoke_object:
         raise AssertionError(f"{evidence.name}: smoke Agent FQN drift")
     if "_EVAL" in fqn.upper():
         raise AssertionError(f"{evidence.name}: evaluation-specific physical Agent identity")
-    for label, payload in (
-        ("render", evidence.render),
-        ("deploy", evidence.deploy),
-        ("smoke", evidence.smoke),
-    ):
+    for label, payload in (("compiled", evidence.compiled_agent), ("smoke", evidence.smoke)):
         if contains_key(payload, "projection"):
             raise AssertionError(f"{evidence.name}: {label} contains projection metadata")
-    if evidence.deploy.get("applied") is not False or evidence.smoke.get("applied") is not False:
+    if evidence.smoke.get("applied") is not False:
         raise AssertionError(f"{evidence.name}: preview unexpectedly applied")
     if evidence.smoke.get("response") is not None or evidence.smoke.get("passed") is not None:
         raise AssertionError(f"{evidence.name}: smoke preview invoked runtime")
@@ -279,8 +265,8 @@ def validate_pair(agent_only: ProjectEvidence, optional_eval: ProjectEvidence) -
     optional_eval_fqn = validate_project_evidence(optional_eval, include_eval=True)
     if agent_only_fqn != optional_eval_fqn:
         raise AssertionError("isolated projects resolved different Agent FQNs")
-    agent_only_spec = agent_only.render["renders"][0]["spec"]
-    optional_eval_spec = optional_eval.render["renders"][0]["spec"]
+    agent_only_spec = agent_only.compiled_agent["spec"]
+    optional_eval_spec = optional_eval.compiled_agent["spec"]
     if agent_only_spec != optional_eval_spec:
         raise AssertionError("optional eval metadata changed the rendered Agent specification")
     return {
@@ -351,24 +337,6 @@ def exercise_project(
         env=env,
     )
     compiled_agent, before = compiled_agent_evidence(project_dir)
-    for operation in ("render", "deploy"):
-        run_expected_failure(
-            [
-                str(cli),
-                "agent",
-                operation,
-                *common,
-                "--dbt-executable",
-                str(dbt),
-                "--agent",
-                AGENT,
-            ],
-            cwd=project_dir,
-            env=env,
-            expected=f"use dbt build --select {AGENT}",
-        )
-    render = {"renders": [compiled_agent]}
-    deploy = {"applied": False, "renders": [compiled_agent]}
     smoke = _cli_json(
         cli,
         [
@@ -416,8 +384,7 @@ def exercise_project(
         project_dir,
         doctor,
         manifest,
-        render,
-        deploy,
+        compiled_agent,
         smoke,
         eval_plan,
         eval_log,
