@@ -12,7 +12,7 @@ def test_project_skill_is_single_file_and_v001_scoped():
     frontmatter = yaml.safe_load(text.split("---", 2)[1])
 
     assert frontmatter["name"] == "dbt-cortex-agent-project"
-    assert "0.0.1" in frontmatter["description"]
+    assert "0.0.2" in frontmatter["description"]
     assert not (SKILL.parent / "scripts").exists()
 
 

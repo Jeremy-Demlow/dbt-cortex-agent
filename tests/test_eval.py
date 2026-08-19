@@ -320,6 +320,21 @@ def test_poll_uses_exact_terminal_states_and_bounded_attempts():
         "run", "@stage/config", attempts=2, interval=0, sleep=lambda _: None,
     )
     assert timeout.status == "TIMEOUT"
+    assert timeout.observed_status == "INVOCATION_IN_PROGRESS"
+
+
+def test_poll_preserves_partial_status_when_attempts_exhausted():
+    timeout = poll(
+        PollCursor([
+            ("INVOCATION_IN_PROGRESS", ""),
+            ("INVOCATION_PARTIALLY_COMPLETED", ""),
+        ]),
+        "run", "@stage/config", attempts=2, interval=0, sleep=lambda _: None,
+    )
+
+    assert timeout.status == "TIMEOUT"
+    assert timeout.observed_status == "INVOCATION_PARTIALLY_COMPLETED"
+    assert timeout.details == "poll attempts exhausted"
 
 
 def test_status_detail_classification_handles_json_and_is_bounded():
@@ -367,7 +382,11 @@ def test_result_fetch_retries_empty_and_unscored_rows_to_bound():
         def fetchall(self):
             return [] if self.calls == 1 else [(None,)] if self.calls == 2 else [("answer_correctness",)]
 
-    plan = type("Plan", (), {"agent_fqn": "DB.S.AGENT"})()
+    plan = type("Plan", (), {
+        "agent_fqn": "DB.S.AGENT",
+        "ordered_ground_truth_refs": ["q1"],
+        "metric_names": ["answer_correctness"],
+    })()
     cursor = Cursor()
     sleeps = []
 
@@ -376,6 +395,40 @@ def test_result_fetch_retries_empty_and_unscored_rows_to_bound():
     ]
     assert cursor.calls == 3
     assert sleeps == [1, 1]
+
+
+def test_result_fetch_retries_partial_scored_rows_until_complete():
+    class Cursor:
+        description = [
+            ("INPUT",),
+            ("METRIC_NAME",),
+        ]
+
+        def __init__(self):
+            self.calls = 0
+
+        def execute(self, sql, params=None):
+            self.calls += 1
+
+        def fetchall(self):
+            rows = [("Revenue?", "answer_correctness")]
+            if self.calls > 1:
+                rows.append(("Orders?", "answer_correctness"))
+            return rows
+
+    plan = type("Plan", (), {
+        "agent_fqn": "DB.S.AGENT",
+        "ordered_ground_truth_refs": ["q1", "q2"],
+        "metric_names": ["answer_correctness"],
+    })()
+    cursor = Cursor()
+    sleeps = []
+
+    rows = _fetch_rows(cursor, plan, "run", retries=2, sleep=sleeps.append)
+
+    assert len(rows) == 2
+    assert cursor.calls == 2
+    assert sleeps == [1]
 
 
 def _rows():
@@ -594,6 +647,58 @@ class FailedLifecycleConnection(LifecycleConnection):
         self.cursor_value = FailedLifecycleCursor()
 
 
+class PartialLifecycleCursor(LifecycleCursor):
+    def execute(self, sql, params=None):
+        normalized = " ".join(sql.split()).upper()
+        if normalized.startswith("SELECT INPUT_QUERY, COALESCE"):
+            self.calls.append(normalized)
+            self.rows = [
+                ("Revenue?", "in_scope", "q1"),
+                ("Orders?", "in_scope", "q2"),
+            ]
+            return
+        if normalized.startswith("SELECT INPUT_QUERY, OUTPUT:CUSTOM_CRITERIA:GROUND_TRUTH_REF"):
+            self.calls.append(normalized)
+            self.rows = [("Revenue?", "q1"), ("Orders?", "q2")]
+            return
+        if "'STATUS'" not in normalized and "GET_AI_EVALUATION_DATA" not in normalized:
+            super().execute(sql, params)
+            return
+        self.calls.append(normalized)
+        if "'STATUS'" in normalized:
+            self.description = [
+                ("RUN_NAME",),
+                ("AGENT",),
+                ("OTHER",),
+                ("STATUS",),
+                ("STATUS_DETAILS",),
+            ]
+            status = "INVOCATION_PARTIALLY_COMPLETED" if self.starts == 1 else "COMPLETED"
+            self.rows = [("run", "agent", None, status, "")]
+            return
+        self.description = [
+            ("RECORD_ID",),
+            ("INPUT_ID",),
+            ("INPUT",),
+            ("METRIC_NAME",),
+            ("EVAL_AGG_SCORE",),
+        ]
+        self.rows = [
+            ("r1", "i1", "Revenue?", "answer_correctness", 0.8),
+            ("r1", "i1", "Revenue?", "tool_selection_accuracy", 1.0),
+        ]
+        if self.starts > 1:
+            self.rows.extend([
+                ("r2", "i2", "Orders?", "answer_correctness", 0.9),
+                ("r2", "i2", "Orders?", "tool_selection_accuracy", 1.0),
+            ])
+
+
+class PartialLifecycleConnection(LifecycleConnection):
+    def __init__(self):
+        self.cursor_value = PartialLifecycleCursor()
+
+
 def test_apply_retries_once_and_persists_candidate(tmp_path):
     config = _config(tmp_path, _manifest())
     plan = build_plan(
@@ -632,6 +737,75 @@ def test_apply_retries_once_and_persists_candidate(tmp_path):
     assert output.parent.name == "core"
 
 
+def test_apply_retries_partial_completion_under_new_run_name(tmp_path):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(),
+    )
+    connection = PartialLifecycleConnection()
+
+    output = run_evaluation(
+        config,
+        plan,
+        apply=True,
+        run_name="partial_run",
+        poll_attempts=1,
+        poll_interval=0,
+        transient_retries=1,
+        allowed_targets=["sandbox"],
+        allowed_databases=["DB"],
+        connect=lambda _: connection,
+        sleep=lambda _: None,
+    )
+
+    assert connection.cursor_value.starts == 2
+    candidate = load_result(output)
+    assert candidate["run_name"] == "partial_run_r1"
+    assert candidate["total_records"] == 2
+
+
+def test_partial_completion_failure_records_cardinality(tmp_path):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(),
+    )
+
+    with pytest.raises(RuntimeError, match="ended in TIMEOUT"):
+        run_evaluation(
+            config,
+            plan,
+            apply=True,
+            run_name="partial_failure",
+            poll_attempts=1,
+            poll_interval=0,
+            transient_retries=0,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: PartialLifecycleConnection(),
+            sleep=lambda _: None,
+        )
+
+    path = (
+        config.artifact_dir
+        / "diagnostics"
+        / "orders_assistant"
+        / "core"
+        / "partial_failure.json"
+    )
+    diagnostic = json.loads(path.read_text())
+    assert diagnostic["status"] == "TIMEOUT"
+    assert diagnostic["observed_status"] == "INVOCATION_PARTIALLY_COMPLETED"
+    assert diagnostic["expected_records"] == 2
+    assert diagnostic["actual_records"] == 1
+    assert diagnostic["error"]["category"] == "transient_platform_failure"
+
+
 def test_terminal_failure_writes_whitelist_only_diagnostic(tmp_path):
     config = _config(tmp_path, _manifest())
     plan = build_plan(
@@ -641,7 +815,7 @@ def test_terminal_failure_writes_whitelist_only_diagnostic(tmp_path):
         plan_payload=_plan_payload(refs=["total_revenue"]),
     )
 
-    with pytest.raises(RuntimeError, match="ended in FAILED"):
+    with pytest.raises(RuntimeError, match="ended in FAILED") as exc_info:
         run_evaluation(
             config,
             plan,
@@ -677,6 +851,7 @@ def test_terminal_failure_writes_whitelist_only_diagnostic(tmp_path):
     }
     assert "private" not in path.read_text().lower()
     assert "secret" not in path.read_text().lower()
+    assert "private" not in str(exc_info.value).lower()
 
 
 def test_apply_rejects_unallowlisted_plan_before_connector_use(tmp_path):
