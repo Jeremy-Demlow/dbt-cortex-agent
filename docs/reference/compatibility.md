@@ -1,12 +1,12 @@
 # Compatibility
 
-This matrix applies to `dbt_cortex_agent` 0.0.1 on both install surfaces.
+This matrix applies to `dbt_cortex_agent` 0.0.2 on both install surfaces.
 
-The project-local Cortex Code adoption skill uses the same 0.0.1 CLI/parser and
+The project-local Cortex Code adoption skill uses the same 0.0.2 CLI/parser and
 metadata contracts. dbt Core with `dbt-snowflake` remains authoritative for its
 proof steps; Fusion/fdbt output is advisory. The skill adds no runtime dependency,
 is script-free, and adds no global installation or live-verification claim.
-It ships in the same v0.0.1 release scope as the Orders starter,
+It ships in the same v0.0.2 release scope as the Orders starter,
 single-Agent render/deploy, general Agent smoke, and immutable-SHA doctor
 validation.
 

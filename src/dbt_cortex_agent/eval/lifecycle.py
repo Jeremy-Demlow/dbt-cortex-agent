@@ -4,7 +4,7 @@ import json
 import hashlib
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
@@ -19,6 +19,7 @@ from .results import build_candidate, write_candidate, write_diagnostic
 
 TERMINAL_SUCCESS = {"COMPLETED", "SUCCEEDED", "DONE"}
 TERMINAL_FAILURE = {"FAILED", "ERROR", "CANCELLED", "INVOCATION_FAILED", "INVOCATION_ERROR"}
+PARTIAL_COMPLETION = {"INVOCATION_PARTIALLY_COMPLETED"}
 RETRYABLE_DETAILS = (
     "invocation failed",
     "service is currently unavailable",
@@ -64,6 +65,9 @@ class PollResult:
     request_ids: tuple[str, ...] = ()
     inference_ids: tuple[str, ...] = ()
     error_code: str | None = None
+    observed_status: str | None = None
+    expected_records: int | None = None
+    actual_records: int | None = None
 
     @property
     def succeeded(self) -> bool:
@@ -247,6 +251,15 @@ def is_retryable(details: Any) -> bool:
     return bool(value) and any(pattern in value for pattern in RETRYABLE_DETAILS)
 
 
+def _is_retryable_result(status: PollResult) -> bool:
+    return (
+        status.status in PARTIAL_COMPLETION
+        or status.observed_status in PARTIAL_COMPLETION
+        or status.status == "INCOMPLETE_RESULTS"
+        or is_retryable(status.details)
+    )
+
+
 def poll(
     cursor,
     run_name: str,
@@ -258,6 +271,7 @@ def poll(
 ) -> PollResult:
     if attempts < 1:
         raise ValueError("Poll attempts must be at least 1")
+    last_result: PollResult | None = None
     for attempt in range(attempts):
         cursor.execute(
             "CALL EXECUTE_AI_EVALUATION('STATUS', OBJECT_CONSTRUCT('run_name', %s), %s)",
@@ -274,11 +288,25 @@ def poll(
             request_ids = _status_identifiers(row, columns, "REQUEST_ID")
             inference_ids = _status_identifiers(row, columns, "INFERENCE_ID")
             error_code = _status_value(row, columns, "ERROR_CODE")
+            last_result = PollResult(
+                status,
+                details,
+                request_ids,
+                inference_ids,
+                error_code,
+                observed_status=status,
+            )
             if status in TERMINAL_SUCCESS | TERMINAL_FAILURE:
-                return PollResult(status, details, request_ids, inference_ids, error_code)
+                return last_result
         if attempt + 1 < attempts:
             sleep(interval)
-    return PollResult("TIMEOUT", "poll attempts exhausted")
+    if last_result is None:
+        return PollResult("TIMEOUT", "poll attempts exhausted")
+    return replace(
+        last_result,
+        status="TIMEOUT",
+        details="poll attempts exhausted",
+    )
 
 
 def _status_value(row: tuple[Any, ...], columns: list[str], name: str) -> str | None:
@@ -298,6 +326,8 @@ def _status_identifiers(
 
 
 def _diagnostic_category(status: PollResult) -> str:
+    if status.observed_status in PARTIAL_COMPLETION or status.status == "INCOMPLETE_RESULTS":
+        return "transient_platform_failure"
     if status.status == "TIMEOUT":
         return "timeout"
     if is_retryable(status.details):
@@ -306,7 +336,7 @@ def _diagnostic_category(status: PollResult) -> str:
 
 
 def _failure_diagnostic(plan: EvalPlan, run_name: str, status: PollResult) -> dict[str, Any]:
-    return {
+    diagnostic = {
         "schema_version": 1,
         "artifact_type": "evaluation_diagnostic",
         "agent": plan.agent_name,
@@ -320,6 +350,13 @@ def _failure_diagnostic(plan: EvalPlan, run_name: str, status: PollResult) -> di
             "code": status.error_code,
         },
     }
+    if status.status == "TIMEOUT" and status.observed_status:
+        diagnostic["observed_status"] = status.observed_status
+    if status.expected_records is not None:
+        diagnostic["expected_records"] = status.expected_records
+    if status.actual_records is not None:
+        diagnostic["actual_records"] = status.actual_records
+    return diagnostic
 
 
 def _upload_config(cursor, plan: EvalPlan, filename: str, content: str) -> str:
@@ -335,6 +372,22 @@ def _upload_config(cursor, plan: EvalPlan, filename: str, content: str) -> str:
     return f"@{plan.stage_fqn}/{filename}"
 
 
+def _results_complete(rows: list[dict[str, Any]], plan: EvalPlan) -> bool:
+    expected_inputs = len(plan.ordered_ground_truth_refs)
+    expected_metrics = {name.lower() for name in plan.metric_names}
+    metrics_by_input: dict[str, set[str]] = {}
+    for row in rows:
+        input_query = row.get("input")
+        metric_name = row.get("metric_name")
+        if not input_query or not metric_name:
+            continue
+        metrics_by_input.setdefault(str(input_query), set()).add(str(metric_name).lower())
+    return (
+        len(metrics_by_input) == expected_inputs
+        and all(metrics == expected_metrics for metrics in metrics_by_input.values())
+    )
+
+
 def _fetch_rows(cursor, plan: EvalPlan, run_name: str, retries: int, sleep: Callable[[float], None]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     database, schema, agent = plan.agent_fqn.split(".")
@@ -345,11 +398,15 @@ def _fetch_rows(cursor, plan: EvalPlan, run_name: str, retries: int, sleep: Call
         )
         columns = [str(item[0]).lower() for item in cursor.description]
         rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        if rows and any(row.get("metric_name") for row in rows):
+        if _results_complete(rows, plan):
             return rows
         if attempt < retries:
             sleep(1)
     return rows
+
+
+def _result_record_count(rows: list[dict[str, Any]]) -> int:
+    return len({str(row.get("input")) for row in rows if row.get("input")})
 
 
 def _agent_provenance(cursor, plan: EvalPlan) -> dict[str, Any]:
@@ -433,6 +490,7 @@ def run_evaluation(
         validate_table(cursor, plan.table_fqn, plan.metric_names, plan.ordered_ground_truth_refs)
         final_run = base_run
         status = PollResult("FAILED", "evaluation was not started")
+        rows: list[dict[str, Any]] = []
         pre_start: dict[str, Any] | None = None
         for retry in range(transient_retries + 1):
             final_run = base_run if retry == 0 else f"{base_run}_r{retry}"
@@ -451,12 +509,29 @@ def run_evaluation(
             status = poll(
                 cursor, final_run, stage_path, attempts=poll_attempts, interval=poll_interval, sleep=sleep
             )
-            if status.succeeded or not is_retryable(status.details) or retry == transient_retries:
+            expected_records = len(plan.ordered_ground_truth_refs)
+            if status.succeeded or status.observed_status in PARTIAL_COMPLETION:
+                rows = _fetch_rows(cursor, plan, final_run, retries=2, sleep=sleep)
+                actual_records = _result_record_count(rows)
+                if status.succeeded and not _results_complete(rows, plan):
+                    status = replace(
+                        status,
+                        status="INCOMPLETE_RESULTS",
+                        details="evaluation returned incomplete result cardinality",
+                        expected_records=expected_records,
+                        actual_records=actual_records,
+                    )
+                else:
+                    status = replace(
+                        status,
+                        expected_records=expected_records,
+                        actual_records=actual_records,
+                    )
+            if status.succeeded or not _is_retryable_result(status) or retry == transient_retries:
                 break
         if not status.succeeded:
             write_diagnostic(_failure_diagnostic(plan, final_run, status), config.artifact_dir)
-            raise RuntimeError(f"Evaluation {final_run} ended in {status.status}: {status.details}")
-        rows = _fetch_rows(cursor, plan, final_run, retries=2, sleep=sleep)
+            raise RuntimeError(f"Evaluation {final_run} ended in {status.status}")
         if not rows or not any(row.get("metric_name") for row in rows):
             raise RuntimeError(f"Evaluation {final_run} returned no scored metric rows")
         annotate_rows(cursor, plan.table_fqn, rows)

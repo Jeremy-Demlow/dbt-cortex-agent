@@ -1,6 +1,6 @@
 # End-to-end architecture flow
 
-`dbt_cortex_agent` 0.0.1 has two shipped surfaces and one metadata authority:
+`dbt_cortex_agent` 0.0.2 has two shipped surfaces and one metadata authority:
 
 - **dbt package:** Agent/eval contracts, graph resolution, deterministic renders,
   lifecycle DDL, versioning, grants, and built-in evaluation macros;

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dbt-cortex-agent"
-version = "0.0.1"
+version = "0.0.2"
 description = "dbt-native Snowflake Cortex Agent materialization with skill and evaluation tooling"
 readme = "README.md"
 requires-python = ">=3.10,<4"
@@ -14,7 +14,7 @@ dependencies = ["PyYAML>=6.0,<7"]
 
 [project.urls]
 Homepage = "https://github.com/Jeremy-Demlow/dbt-cortex-agent"
-Documentation = "https://github.com/Jeremy-Demlow/dbt-cortex-agent/tree/v0.0.1/docs"
+Documentation = "https://github.com/Jeremy-Demlow/dbt-cortex-agent/tree/v0.0.2/docs"
 Repository = "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
 Issues = "https://github.com/Jeremy-Demlow/dbt-cortex-agent/issues"
 

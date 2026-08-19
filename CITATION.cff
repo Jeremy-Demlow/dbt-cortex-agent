@@ -6,7 +6,7 @@ authors:
   - family-names: Demlow
     given-names: Jeremy
 license: Apache-2.0
-version: 0.0.1
+version: 0.0.2
 repository-code: "https://github.com/Jeremy-Demlow/dbt-cortex-agent"
 abstract: "A dbt-native materialization for defining, versioning, and evaluating Snowflake Cortex Agents."
 keywords:

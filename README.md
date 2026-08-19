@@ -1,6 +1,6 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` 0.0.1 is a Snowflake-only dbt package and Python companion for
+`dbt_cortex_agent` 0.0.2 is a Snowflake-only dbt package and Python companion for
 defining, versioning, and evaluating Cortex Agents from dbt models. A
 `materialized='cortex_agent'` model body is the native Agent YAML specification.
 dbt owns the complete Agent lifecycle; Python is limited to local skill files,
@@ -8,29 +8,28 @@ runtime smoke, and evaluation coordination.
 
 ## Install one immutable version on two surfaces
 
-Version 0.0.1 is not published to PyPI yet. Install the reviewed Python CLI and
-runtime support from a clean local checkout:
+Install the Python CLI and runtime support from PyPI:
 
 ```bash
-pipx install '/absolute/path/to/dbt-cortex-agent[runtime]'
+pipx install 'dbt-cortex-agent[runtime]==0.0.2'
 ```
 
 For a managed Python environment, use:
 
 ```bash
-python -m pip install '/absolute/path/to/dbt-cortex-agent[runtime]'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.2'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
-public HTTPS `v0.0.1` Git tag in `packages.yml`:
+public HTTPS `v0.0.2` Git tag in `packages.yml`:
 
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.1
+    revision: v0.0.2
 ```
 
-The future PyPI version `0.0.1` and Git tag `v0.0.1` will identify the same immutable
+The PyPI version `0.0.2` and Git tag `v0.0.2` identify the same immutable
 release across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
 declared dbt dependency, and installed consumer dbt package versions align. A
@@ -80,7 +79,7 @@ For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
 It discovers an existing dbt project, establishes objective/levers/data/proof,
 and guides an existing semantic view, the fixed Orders starter, or an existing
-Agent into dbt-owned metadata. It is script-free, shows manual 0.0.1 command
+Agent into dbt-owned metadata. It is script-free, shows manual 0.0.2 command
 parity, and stops separately before local writes, Snowflake mutation/runtime,
 paid evaluation, and baseline movement. The checked-in skill is not a claim of
 catalog publication or live Snowflake verification.

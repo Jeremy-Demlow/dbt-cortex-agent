@@ -7,6 +7,15 @@ history records design experiments, not supported package versions.
 
 - No changes yet.
 
+## 0.0.2 — 2026-08-19
+
+- Treat persistent native evaluation partial completion as a transient platform
+  failure and retry the complete evaluation under a new immutable run name.
+- Require complete input and metric coverage before accepting a native evaluation
+  result, and preserve sanitized expected/actual cardinality diagnostics.
+- Keep raw Snowflake status details out of raised CLI errors while retaining
+  allowlisted request, inference, error-code, and status evidence.
+
 ## 0.0.1 — 2026-08-18
 
 - Added a Snowflake-only `cortex_agent` custom materialization. The dbt model
