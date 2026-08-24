@@ -105,6 +105,14 @@ def test_v001_identity_is_consistent():
     assert "## 0.0.3 — 2026-08-24" in changelog
 
 
+def test_doctor_accepts_repeatable_database_allowlist():
+    args = build_parser().parse_args(
+        ["doctor", "--allow-database", "DB_A", "--allow-database", "DB_B"]
+    )
+
+    assert args.allow_database == ["DB_A", "DB_B"]
+
+
 def test_runtime_is_the_only_connector_extra():
     package = tomllib.loads((ROOT / "pyproject.toml").read_text())
     assert set(package["project"]["optional-dependencies"]) == {"test", "runtime"}

@@ -35,6 +35,7 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
         description="Run local project, executable, manifest, safety, and optional connection diagnostics.",
         epilog="Example: dbt-cortex-agent doctor --project-dir . --json",
     )
+    add_allowlists(doctor_parser)
     doctor_parser.set_defaults(handler=handle_doctor)
 
 
