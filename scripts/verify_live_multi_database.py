@@ -161,9 +161,12 @@ def run(
         raise ValueError("Live proof requires three distinct databases")
     if not cleanup_only and not config.wheel.is_file():
         raise FileNotFoundError(config.wheel)
+    venv = config.artifact_dir / "venv"
+    python = venv / "bin/python"
     env = os.environ.copy()
     env.update(
         {
+            "PATH": f"{python.parent}{os.pathsep}{env.get('PATH', '')}",
             "DBT_TARGET": config.target,
             "SNOWFLAKE_DATABASE": config.database_a,
             "SNOWFLAKE_ROLE": config.role,
@@ -177,8 +180,6 @@ def run(
     if cleanup_only:
         _cleanup(config, env, apply)
         return config.artifact_dir / "live-attestation.json"
-    venv = config.artifact_dir / "venv"
-    python = venv / "bin/python"
     if apply:
         _run([sys.executable, "-m", "venv", str(venv)], cwd=config.project_dir, env=env, apply=True)
     first_state: list[dict] = []

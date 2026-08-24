@@ -101,3 +101,18 @@ def test_no_change_reconciliation_compares_observed_agent_state(tmp_path, monkey
 
     with pytest.raises(RuntimeError, match="No-change reconciliation"):
         verifier.run(_config(tmp_path), apply=True, cleanup=False)
+
+
+def test_isolated_venv_is_added_to_subprocess_path(tmp_path, monkeypatch):
+    paths = []
+
+    def capture_run(command, **kwargs):
+        paths.append(kwargs["env"]["PATH"])
+        return ""
+
+    monkeypatch.setattr(verifier, "_run", capture_run)
+
+    verifier.run(_config(tmp_path), apply=False, cleanup=False)
+
+    assert paths
+    assert all(path.startswith(str(_config(tmp_path).artifact_dir / "venv/bin")) for path in paths)
