@@ -73,9 +73,8 @@ def commands(config: LiveConfig, python: Path) -> list[list[str]]:
         [str(dbt), "deps", "--project-dir", str(config.project_dir), "--profiles-dir", str(config.project_dir)],
         [str(dbt), "parse", "--project-dir", str(config.project_dir), "--profiles-dir", str(config.project_dir),
          "--target", config.target, "--no-partial-parse"],
-        [str(cli), "doctor", *common, "--json"],
-        [str(cli), "manifest", "validate", *common, "--json"],
-        [str(cli), "skill", "plan", *common, "--json"],
+        [str(cli), "doctor", *common, *allow, "--json"],
+        [str(cli), "manifest", "validate", *common, "--agent", "live_orders_a", "--json"],
         [str(dbt), "build", "--project-dir", str(config.project_dir), "--profiles-dir", str(config.project_dir),
          "--target", config.target, "--select", selection],
         [str(cli), "agent", "smoke", *common, "--schema", "AGENTS", "--agent", "live_orders_a",
@@ -189,7 +188,7 @@ def run(
         planned = commands(config, python)
         for index, command in enumerate(planned):
             _run(command, cwd=config.project_dir, env=env, apply=apply)
-            if apply and index == 6:
+            if apply and index == 5:
                 first_state = [
                     _agent_state(config, database, env)
                     for database in (config.database_a, config.database_b)

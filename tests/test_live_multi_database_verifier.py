@@ -56,6 +56,8 @@ def test_plan_uses_exact_wheel_and_covers_both_agents(tmp_path):
     assert "live_orders_a" in combined
     assert "live_orders_b" in combined
     assert combined.count("dbt build") == 2
+    assert "skill plan" not in combined
+    assert combined.count("--allow-database") >= 3
     assert "eval run" in combined
     assert "--agent live_orders_a --suite core" in combined
     assert "+live_orders_a +live_orders_b live_orders_a_core" in combined
