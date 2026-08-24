@@ -27,40 +27,46 @@ class EvalDeclaration:
     meta: dict[str, Any]
 
 
-def target_database(manifest: dict[str, Any]) -> str:
-    project_name = (manifest.get("metadata") or {}).get("project_name")
-    nodes = [
-        node
-        for node in (manifest.get("nodes") or {}).values()
-        if isinstance(node, dict)
-        and node.get("database")
-        and node.get("resource_type", "model") == "model"
-        and (not project_name or node.get("package_name", project_name) == project_name)
-    ]
-    databases = {
-        identifier(node["database"], "dbt-resolved target database")
-        for node in nodes
-    }
-    if len(databases) != 1:
-        found = ", ".join(sorted(databases)) or "none"
-        raise ValueError(
-            "Expected exactly one dbt-resolved target database in manifest nodes; "
-            f"found: {found}"
-        )
-    return next(iter(databases))
+def agent_database(agent: dict[str, Any]) -> str:
+    return identifier(str(agent.get("database") or ""), f"database for {agent.get('name')}")
 
 
-def assert_config_database(manifest: dict[str, Any], database: str | None) -> str:
+def agent_schema(agent: dict[str, Any]) -> str:
+    return identifier(str(agent.get("schema") or ""), f"schema for {agent.get('name')}")
+
+
+def selected_agent_databases(agents: list[dict[str, Any]]) -> tuple[str, ...]:
+    return tuple(sorted({agent_database(agent) for agent in agents}))
+
+
+def assert_config_database(
+    manifest: dict[str, Any], database: str | None, agent_names: list[str] | None = None
+) -> str:
+    """Compatibility assertion scoped to selected Agents, never unrelated models."""
     if not database:
         raise ValueError("Operation requires explicit --database or SNOWFLAKE_DATABASE")
     configured = identifier(database, "configured database")
-    resolved = target_database(manifest)
-    if configured != resolved:
+    resolved = selected_agent_databases(select_agents(manifest, agent_names))
+    if resolved != (configured,):
         raise ValueError(
-            f"Configured database {configured!r} does not match dbt-resolved target database "
-            f"{resolved!r}"
+            f"Configured database {configured!r} does not match selected Agent databases "
+            f"{', '.join(resolved) or 'none'}"
         )
     return configured
+
+
+def assert_resource_databases_allowed(
+    databases: list[str] | tuple[str, ...] | set[str], allowed_databases: list[str]
+) -> tuple[str, ...]:
+    resolved = tuple(sorted({identifier(value, "resource database") for value in databases}))
+    allowed = {identifier(value, "allowed database") for value in allowed_databases}
+    missing = [value for value in resolved if value not in allowed]
+    if missing:
+        raise ValueError(
+            "Refusing operation for resource databases not in the allowlist: "
+            f"{', '.join(missing)}; allowed databases: {', '.join(sorted(allowed)) or 'none'}"
+        )
+    return resolved
 
 
 def load_manifest(path: str | Path) -> dict[str, Any]:
@@ -180,6 +186,9 @@ def cortex_agents(manifest: dict[str, Any]) -> list[dict[str, Any]]:
                 "meta": normalized_meta,
                 "resource_type": "model",
                 "unique_id": node.get("unique_id"),
+                "database": database,
+                "schema": schema,
+                "object_name": physical_name,
                 "physical_fqn": f"{database}.{schema}.{physical_name}",
             }
         )
@@ -270,3 +279,7 @@ def physical_agent_name(agent: dict[str, Any], target: str | None) -> str:
         agent["meta"].get("snowflake_name"),
         f"physical Agent for {agent['name']}",
     )
+
+
+def physical_agent_fqn(agent: dict[str, Any]) -> str:
+    return fqn(str(agent.get("physical_fqn") or ""), f"physical Agent for {agent.get('name')}")

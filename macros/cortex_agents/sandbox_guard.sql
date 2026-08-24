@@ -13,20 +13,25 @@
 
 {% macro cortex_agent__assert_deploy_target(context) %}
   {% set allowed_targets = dbt_cortex_agent.cortex_agent__allowed_targets() %}
-  {% set allowed_databases = dbt_cortex_agent.cortex_agent__allowed_databases() | map('upper') | list %}
   {% if target.name not in allowed_targets %}
     {{ exceptions.raise_compiler_error(context ~ " mutating path target '" ~ target.name ~ "' is not in cortex_agent_allowed_targets=" ~ tojson(allowed_targets) ~ ". Use dry_run=true elsewhere.") }}
   {% endif %}
+{% endmacro %}
+
+{% macro cortex_agent__assert_database_allowed(context, database_name) %}
+  {% set allowed_databases = dbt_cortex_agent.cortex_agent__allowed_databases() | map('upper') | list %}
   {% if allowed_databases | length == 0 %}
     {{ exceptions.raise_compiler_error(context ~ " mutating path requires a non-empty cortex_agent_allowed_databases allowlist") }}
   {% endif %}
-  {% if (target.database | upper) not in allowed_databases %}
-    {{ exceptions.raise_compiler_error(context ~ " mutating path database '" ~ target.database ~ "' is not in cortex_agent_allowed_databases=" ~ tojson(allowed_databases)) }}
+  {% if (database_name | upper) not in allowed_databases %}
+    {{ exceptions.raise_compiler_error(context ~ " mutating path database '" ~ database_name ~ "' is not in cortex_agent_allowed_databases=" ~ tojson(allowed_databases)) }}
   {% endif %}
+  {{ return(true) }}
 {% endmacro %}
 
 {% macro cortex_agent__validate_deploy_context() %}
   {% do cortex_agent__assert_deploy_target('cortex_agent__validate_deploy_context') %}
+  {% do cortex_agent__assert_database_allowed('cortex_agent__validate_deploy_context', target.database) %}
   {% do log("Validated lifecycle allowlists for target=" ~ target.name ~ ", database=" ~ target.database, info=True) %}
   {{ return(true) }}
 {% endmacro %}

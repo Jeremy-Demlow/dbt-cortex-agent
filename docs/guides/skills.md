@@ -38,11 +38,10 @@ explicit connection/database, both allowlists, and `--apply`. The CLI validates
 the complete plan, deduplicates shared stage paths, and invokes Snow CLI only
 after planning succeeds. A failure prevents subsequent deployment.
 
-`agent deploy --apply` performs this same declared-skill planning and
-upload implicitly before invoking the deploy macro, so a separate upload command
-is optional. The macro then independently checks that each declared stage-backed
-skill contains `SKILL.md` and includes staged file state in the idempotency hash.
-Direct `dbt run-operation cortex_agent__deploy` does not upload local files.
+Skill upload is a required preceding step for an Agent build. The materialization
+independently checks that each declared stage-backed skill contains `SKILL.md`
+and includes staged file state in the idempotency hash. dbt never uploads local
+files.
 
 Skill smoke is a subsequent live runtime check, not a deploy prerequisite:
 
@@ -51,7 +50,7 @@ dbt-cortex-agent skill smoke --project-dir . --target sandbox \
   --agent orders_assistant --database ANALYTICS_DEV --schema AGENTS
 ```
 
-The preview maps logical exposures to physical Agent names. A live call requires
+The preview maps logical Agent models to physical Agent names. A live call requires
 the `runtime` extra, explicit `--connection`, both allowlists, and `--apply`.
 `--agent-object` is allowed only for exactly one selected logical Agent.
 

@@ -42,9 +42,7 @@
   {% endif %}
 
   {% do dbt_cortex_agent.cortex_agent__assert_deploy_target('cortex_agent materialization') %}
-  {% if (target_relation.database | upper) not in (dbt_cortex_agent.cortex_agent__allowed_databases() | map('upper') | list) %}
-    {{ exceptions.raise_compiler_error("cortex_agent materialization database '" ~ target_relation.database ~ "' is not in cortex_agent_allowed_databases=" ~ tojson(dbt_cortex_agent.cortex_agent__allowed_databases())) }}
-  {% endif %}
+  {% do dbt_cortex_agent.cortex_agent__assert_database_allowed('cortex_agent materialization', target_relation.database) %}
 
   {{ run_hooks(pre_hooks, inside_transaction=False) }}
 

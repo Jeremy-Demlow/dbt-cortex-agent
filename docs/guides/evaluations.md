@@ -9,7 +9,7 @@ retry, durable candidate artifacts, comparison, gates, and accepted baselines.
 
 Before a paid CLI run, provide all three prerequisites:
 
-1. the **normally deployed Agent** selected by the enabled exposure and target;
+1. the **normally deployed Agent** selected by the full-body model and target;
 2. a **materialized eval table** with `INPUT_QUERY` and `OUTPUT` VARIANT rows;
 3. access to the **evaluation stage** resolved as
    `<target.database>.<cortex_agent_schema>.EVAL_CONFIG_STAGE`.
@@ -37,19 +37,16 @@ dbt-cortex-agent eval run --project-dir . --target sandbox \
   --agent orders_assistant --suite core --json
 ```
 
-Render and preview the normal Agent deployment through the CLI:
+Compile the normal Agent specification without mutation:
 
 ```bash
-dbt-cortex-agent agent render --project-dir . --target sandbox \
-  --agent orders_assistant --json
-dbt-cortex-agent agent deploy --project-dir . --target sandbox \
-  --agent orders_assistant \
-  --allow-target sandbox --allow-database ANALYTICS_DEV --json
+dbt compile --project-dir . --profiles-dir . --target sandbox \
+  --select orders_assistant
 ```
 
-After review, repeat deploy with explicit `--connection`, matching `--database`,
-and `--apply`. Evaluation remains a separate optional paid operation and never
-calls the Agent deploy/version lifecycle.
+After review, upload declared skills and run dependency-aware `dbt build
+--select +orders_assistant` with the approved profile and allowlists. Evaluation
+remains a separate optional paid operation and never calls the Agent lifecycle.
 
 After deploying that Agent and materializing/testing the eval model, an approved
 paid run uses:

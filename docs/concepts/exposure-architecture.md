@@ -1,24 +1,35 @@
-# Why Agents are exposures
+# Why Agents use a custom materialization
 
-A Cortex Agent is a versioned application object, not a relation. It has LIVE
-state, immutable versions, aliases, staged skills, MCP attachments, and grants.
-The package therefore uses an exposure as the declarative system of record and an
-explicit macro for lifecycle mutation.
+A Cortex Agent is a versioned application object, not a table or view. It still
+benefits from model selection, graph dependencies, compilation, tests, and dbt's
+target-aware relation naming. The package therefore represents an Agent as a
+full-body dbt model with `materialized='cortex_agent'`.
 
-| Concern | Exposure architecture | Fake relation materialization |
-|---|---|---|
-| dbt representation | Application dependency | View/table-shaped proxy |
-| Deployment | Explicit guarded macro | Selected model execution |
-| Versions/aliases | First-class lifecycle | Difficult to map to relation replacement |
-| Grants/MCP | Separate typed DDL | Often hidden in hooks |
-| Lineage | Exposure `depends_on` | Model `ref()` |
-| Default safety | Dry-run and target guard | Mutation on `dbt run/build` |
+The model body is the native Agent YAML specification. The model relation
+determines the physical Agent FQN. No-output `ref()` calls establish Semantic
+View and Search dependencies without placing those calls in the rendered YAML.
 
-Semantic views and eval datasets remain dbt models because they are analytical
-objects with real graph-managed SQL definitions.
+| Concern | Current model/materialization architecture |
+|---|---|
+| dbt representation | Full-body Agent model |
+| Preview | `dbt compile --select <agent_model>` |
+| Deployment | Approved `dbt build --select <agent_model>` |
+| Versions/aliases | Materialization adapts LIVE to immutable `VERSION$N` and alias state |
+| Lineage | Model `ref()` dependencies |
+| Return value | No fake dbt relation |
+| Default safety | Compile is offline; selected build is the mutation boundary |
+
+The materialization validates the YAML mapping and orchestration settings,
+enforces target/database allowlists and staged-skill readiness, hashes the final
+specification plus skill state, skips unchanged versions, and reconciles LIVE,
+the immutable version, alias, profile, and comment when change is required.
+
+Legacy `exposures[].config.meta.cortex_agent` declarations remain readable for
+migration compatibility. They are not the recommended authoring system and the
+removed Python render/deploy lifecycle commands cannot deploy them.
 
 ## Manifest contract
 
-The package resolves Agent metadata, semantic-view models, eval models, and
+The package resolves Agent models, semantic-view models, eval models, and
 relation names from the dbt graph. Optional Python tooling reads only
 `target/manifest.json`; source YAML is not reparsed.

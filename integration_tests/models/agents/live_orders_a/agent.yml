@@ -1,0 +1,6 @@
+version: 2
+models:
+  - name: live_orders_a
+    description: Database A protected live proof Agent.
+    config:
+      access: protected

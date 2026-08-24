@@ -5,7 +5,16 @@ history records design experiments, not supported package versions.
 
 ## Unreleased
 
-- No changes yet.
+## 0.0.3 — 2026-08-24
+
+- Support target-resolved manifests containing Agents and resources in multiple
+  approved databases without a repository-global database assumption.
+- Resolve Agent smoke, skill upload/smoke, and mutation guards from selected
+  physical resource identities.
+- Version evaluation plans at schema v2 with explicit Agent, table, stage,
+  dataset/result, target, role, and warehouse identity.
+- Namespace candidates, diagnostics, and baselines by target and physical Agent
+  FQN to prevent cross-database collisions.
 
 ## 0.0.2 — 2026-08-19
 

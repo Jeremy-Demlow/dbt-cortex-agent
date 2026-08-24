@@ -1,5 +1,28 @@
 # CI
 
+## Proof layers
+
+Package CI uses separate trust boundaries:
+
+```text
+package-check.yml                 live-integration.yml              release.yml
+credential-free                  protected snowflake-live-ci       exact tag/wheel
+every PR and push                manual or scheduled               published release
+unit/dbt/wheel contracts         multi-database mutation/smoke     live gate -> PyPI
+```
+
+`package-check.yml` never receives Snowflake credentials and never mutates or
+incurs Agent Evaluation spend. `live-integration.yml` builds one wheel, installs
+that exact artifact in an isolated environment, and uses the package-owned
+integration consumer to prove same-named Agents in separate databases, immutable
+versions/aliases, runtime smoke, schema-v2 eval-plan preview, and no-change
+reconciliation. The default live proof does not start paid evaluation.
+
+PyPI publication requires the protected live proof of the exact wheel built
+from the release tag. The GitHub release event starts that qualification, so
+publishing the GitHub release itself is not gated by this workflow. Manual
+release workflow dispatch remains build-only.
+
 Separate free/local proof, controlled sandbox mutation, and paid evaluation into
 distinct jobs. Never make `--apply` or evaluation spend an unlabeled PR default.
 
@@ -7,11 +30,11 @@ distinct jobs. Never make `--apply` or evaluation spend an unlabeled PR default.
 
 Run without live mutation or paid evaluation:
 
-1. install pinned dbt and Python 0.0.2 surfaces;
+1. install pinned dbt and Python 0.0.3 surfaces;
 2. `dbt deps` and `dbt parse`;
 3. run package/consumer tests and compile where credentials permit;
 4. `dbt-cortex-agent doctor --json`;
-5. `manifest validate`, `agent render`, and `agent deploy` without `--apply`;
+5. `manifest validate` and `dbt compile --select <agent_model>`;
 6. `skill plan` and `skill upload` without `--apply`;
 7. `eval run` without `--apply` to validate the dbt-rendered plan;
 8. compare deterministic renders and local gate artifacts with reviewed evidence.
@@ -37,8 +60,8 @@ credentialed integration job.
 
 Use a protected job/environment and an isolated database. Require operator
 approval, an explicit connection/database, repeatable CLI allowlists, matching
-dbt vars, and `--apply`. Upload selected skills before Agent deploy; deploy
-and grant only selected Agents. Run live skill smoke afterward as a separate
+dbt vars, and explicit approval. Upload selected skills before `dbt build`;
+build only selected Agents. Run live skill smoke afterward as a separate
 runtime check.
 
 Normal production Agents and semantic views must not be mutated by a sandbox
@@ -48,7 +71,7 @@ gate. Promotion beyond sandbox is a separate approved lifecycle operation.
 
 Run only after the sandbox job has separately:
 
-- deployed the normal Agent selected by the exposure,
+- deployed the normal Agent selected by the full-body model,
 - materialized and tested the eval table,
 - provisioned/accessed `EVAL_CONFIG_STAGE`,
 - selected an evaluation warehouse and cost controls.

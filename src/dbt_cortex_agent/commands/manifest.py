@@ -24,11 +24,25 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
 
 def handle_validate(args: argparse.Namespace, config: Config) -> int:
     manifest = fresh_manifest(config, no_parse=args.no_parse)
-    agents = [item["name"] for item in select_agents(manifest, args.agents)]
-    result = {"manifest": str(config.manifest), "agents": agents}
+    agents = [
+        {
+            "name": item["name"],
+            "unique_id": item["unique_id"],
+            "database": item["database"],
+            "schema": item["schema"],
+            "object_name": item["object_name"],
+            "physical_fqn": item["physical_fqn"],
+        }
+        for item in select_agents(manifest, args.agents)
+    ]
+    result = {
+        "manifest": str(config.manifest),
+        "agents": [item["name"] for item in agents],
+        "agent_resources": agents,
+    }
     if args.json:
         emit_json(result)
     else:
         print(f"Manifest: {config.manifest}")
-        print(f"Agents: {', '.join(agents) or 'none'}")
+        print(f"Agents: {', '.join(item['physical_fqn'] for item in agents) or 'none'}")
     return 0

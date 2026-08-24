@@ -20,7 +20,8 @@
   {% set agent_slug = eval_meta.get('agent') | upper %}
   {% set eval_slug = eval_meta.get('name') | upper %}
   {% set dataset_hash = content_hash or cortex_eval__dataset_content_hash(model_name) %}
-  {{ return(target.database ~ '.' ~ cortex_eval__schema() ~ '.' ~ agent_slug ~ '_' ~ eval_slug ~ '_DS_' ~ dataset_hash) }}
+  {% set eval_node = cortex_eval__get_eval(model_name) %}
+  {{ return((eval_node.database or target.database) ~ '.' ~ (eval_node.schema or cortex_eval__schema()) ~ '.' ~ agent_slug ~ '_' ~ eval_slug ~ '_DS_' ~ dataset_hash) }}
 {% endmacro %}
 
 {% macro cortex_eval__hash_named_dataset_name(base_dataset_name, content_hash) %}
@@ -118,12 +119,15 @@
   {{ return(rendered) }}
 {% endmacro %}
 
-{% macro cortex_eval__default_stage_fqn() %}
+{% macro cortex_eval__default_stage_fqn(agent_resource=none) %}
+  {% if agent_resource is not none %}
+    {{ return((agent_resource.database or target.database) ~ '.' ~ (agent_resource.schema or cortex_agent__schema()) ~ '.EVAL_CONFIG_STAGE') }}
+  {% endif %}
   {{ return(target.database ~ '.' ~ cortex_agent__schema() ~ '.EVAL_CONFIG_STAGE') }}
 {% endmacro %}
 
 {% macro cortex_eval__execution_plan(agent_name, suite_name) %}
-  {% set plan_schema_version = 1 %}
+  {% set plan_schema_version = 2 %}
   {% set dataset_token = '__DBT_CORTEX_AGENT_DATASET_NAME__' %}
   {% set node = cortex_eval__get_suite(agent_name, suite_name) %}
   {% set model_name = node.name %}
@@ -137,7 +141,9 @@
   {% set tolerances = eval_meta.get('regression_tolerances', {}) %}
   {% set dataset_fqn = cortex_eval__dataset_fqn(model_name) %}
   {% set agent_fqn = cortex_agent__resource_agent_fqn(resource, agent) %}
-  {% set stage_fqn = cortex_eval__default_stage_fqn() %}
+  {% set stage_fqn = eval_meta.get('stage') or cortex_eval__default_stage_fqn(resource) %}
+  {% set result_database = eval_meta.get('result_database') or (node.database or target.database) %}
+  {% set result_schema = eval_meta.get('result_schema') or (node.schema or cortex_eval__schema()) %}
   {% set config_filename_template = model_name ~ '__RUN_NAME__.json' %}
   {% set ordered_refs = [] %}
   {% for question in eval_meta.get('questions', []) %}
@@ -153,6 +159,8 @@
     'agent_fqn': agent_fqn,
     'dataset_fqn': dataset_fqn,
     'stage_fqn': stage_fqn,
+    'result_database': (result_database | upper),
+    'result_schema': (result_schema | upper),
     'target_name': target.name,
     'target_role': target.role,
     'target_database': (target.database | upper),
@@ -209,6 +217,11 @@
   {% endif %}
 
   {% do cortex_agent__assert_deploy_target('cortex_eval__start') %}
+  {% set eval_stage_parts = eval_stage.split('.') %}
+  {% if eval_stage_parts | length != 3 %}
+    {{ exceptions.raise_compiler_error('cortex_eval__start requires a three-part stage FQN') }}
+  {% endif %}
+  {% do cortex_agent__assert_database_allowed('cortex_eval__start', eval_stage_parts[0]) %}
 
   {% if not execute %}
     {{ return(eval_run_name) }}

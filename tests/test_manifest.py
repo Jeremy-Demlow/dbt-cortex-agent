@@ -5,8 +5,17 @@ import json
 import pytest
 
 from dbt_cortex_agent.manifest import (
-    assert_config_database, cortex_agents, cortex_evals, load_manifest, physical_agent_name,
-    select_agents, skill_declarations, validate_manifest,
+    assert_config_database,
+    assert_resource_databases_allowed,
+    cortex_agents,
+    cortex_evals,
+    load_manifest,
+    physical_agent_fqn,
+    physical_agent_name,
+    select_agents,
+    selected_agent_databases,
+    skill_declarations,
+    validate_manifest,
 )
 
 
@@ -181,3 +190,40 @@ def test_manifest_database_and_physical_agent_validation():
         manifest["nodes"]["model.consumer.orders_assistant"]["alias"] = "BAD;DROP"
         agents = cortex_agents(manifest)
         physical_agent_name(agents[0], None)
+
+
+def test_multi_database_manifest_identity_is_selection_scoped():
+    manifest = _manifest()
+    manifest["nodes"]["model.consumer.finance_assistant"] = {
+        "unique_id": "model.consumer.finance_assistant",
+        "resource_type": "model",
+        "name": "finance_assistant",
+        "database": "FINANCE",
+        "schema": "AI_AGENTS",
+        "alias": "ASSISTANT",
+        "config": {"materialized": "cortex_agent"},
+    }
+    manifest["nodes"]["model.consumer.unrelated"] = {
+        "unique_id": "model.consumer.unrelated",
+        "resource_type": "model",
+        "name": "unrelated",
+        "database": "MARKETING",
+        "schema": "MARTS",
+        "alias": "UNRELATED",
+        "config": {"materialized": "table"},
+    }
+
+    selected = select_agents(manifest)
+    by_name = {item["name"]: item for item in selected}
+
+    assert physical_agent_fqn(by_name["orders_assistant"]) == "DB.AGENTS.ORDERS_ASSISTANT"
+    assert physical_agent_fqn(by_name["finance_assistant"]) == "FINANCE.AI_AGENTS.ASSISTANT"
+    assert selected_agent_databases(selected) == ("DB", "FINANCE")
+    assert assert_config_database(manifest, "DB", ["orders_assistant"]) == "DB"
+    with pytest.raises(ValueError, match="selected Agent databases"):
+        assert_config_database(manifest, "DB")
+    assert assert_resource_databases_allowed(
+        {"DB", "FINANCE"}, ["finance", "db"]
+    ) == ("DB", "FINANCE")
+    with pytest.raises(ValueError, match="MARKETING"):
+        assert_resource_databases_allowed({"DB", "MARKETING"}, ["DB"])

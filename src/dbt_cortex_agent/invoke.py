@@ -109,9 +109,7 @@ def invoke_agent(
 def smoke_skills(
     skills: list,
     *,
-    database: str,
-    schema: str,
-    agent_names: dict[str, str],
+    agent_names: dict[str, dict[str, str]],
     connection: str,
     endpoint: str | None = None,
     invoker=invoke_agent,
@@ -120,10 +118,11 @@ def smoke_skills(
     for skill in skills:
         if skill.agent_name not in agent_names:
             raise ValueError(f"No physical Agent mapping for {skill.agent_name!r}")
+        identity = agent_names[skill.agent_name]
         result = invoker(
-            database,
-            schema,
-            agent_names[skill.agent_name],
+            identity["database"],
+            identity["schema"],
+            identity["object_name"],
             f"Use the {skill.skill_name} skill and summarize the expected next actions.",
             connection,
             endpoint,

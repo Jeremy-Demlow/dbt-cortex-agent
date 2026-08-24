@@ -160,6 +160,36 @@ def test_upload_fails_before_copy_when_stage_is_missing(tmp_path):
     assert len(calls) == 1
 
 
+def test_upload_preflights_stages_across_databases_before_copy(tmp_path):
+    for name in ("one", "two"):
+        skill_dir = tmp_path / f"skills/library/{name}"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(f"# {name}\n")
+    manifest = _manifest(
+        {
+            "agent_a": [_skill("one", "@DB_A.AGENTS.SKILL_STAGE/library/one")],
+            "agent_b": [_skill("two", "@DB_B.AGENTS.SKILL_STAGE/library/two")],
+        }
+    )
+    manifest["nodes"]["model.test.agent_a"]["database"] = "DB_A"
+    manifest["nodes"]["model.test.agent_b"]["database"] = "DB_B"
+    plan = build_upload_plan(manifest, tmp_path)
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    upload_skills(plan, _config(tmp_path), CommandRunner(fake_run))
+
+    assert [call[-1] for call in calls[:2]] == [
+        "DESCRIBE STAGE DB_A.AGENTS.SKILL_STAGE",
+        "DESCRIBE STAGE DB_B.AGENTS.SKILL_STAGE",
+    ]
+    assert all(call[1] == "sql" for call in calls[:2])
+    assert all(call[1:3] == ["stage", "copy"] for call in calls[2:])
+
+
 def test_apply_safety_requires_both_allowlists(tmp_path):
     config = _config(tmp_path)
     with pytest.raises(ValueError, match="allowed targets"):

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from ..artifacts import ARTIFACT_SCHEMA_VERSION, contained_path
-from .results import validate_result
+from .results import _identity_components, validate_result
 
 
 def build_baseline(candidate: dict[str, Any]) -> dict[str, Any]:
@@ -32,8 +32,10 @@ def accept_baseline(
     candidate: dict[str, Any], baseline_dir: str | Path, *, force: bool = False
 ) -> Path:
     baseline = build_baseline(candidate)
+    target_name, database, schema, agent_object = _identity_components(baseline)
     target = contained_path(
-        baseline_dir, baseline["agent"], f"{baseline['suite']}.json"
+        baseline_dir, target_name, database, schema, agent_object,
+        f"{baseline['suite']}.json",
     )
     if target.exists() and not force:
         raise FileExistsError(f"Baseline already exists: {target}; use --force after recording the ratchet decision")

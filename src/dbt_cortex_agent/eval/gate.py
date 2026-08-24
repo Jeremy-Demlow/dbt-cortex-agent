@@ -5,11 +5,15 @@ from typing import Any
 
 from .compare import compare_results
 from ..artifacts import contained_path
-from .results import load_result
+from .results import _identity_components, load_result
 
 
-def baseline_path(baseline_dir: str | Path, agent: str, suite: str) -> Path:
-    return contained_path(baseline_dir, agent, f"{suite}.json")
+def baseline_path(baseline_dir: str | Path, candidate: dict[str, Any]) -> Path:
+    target, database, schema, agent_object = _identity_components(candidate)
+    return contained_path(
+        baseline_dir, target, database, schema, agent_object,
+        f"{candidate['suite']}.json",
+    )
 
 
 def gate_candidate(
@@ -23,5 +27,5 @@ def gate_candidate(
     if baseline is None:
         if baseline_dir is None or not candidate.get("agent") or not candidate.get("suite"):
             raise ValueError("Gate requires --baseline or a baseline directory plus candidate agent/suite")
-        baseline = baseline_path(baseline_dir, candidate["agent"], candidate["suite"])
+        baseline = baseline_path(baseline_dir, candidate)
     return compare_results(load_result(baseline, "baseline"), candidate, default_tolerance)

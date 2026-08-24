@@ -114,7 +114,7 @@ def _config(tmp_path, manifest):
     )
 
 
-def _plan_payload(*, refs=None, tolerances=None):
+def _plan_payload(*, refs=None, tolerances=None, result_database="DB"):
     token = "__DBT_CORTEX_AGENT_DATASET_NAME__"
     identity = {
         "agent_name": "orders_assistant", "suite_name": "core",
@@ -124,6 +124,7 @@ def _plan_payload(*, refs=None, tolerances=None):
         "target_name": "sandbox", "target_role": "EVAL_ROLE",
         "target_database": "DB", "target_schema": "AGENT_SCHEMA",
         "target_warehouse": "WH",
+        "result_database": result_database, "result_schema": "EVAL_RESULTS",
     }
     native = {
         "dataset": {"dataset_type": "CORTEX AGENT", "table_name": identity["dataset_fqn"], "dataset_name": token,
@@ -134,7 +135,7 @@ def _plan_payload(*, refs=None, tolerances=None):
         "metrics": ["answer_correctness", "tool_selection_accuracy"],
     }
     payload = {
-        "schema_version": 1, "identity": identity, "native_eval_config": native,
+        "schema_version": 2, "identity": identity, "native_eval_config": native,
         "dataset_name_token": token, "config_filename_template": "eval_orders__RUN_NAME__.json",
         "metric_names": ["answer_correctness", "tool_selection_accuracy"],
         "thresholds": {"answer_correctness": 0.6, "tool_selection_accuracy": 0.8},
@@ -484,7 +485,7 @@ def _result(*, score=0.8, passed=True, ids=None):
             "post_completion": {"default_version": "VERSION$1", "aliases": {}},
             "default_version_changed": False,
         },
-        "plan_schema_version": 1, "suite_signature": "abc123",
+        "plan_schema_version": 2, "suite_signature": "abc123",
         "plan_identity": plan_identity,
         "agent_fqn": "DB.S.AGENT", "dataset_fqn": "DB.EVAL.TABLE", "stage_fqn": "DB.S.STAGE",
         "metric_names": ["answer_correctness"], "status": "completed",
@@ -726,7 +727,7 @@ def test_apply_retries_once_and_persists_candidate(tmp_path):
         "USE ROLE EVAL_ROLE",
         "USE WAREHOUSE WH",
         "USE DATABASE DB",
-        "USE SCHEMA AGENT_SCHEMA",
+        "USE SCHEMA EVAL_RESULTS",
     ]
     candidate = load_result(output)
     assert candidate["run_name"] == "candidate_run_r1"
@@ -794,7 +795,10 @@ def test_partial_completion_failure_records_cardinality(tmp_path):
     path = (
         config.artifact_dir
         / "diagnostics"
-        / "orders_assistant"
+        / "sandbox"
+        / "DB"
+        / "AGENT_SCHEMA"
+        / "ORDERS_ASSISTANT"
         / "core"
         / "partial_failure.json"
     )
@@ -833,16 +837,21 @@ def test_terminal_failure_writes_whitelist_only_diagnostic(tmp_path):
     path = (
         config.artifact_dir
         / "diagnostics"
-        / "orders_assistant"
+        / "sandbox"
+        / "DB"
+        / "AGENT_SCHEMA"
+        / "ORDERS_ASSISTANT"
         / "core"
         / "failed_run.json"
     )
     diagnostic = json.loads(path.read_text())
     assert diagnostic == {
         "agent": "orders_assistant",
+        "agent_fqn": "DB.AGENT_SCHEMA.ORDERS_ASSISTANT",
         "artifact_type": "evaluation_diagnostic",
         "error": {"category": "terminal_evaluation_failure", "code": "399502"},
         "inference_ids": ["inference-1"],
+        "plan_identity": plan.plan_identity,
         "request_ids": ["request-1"],
         "run_name": "failed_run",
         "schema_version": 1,

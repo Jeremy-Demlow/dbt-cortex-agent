@@ -5,3 +5,14 @@
 /LICENSE @Jeremy-Demlow
 /THIRD_PARTY_LICENSES.md @Jeremy-Demlow
 /CITATION.cff @Jeremy-Demlow
+/pyproject.toml @Jeremy-Demlow
+/uv.lock @Jeremy-Demlow
+/CHANGELOG.md @Jeremy-Demlow
+/src/dbt_cortex_agent/ @Jeremy-Demlow
+/macros/materializations/ @Jeremy-Demlow
+/macros/agent/ @Jeremy-Demlow
+/macros/eval/ @Jeremy-Demlow
+/integration_tests/ @Jeremy-Demlow
+/scripts/release_preflight.py @Jeremy-Demlow
+/tests/ @Jeremy-Demlow
+/docs/ @Jeremy-Demlow

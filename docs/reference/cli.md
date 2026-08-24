@@ -1,4 +1,4 @@
-# CLI reference (v0.0.2)
+# CLI reference (v0.0.3)
 
 `dbt-cortex-agent` is the single console entry. Manifest-dependent commands run
 a fresh `dbt parse` unless `--no-parse` is supplied for a controlled fixture.
@@ -44,11 +44,11 @@ Precedence is CLI option, then environment variable, then built-in default.
 ### `dbt-cortex-agent init` — MUTATION with `--apply`
 
 Preview or append missing package/project-var entries. Options: shared options,
-`--package-source`, `--revision` (default `v0.0.2`), `--agent-schema`,
+`--package-source`, `--revision` (default `v0.0.3`), `--agent-schema`,
 `--eval-schema`, both repeatable allowlists, `--apply`, and `--run-dbt-deps`.
 Output is messages or JSON with `applied`, `changed_files`, and `messages`.
 By default, the command configures an existing dbt project only; it does not scaffold a dbt
-project, Agent exposure, semantic view, evaluation model, seed, or skill.
+project, full-body Agent model, semantic view, evaluation model, seed, or skill.
 `--starter` with value `orders` selects the only curated starter and adds structured `starter`
 and `actions` fields to JSON output. It plans exact package-owned paths, appends
 `.dbtignore` and the semantic-view dependency when needed, validates all
@@ -84,21 +84,12 @@ Preview mappings or invoke live Agents. Options: shared options, repeatable
 `--agent`, `--agent-object`, `--endpoint`, both allowlists, and `--apply`.
 Applied smoke requires `--connection`, database, schema, and the `runtime` extra.
 
-## Agent lifecycle
+## Agent runtime
 
-### `dbt-cortex-agent agent render`
-
-Render Agent specs. Options: shared options and repeatable `--agent`. Human and
-JSON output include the exact full specification plus logical Agent, physical
-Agent, `single_agent` lifecycle marker, target, and deterministic artifact path.
-Each specification is saved at `<artifact-dir>/renders/<target>/<agent>/spec.json`.
-
-### `dbt-cortex-agent agent deploy` — MUTATION with `--apply`
-
-Dry-run or deploy/version. Options: shared options, repeatable `--agent`,
-`--alias`, both allowlists, and `--apply`. Output identifies the dbt-resolved
-physical Agent. Applied deploy plans and uploads all declared local skills before
-invoking the deploy macro. Direct macro calls do not perform local uploads.
+Agent rendering and deployment are dbt operations: use `dbt compile --select
+<agent_model>` for offline preview and an approved `dbt build --select
++<agent_model>` for dependency-aware deployment. The Python Agent command only
+smokes an Agent already deployed by dbt.
 
 ### `dbt-cortex-agent agent smoke` — RUNTIME with `--apply`
 
@@ -116,22 +107,6 @@ always contains `command`, `applied`, `agent`, `agent_object`, `question`,
 the configured database matching dbt's resolved database, and CLI target/database
 allowlists. It reuses the package's bounded SSE invocation client. Runtime,
 configuration, and expected-tool assertion failures exit `2`.
-
-### `dbt-cortex-agent agent grant` — MUTATION with `--apply`
-
-Dry-run or grant Agent usage and monitor access. Options: shared options, repeatable `--agent`, both
-allowlists, and `--apply`.
-
-### `dbt-cortex-agent agent promote` — MUTATION with `--apply`
-
-Move an alias. Options: shared options, repeatable `--agent`, required
-`--from-alias`, required `--to-alias`, both allowlists, and `--apply`.
-
-### `dbt-cortex-agent agent rollback` — MUTATION with `--apply`
-
-Move an alias to an immutable version. Options: shared options, repeatable
-`--agent`, required `--alias`, required `--to-version`, both allowlists, and
-`--apply`.
 
 ## Evaluations
 

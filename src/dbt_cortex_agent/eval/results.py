@@ -9,6 +9,18 @@ from ..artifacts import ARTIFACT_SCHEMA_VERSION, artifact_slug, contained_path
 from .dataset import TOOL_METRICS
 
 
+CURRENT_PLAN_SCHEMA_VERSION = 2
+
+
+def _identity_components(value: dict[str, Any]) -> tuple[str, str, str, str]:
+    identity = value.get("plan_identity") or {}
+    target = artifact_slug(str(identity.get("target_name") or "unknown"), "target")
+    parts = str(value.get("agent_fqn") or "").split(".")
+    if len(parts) != 3:
+        raise ValueError("Evaluation artifact agent_fqn must have database.schema.object")
+    return (target, *(artifact_slug(part, "Agent FQN component") for part in parts))
+
+
 def compute_summary(rows: list[dict[str, Any]]) -> dict[str, dict[str, float | int]]:
     grouped: dict[str, list[float]] = {}
     for row in rows:
@@ -77,12 +89,10 @@ def build_candidate(
 
 def write_candidate(candidate: dict[str, Any], artifact_dir: str | Path) -> Path:
     validate_result(candidate, "candidate")
+    target_name, database, schema, agent_object = _identity_components(candidate)
     target = contained_path(
-        artifact_dir,
-        "candidates",
-        candidate["agent"],
-        candidate["suite"],
-        f"{candidate['run_name']}.json",
+        artifact_dir, "candidates", target_name, database, schema, agent_object,
+        candidate["suite"], f"{candidate['run_name']}.json",
     )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(candidate, indent=2, default=str) + "\n", encoding="utf-8")
@@ -92,12 +102,10 @@ def write_candidate(candidate: dict[str, Any], artifact_dir: str | Path) -> Path
 def write_diagnostic(diagnostic: dict[str, Any], artifact_dir: str | Path) -> Path:
     if diagnostic.get("artifact_type") != "evaluation_diagnostic":
         raise ValueError("Expected evaluation_diagnostic artifact")
+    target_name, database, schema, agent_object = _identity_components(diagnostic)
     target = contained_path(
-        artifact_dir,
-        "diagnostics",
-        diagnostic["agent"],
-        diagnostic["suite"],
-        f"{diagnostic['run_name']}.json",
+        artifact_dir, "diagnostics", target_name, database, schema, agent_object,
+        diagnostic["suite"], f"{diagnostic['run_name']}.json",
     )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(diagnostic, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -108,6 +116,10 @@ def validate_result(value: dict[str, Any], expected_type: str | None = None) -> 
     if value.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
         raise ValueError(
             f"Evaluation artifact schema_version must be {ARTIFACT_SCHEMA_VERSION}"
+        )
+    if value.get("plan_schema_version") != CURRENT_PLAN_SCHEMA_VERSION:
+        raise ValueError(
+            f"Evaluation artifact plan_schema_version must be {CURRENT_PLAN_SCHEMA_VERSION}"
         )
     artifact_type = value.get("artifact_type")
     if artifact_type not in {"candidate", "baseline"}:

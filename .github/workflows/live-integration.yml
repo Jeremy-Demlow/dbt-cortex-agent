@@ -1,0 +1,105 @@
+name: Protected live multi-database proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: Execute the protected Snowflake proof
+        required: true
+        default: false
+        type: boolean
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dbt-cortex-agent-live-multi-database
+  cancel-in-progress: false
+
+jobs:
+  build-wheel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: python -m pip install --disable-pip-version-check 'build==1.3.0'
+      - run: python -m build --wheel --outdir dist
+      - name: Record wheel hash
+        run: sha256sum dist/*.whl > dist/SHA256SUMS
+      - uses: actions/upload-artifact@v7
+        with:
+          name: live-proof-wheel
+          path: dist/
+          if-no-files-found: error
+
+  live-proof:
+    needs: build-wheel
+    if: github.event_name == 'schedule' || inputs.apply == true
+    runs-on: ubuntu-latest
+    environment: snowflake-live-ci
+    timeout-minutes: 45
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PRIVATE_KEY_PATH: ${{ runner.temp }}/snowflake_key.p8
+      SNOWFLAKE_ROLE: ${{ vars.SNOWFLAKE_LIVE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ vars.SNOWFLAKE_LIVE_WAREHOUSE }}
+      LIVE_DATABASE_A: ${{ vars.SNOWFLAKE_LIVE_DATABASE_A }}
+      LIVE_DATABASE_B: ${{ vars.SNOWFLAKE_LIVE_DATABASE_B }}
+      LIVE_EVAL_DATABASE: ${{ vars.SNOWFLAKE_LIVE_EVAL_DATABASE }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v8
+        with:
+          name: live-proof-wheel
+          path: dist
+      - name: Configure protected key material
+        run: |
+          umask 077
+          printf '%s' '${{ secrets.SNOWFLAKE_PRIVATE_KEY }}' > "$SNOWFLAKE_PRIVATE_KEY_PATH"
+      - name: Install Snowflake CLI
+        run: python -m pip install --disable-pip-version-check 'snowflake-cli==3.20.0'
+      - name: Configure named connection
+        run: |
+          snow connection add --connection-name live-ci \
+            --account "$SNOWFLAKE_ACCOUNT" --user "$SNOWFLAKE_USER" \
+            --authenticator SNOWFLAKE_JWT --private-key-file "$SNOWFLAKE_PRIVATE_KEY_PATH" \
+            --role "$SNOWFLAKE_ROLE" --warehouse "$SNOWFLAKE_WAREHOUSE" \
+            --database "$LIVE_DATABASE_A" --schema AGENTS --no-interactive
+      - name: Run exact-wheel live proof
+        run: |
+          python scripts/verify_live_multi_database.py \
+            --wheel dist/*.whl --project-dir integration_tests \
+            --connection live-ci --target sandbox \
+            --database-a "$LIVE_DATABASE_A" --database-b "$LIVE_DATABASE_B" \
+            --eval-database "$LIVE_EVAL_DATABASE" \
+            --role "$SNOWFLAKE_ROLE" --warehouse "$SNOWFLAKE_WAREHOUSE" \
+            --artifact-dir "$RUNNER_TEMP/live-proof" --apply
+      - name: Clean dedicated proof objects
+        if: always()
+        run: |
+          python scripts/verify_live_multi_database.py \
+            --wheel dist/*.whl --project-dir integration_tests \
+            --connection live-ci --target sandbox \
+            --database-a "$LIVE_DATABASE_A" --database-b "$LIVE_DATABASE_B" \
+            --eval-database "$LIVE_EVAL_DATABASE" \
+            --role "$SNOWFLAKE_ROLE" --warehouse "$SNOWFLAKE_WAREHOUSE" \
+            --artifact-dir "$RUNNER_TEMP/live-proof" --apply --cleanup-only
+      - name: Upload sanitized attestation
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: live-multi-database-attestation-${{ github.sha }}
+          path: ${{ runner.temp }}/live-proof/live-attestation.json
+          if-no-files-found: warn
+          retention-days: 30
+      - name: Remove key material
+        if: always()
+        run: rm -f "$SNOWFLAKE_PRIVATE_KEY_PATH"

@@ -1,8 +1,9 @@
 # Installation
 
-Version 0.0.2 has two install surfaces with one immutable release identity: the dbt package
+Version 0.0.3 has two install surfaces with one immutable release identity: the dbt package
 provides metadata contracts and macros; the Python distribution provides the
-`dbt-cortex-agent` CLI. Pin both to 0.0.2.
+`dbt-cortex-agent` CLI. Pin both to the same release source. The GitHub tag and
+release and PyPI distribution use the same version.
 
 ## 1. Install the dbt package
 
@@ -12,10 +13,10 @@ consumer project's `packages.yml`:
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.2
+    revision: v0.0.3
 ```
 
-There is no dbt Hub coordinate in 0.0.2. Use the immutable tag, not a branch.
+There is no dbt Hub coordinate in 0.0.3. Use the immutable tag, not a branch.
 For local package development only,
 replace the Git declaration with an explicit `local:` path.
 
@@ -24,7 +25,7 @@ Analyst tools also require a compatible semantic-view package, such as:
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.2
+    revision: v0.0.3
   - package: Snowflake-Labs/dbt_semantic_view
     version: 1.0.5
 ```
@@ -47,28 +48,28 @@ selected with `--snow-executable` or `SNOW_EXECUTABLE`.
 Install the CLI and connector-backed runtime support from PyPI:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.0.2'
+pipx install 'dbt-cortex-agent[runtime]==0.0.3'
 dbt-cortex-agent --version
 ```
 
 For a managed Python environment, the pip equivalent is:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.2'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.3'
 ```
 
 The base distribution can omit `[runtime]` when connector-backed skill smoke and
 paid evaluation are not needed. `runtime` is the only connector extra; the
 former `invoke` and `eval` extras no longer exist; both map to `runtime`.
 
-The PyPI version `0.0.2` and Git tag `v0.0.2` identify the same immutable
-release. After `dbt deps`, run `dbt-cortex-agent doctor --project-dir . --json`.
+PyPI version `0.0.3` and Git tag `v0.0.3` identify the same immutable release.
+After `dbt deps`, run `dbt-cortex-agent doctor --project-dir . --json`.
 `doctor` compares the CLI version with the declared dependency revision and the
 installed consumer dbt package version so mixed releases fail visibly. A full
 40-character Git SHA is accepted only when
-`dbt_packages/dbt_cortex_agent/dbt_project.yml` reports version `0.0.2`; the
+`dbt_packages/dbt_cortex_agent/dbt_project.yml` reports version `0.0.3`; the
 package source root is not installation evidence. Branch revisions and missing
-or mismatched installed metadata fail closed. A semantic `v0.0.2` declaration
+or mismatched installed metadata fail closed. A semantic `v0.0.3` declaration
 continues to match the CLI version directly.
 
 ## 4. Configure an existing dbt project
@@ -79,7 +80,7 @@ and deployment configuration requires a target plus at least one allowed databas
 ```bash
 dbt-cortex-agent init --project-dir . \
   --package-source 'https://github.com/Jeremy-Demlow/dbt-cortex-agent.git' \
-  --revision v0.0.2 --target sandbox --allow-target sandbox \
+  --revision v0.0.3 --target sandbox --allow-target sandbox \
   --allow-database ANALYTICS_DEV --agent-schema AGENTS --eval-schema EVAL
 ```
 
@@ -91,7 +92,7 @@ top-level entries without replacing existing values.
 By default, `init` is a configuration helper, not a scaffold command. The destination must
 already be a dbt project with `dbt_project.yml`. It can append a missing package
 declaration and selected top-level safety/schema variables, but it does not
-create Agent exposure YAML, semantic-view models, evaluation models, seeds,
+create full-body Agent models, semantic-view models, evaluation models, seeds,
 skills, profiles, or a new dbt project. The explicit `--starter orders` option is
 the only curated exception: it adds the fixed package-owned Orders tutorial to
 the existing project after collision-safe preview.

@@ -12,6 +12,7 @@ from typing import Any, Callable
 from ..config import Config
 from ..dbt_runner import CommandRunner, run_dbt_operation, run_dbt_parse
 from ..identifiers import fqn, identifier
+from ..manifest import assert_resource_databases_allowed
 from ..skills import assert_apply_safety
 from .dataset import annotate_rows, validate_table
 from .results import build_candidate, write_candidate, write_diagnostic
@@ -29,7 +30,7 @@ RETRYABLE_DETAILS = (
     "rate limit",
 )
 _PATH_COMPONENT = re.compile(r"^[A-Za-z0-9_$.-]+$")
-PLAN_SCHEMA_VERSION = 1
+PLAN_SCHEMA_VERSION = 2
 _PLAN_PREFIX = "CORTEX_EVAL_PLAN_JSON="
 
 
@@ -42,6 +43,8 @@ class EvalPlan:
     table_fqn: str
     agent_fqn: str
     stage_fqn: str
+    result_database: str
+    result_schema: str
     target_name: str
     target_role: str
     target_database: str
@@ -95,7 +98,7 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
     required_identity = {
         "agent_name", "suite_name", "eval_model", "agent_fqn",
         "dataset_fqn", "stage_fqn", "target_name", "target_role", "target_database",
-        "target_schema",
+        "target_schema", "result_database", "result_schema",
     }
     missing_identity = sorted(required_identity - identity.keys())
     if missing_identity:
@@ -157,6 +160,8 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
         table_fqn=fqn(str(identity["dataset_fqn"]), "eval table"),
         agent_fqn=fqn(str(identity["agent_fqn"]), "Agent object"),
         stage_fqn=fqn(str(identity["stage_fqn"]), "evaluation stage"),
+        result_database=identifier(str(identity["result_database"]), "result database"),
+        result_schema=identifier(str(identity["result_schema"]), "result schema"),
         target_name=str(identity["target_name"]),
         target_role=identifier(str(identity["target_role"]), "target role"),
         target_database=identifier(str(identity["target_database"]), "target database"),
@@ -340,6 +345,8 @@ def _failure_diagnostic(plan: EvalPlan, run_name: str, status: PollResult) -> di
         "schema_version": 1,
         "artifact_type": "evaluation_diagnostic",
         "agent": plan.agent_name,
+        "agent_fqn": plan.agent_fqn,
+        "plan_identity": plan.plan_identity,
         "suite": plan.suite_name,
         "run_name": run_name,
         "status": status.status,
@@ -464,13 +471,16 @@ def run_evaluation(
     if not config.connection_explicit or not config.connection or not config.warehouse:
         raise ValueError("Evaluation apply requires explicit --connection and --warehouse")
     assert_apply_safety(config, allowed_targets or [], allowed_databases or [])
+    resource_databases = {
+        plan.agent_fqn.split(".", 1)[0],
+        plan.table_fqn.split(".", 1)[0],
+        plan.stage_fqn.split(".", 1)[0],
+        plan.result_database,
+        plan.target_database,
+    }
+    assert_resource_databases_allowed(resource_databases, allowed_databases or [])
     if transient_retries < 0:
         raise ValueError("Transient retries must be non-negative")
-    if config.database and identifier(config.database, "configured database") != plan.target_database:
-        raise ValueError(
-            f"Configured database {config.database!r} does not match dbt plan target database "
-            f"{plan.target_database!r}"
-        )
     if config.target and config.target != plan.target_name:
         raise ValueError(
             f"Configured target {config.target!r} does not match dbt plan target {plan.target_name!r}"
@@ -484,8 +494,8 @@ def run_evaluation(
     try:
         cursor.execute(f"USE ROLE {plan.target_role}")
         cursor.execute(f"USE WAREHOUSE {identifier(plan.target_warehouse or config.warehouse, 'warehouse')}")
-        cursor.execute(f"USE DATABASE {plan.target_database}")
-        cursor.execute(f"USE SCHEMA {plan.target_schema}")
+        cursor.execute(f"USE DATABASE {plan.result_database}")
+        cursor.execute(f"USE SCHEMA {plan.result_schema}")
         initial_provenance = _assert_agent_exists_with_default(cursor, plan)
         validate_table(cursor, plan.table_fqn, plan.metric_names, plan.ordered_ground_truth_refs)
         final_run = base_run

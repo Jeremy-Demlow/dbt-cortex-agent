@@ -6,7 +6,7 @@ from ..config import Config
 from ..identifiers import identifier
 from ..invoke import smoke_skills
 from ..manifest import (
-    assert_config_database,
+    assert_resource_databases_allowed,
     physical_agent_name,
     select_agents,
     skill_declarations,
@@ -66,8 +66,10 @@ def handle(args: argparse.Namespace, config: Config) -> int:
         applied = args.skill_command == "upload" and args.apply
         if applied:
             require_explicit_connection(config, "Skill upload")
-            assert_config_database(manifest, config.database)
             assert_apply_safety(config, args.allow_target, args.allow_database)
+            assert_resource_databases_allowed(
+                {item.stage_fqn.split(".", 1)[0] for item in plan}, args.allow_database
+            )
             upload_skills(plan, config)
         payload = {"command": f"skill {args.skill_command}", "applied": applied, "uploads": _plan_payload(plan)}
         if args.json:
@@ -84,28 +86,34 @@ def handle(args: argparse.Namespace, config: Config) -> int:
     if args.agent_object and len(selected) != 1:
         raise ValueError("--agent-object may be used only when exactly one Agent is selected")
     physical_agents = {
-        agent["name"]: (
-            identifier(args.agent_object, "Agent object override")
-            if args.agent_object
-            else physical_agent_name(agent, config.target)
-        )
+        agent["name"]: {
+            "database": agent["database"],
+            "schema": agent["schema"],
+            "object_name": (
+                identifier(args.agent_object, "Agent object override")
+                if args.agent_object
+                else physical_agent_name(agent, config.target)
+            ),
+        }
         for agent in selected
     }
     planned = [
-        {"skill": skill.skill_name, "agent": physical_agents[skill.agent_name]}
+        {
+            "skill": skill.skill_name,
+            "agent": ".".join(physical_agents[skill.agent_name].values()),
+        }
         for skill in declarations
     ]
     verified: list[str] = []
     if args.apply:
         require_explicit_connection(config, "Skill smoke")
-        assert_config_database(manifest, config.database)
         assert_apply_safety(config, args.allow_target, args.allow_database)
-        if not config.schema:
-            raise ValueError("Skill smoke requires --schema or SNOWFLAKE_SCHEMA")
+        assert_resource_databases_allowed(
+            {identity["database"] for identity in physical_agents.values()},
+            args.allow_database,
+        )
         verified = smoke_skills(
             declarations,
-            database=str(config.database),
-            schema=config.schema,
             agent_names=physical_agents,
             connection=str(config.connection),
             endpoint=args.endpoint,

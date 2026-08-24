@@ -1,6 +1,6 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` 0.0.2 is a Snowflake-only dbt package and Python companion for
+`dbt_cortex_agent` 0.0.3 is a Snowflake-only dbt package and Python companion for
 defining, versioning, and evaluating Cortex Agents from dbt models. A
 `materialized='cortex_agent'` model body is the native Agent YAML specification.
 dbt owns the complete Agent lifecycle; Python is limited to local skill files,
@@ -8,29 +8,29 @@ runtime smoke, and evaluation coordination.
 
 ## Install one immutable version on two surfaces
 
-Install the Python CLI and runtime support from PyPI:
+Install the Python companion from PyPI:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.0.2'
+pipx install 'dbt-cortex-agent[runtime]==0.0.3'
 ```
 
 For a managed Python environment, use:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.2'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.3'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
-public HTTPS `v0.0.2` Git tag in `packages.yml`:
+public HTTPS `v0.0.3` Git tag in `packages.yml`:
 
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.2
+    revision: v0.0.3
 ```
 
-The PyPI version `0.0.2` and Git tag `v0.0.2` identify the same immutable
-release across the CLI and dbt surfaces. Run `dbt deps`, then
+PyPI version `0.0.3` and Git tag `v0.0.3` identify the same immutable release
+across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
 declared dbt dependency, and installed consumer dbt package versions align. A
 full immutable Git SHA is accepted only when actual installed package metadata
@@ -79,7 +79,7 @@ For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
 It discovers an existing dbt project, establishes objective/levers/data/proof,
 and guides an existing semantic view, the fixed Orders starter, or an existing
-Agent into dbt-owned metadata. It is script-free, shows manual 0.0.2 command
+Agent into dbt-owned metadata. It is script-free, shows manual 0.0.3 command
 parity, and stops separately before local writes, Snowflake mutation/runtime,
 paid evaluation, and baseline movement. The checked-in skill is not a claim of
 catalog publication or live Snowflake verification.
@@ -100,6 +100,24 @@ directly to the materialization, which validates explicit orchestration, checks
 staged skills, updates LIVE, commits immutable `VERSION$N`, and reconciles the
 configured alias. Skill upload remains a separate Python responsibility and
 must succeed before `dbt build`.
+
+A target-resolved manifest may contain Agents in multiple approved databases.
+The package carries each selected Agent's complete `database.schema.object`
+identity through skill and runtime operations and validates every Agent, stage,
+eval table, evaluation stage, and result database against repeatable allowlists.
+
+```text
+one dbt target manifest
+  +-- FINANCE.AGENTS.FINANCE_ANALYST
+  +-- MARKETING.AGENTS.CAMPAIGN_ANALYST
+  +-- AI_FOCUS.AGENTS.ENTERPRISE_ASSISTANT
+
+selected resource FQN -> allowlist validation -> bounded operation
+```
+
+One package invocation consumes one dbt target and its fresh manifest. Parsing
+and coordinating several dbt targets belongs to adopter CI, where each target
+has a separately reviewed role, warehouse, and approval boundary.
 Read [lifecycle](docs/guides/lifecycle.md) and [Snowflake setup](docs/getting-started/snowflake-setup.md)
 before crossing this boundary.
 

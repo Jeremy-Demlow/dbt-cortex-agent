@@ -46,9 +46,7 @@ def test_smoke_skills_uses_direct_invoker_and_requires_server_skill(tmp_path):
 
     assert smoke_skills(
         [skill],
-        database="DB",
-        schema="S",
-        agent_names={"agent": "AGENT"},
+        agent_names={"agent": {"database": "DB", "schema": "S", "object_name": "AGENT"}},
         connection="conn",
         endpoint="https://example.snowflakecomputing.com",
         invoker=success,
@@ -64,9 +62,7 @@ def test_smoke_skills_uses_direct_invoker_and_requires_server_skill(tmp_path):
     with pytest.raises(RuntimeError, match="server_skill"):
         smoke_skills(
             [skill],
-            database="DB",
-            schema="S",
-            agent_names={"agent": "AGENT"},
+            agent_names={"agent": {"database": "DB", "schema": "S", "object_name": "AGENT"}},
             connection="conn",
             invoker=lambda *args: {"tool_uses": []},
         )
@@ -86,13 +82,15 @@ def test_smoke_skills_maps_each_logical_agent_to_its_physical_object(tmp_path):
 
     assert smoke_skills(
         skills,
-        database="DB",
-        schema="S",
-        agent_names={"a": "AGENT_A", "b": "AGENT_B"},
+        agent_names={
+            "a": {"database": "DB_A", "schema": "S", "object_name": "AGENT_A"},
+            "b": {"database": "DB_B", "schema": "OTHER", "object_name": "AGENT_B"},
+        },
         connection="conn",
         invoker=invoke,
     ) == ["one", "two"]
     assert [call[2] for call in calls] == ["AGENT_A", "AGENT_B"]
+    assert [(call[0], call[1]) for call in calls] == [("DB_A", "S"), ("DB_B", "OTHER")]
 
 
 @pytest.mark.parametrize(

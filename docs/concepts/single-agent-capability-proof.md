@@ -1,6 +1,6 @@
 # Single-Agent capability proof
 
-One exposure owns one full deployed Agent specification. Evaluation metadata is
+One full-body model owns one deployed Agent specification. Evaluation metadata is
 optional and does not create or filter a second Agent.
 
 ## Attachment evidence
@@ -17,7 +17,7 @@ Offline metadata and rendered-spec inspection classify these capabilities as
 `attached` or `absent`. A completed run while a capability is attached is
 `completed_with_attachment`; it is not invocation proof. `invoked` requires trace
 or metric evidence. Use `indeterminate` when the available evidence cannot establish
-attachment or invocation, including MCP when only the exposure declaration is known.
+attachment or invocation, including MCP when only the model declaration is known.
 
 ## Built-in evaluation coverage
 

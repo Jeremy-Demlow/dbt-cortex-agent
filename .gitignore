@@ -37,6 +37,9 @@ connections.toml
 # Local governance and execution evidence. These files are maintained in the
 # working copy but are not part of the public product repository.
 requirements/
+!requirements/
+requirements/*
+!requirements/REQ-019_resource_scoped_multi_database_context.md
 evidence/
 .plans/
 .snowflake/

@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import re
 try:
     import tomllib
@@ -11,6 +12,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/package-check.yml"
 RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
+LIVE_WORKFLOW = ROOT / ".github/workflows/live-integration.yml"
 
 
 def _workflow_text() -> str:
@@ -28,7 +30,7 @@ def test_active_root_workflows_have_separate_package_and_release_triggers():
     nested = sorted((ROOT / ".github/workflows").glob("**/*.yml")) + sorted(
         (ROOT / ".github/workflows").glob("**/*.yaml")
     )
-    assert workflows == sorted([WORKFLOW, RELEASE_WORKFLOW])
+    assert workflows == sorted([WORKFLOW, RELEASE_WORKFLOW, LIVE_WORKFLOW])
     assert nested == workflows
 
     workflow = yaml.safe_load(_workflow_text())
@@ -43,6 +45,12 @@ def test_active_root_workflows_have_separate_package_and_release_triggers():
     assert "push" not in release_triggers
     assert "pull_request" not in release_triggers
     assert release["permissions"] == {"contents": "read"}
+
+    live = yaml.safe_load(LIVE_WORKFLOW.read_text(encoding="utf-8"))
+    live_triggers = live[True]
+    assert set(live_triggers) == {"workflow_dispatch", "schedule"}
+    assert "pull_request" not in live_triggers
+    assert live["permissions"] == {"contents": "read"}
 
 
 def test_workflow_is_credential_free_non_mutating_and_non_spend():
@@ -60,6 +68,21 @@ def test_workflow_is_credential_free_non_mutating_and_non_spend():
     )
     assert all(value not in text for value in forbidden)
     assert "permissions:\n  contents: read" in text
+
+
+def test_live_workflow_is_protected_exact_wheel_and_cleanup_bounded():
+    workflow = yaml.safe_load(LIVE_WORKFLOW.read_text(encoding="utf-8"))
+    live = workflow["jobs"]["live-proof"]
+    assert live["environment"] == "snowflake-live-ci"
+    assert live["needs"] == "build-wheel"
+    assert live["timeout-minutes"] == 45
+    assert workflow["concurrency"]["cancel-in-progress"] is False
+    text = LIVE_WORKFLOW.read_text(encoding="utf-8")
+    assert "scripts/verify_live_multi_database.py" in text
+    assert "--apply --cleanup" in text
+    assert "sha256sum dist/*.whl" in text
+    assert "if: always()" in text
+    assert "pull_request:" not in text
 
 
 def test_python_and_dbt_matrices_match_declared_compatibility():
@@ -123,9 +146,9 @@ def test_current_product_versions_and_project_names_align():
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
 
     assert package["project"]["name"].replace("-", "_") == project["name"]
-    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.2"
-    assert '__version__ = "0.0.2"' in init_source
-    assert 'name = "dbt-cortex-agent"\nversion = "0.0.2"' in lock
+    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.3"
+    assert '__version__ = "0.0.3"' in init_source
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.3"' in lock
 
 
 def test_generated_residue_is_ignored_or_cleaned_by_workflow():
@@ -179,10 +202,24 @@ def test_release_workflow_builds_and_checks_artifacts_before_upload():
     assert "python tests/verify_wheel.py dist/*.whl" in commands
 
 
+def test_release_publication_requires_exact_wheel_live_qualification():
+    workflow = yaml.safe_load(_release_workflow_text())
+    live = workflow["jobs"]["live-proof"]
+    publish = workflow["jobs"]["publish"]
+    assert live["needs"] == "build"
+    assert live["environment"] == "snowflake-live-ci"
+    assert publish["needs"] == ["build", "live-proof"]
+    assert "github.event_name == 'release'" in live["if"]
+    text = _release_workflow_text()
+    assert "qualified-wheel-sha256.txt" in text
+    assert "scripts/verify_live_multi_database.py" in text
+    assert "--apply --cleanup" in text
+
+
 def test_release_publish_job_is_oidc_only_and_environment_protected():
     workflow = yaml.safe_load(_release_workflow_text())
     publish = workflow["jobs"]["publish"]
-    assert publish["needs"] == "build"
+    assert publish["needs"] == ["build", "live-proof"]
     assert publish["environment"] == "pypi"
     assert publish["permissions"] == {"contents": "read", "id-token": "write"}
     assert "github.event_name == 'release'" in publish["if"]
@@ -193,7 +230,8 @@ def test_release_publish_job_is_oidc_only_and_environment_protected():
 
 
 def test_release_workflow_has_no_long_lived_pypi_credentials():
-    text = _release_workflow_text().lower()
+    workflow = yaml.safe_load(_release_workflow_text())
+    text = json.dumps(workflow["jobs"]["publish"]).lower()
     forbidden = (
         "${{ secrets.",
         "pypi_api_token",

@@ -1,5 +1,26 @@
 # Releasing
 
+## Live qualification
+
+A published release is not sent directly from build to PyPI. The release workflow
+passes the exact wheel artifact through the protected `snowflake-live-ci`
+environment first:
+
+```text
+[tag checkout] -> [tests + sdist/wheel + wheel SHA-256]
+       -> [protected exact-wheel multi-database proof]
+       -> [PyPI trusted publication]
+```
+
+The live job uses only dedicated non-production proof databases and runs cleanup
+under `always()`. Its retained attestation is whitelist-only: wheel hash, target,
+observed physical Agent FQNs, versions and aliases, evaluation database,
+paid-evaluation status, and cleanup request. Manual workflow dispatch validates/builds an existing tag but
+cannot publish and does not invoke the release-only live gate.
+
+The GitHub `release: published` event starts this workflow. The protected proof
+therefore gates PyPI publication, not creation of the GitHub release record.
+
 Python distributions publish through GitHub OIDC trusted publishing. Do not create or configure a
 PyPI API token for this workflow. The dbt package remains the same source tree at the matching Git
 tag because `dbt deps` does not install packages from PyPI.

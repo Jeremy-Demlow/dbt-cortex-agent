@@ -53,9 +53,79 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  live-proof:
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: build
+    runs-on: ubuntu-latest
+    environment: snowflake-live-ci
+    timeout-minutes: 45
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PRIVATE_KEY_PATH: ${{ runner.temp }}/snowflake_key.p8
+      SNOWFLAKE_ROLE: ${{ vars.SNOWFLAKE_LIVE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ vars.SNOWFLAKE_LIVE_WAREHOUSE }}
+      LIVE_DATABASE_A: ${{ vars.SNOWFLAKE_LIVE_DATABASE_A }}
+      LIVE_DATABASE_B: ${{ vars.SNOWFLAKE_LIVE_DATABASE_B }}
+      LIVE_EVAL_DATABASE: ${{ vars.SNOWFLAKE_LIVE_EVAL_DATABASE }}
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-distributions
+          path: dist
+      - name: Record qualified wheel hash
+        run: sha256sum dist/*.whl > "$RUNNER_TEMP/qualified-wheel-sha256.txt"
+      - name: Configure protected key material and Snowflake CLI
+        run: |
+          umask 077
+          printf '%s' '${{ secrets.SNOWFLAKE_PRIVATE_KEY }}' > "$SNOWFLAKE_PRIVATE_KEY_PATH"
+          python -m pip install --disable-pip-version-check 'snowflake-cli==3.20.0'
+          snow connection add --connection-name live-ci \
+            --account "$SNOWFLAKE_ACCOUNT" --user "$SNOWFLAKE_USER" \
+            --authenticator SNOWFLAKE_JWT --private-key-file "$SNOWFLAKE_PRIVATE_KEY_PATH" \
+            --role "$SNOWFLAKE_ROLE" --warehouse "$SNOWFLAKE_WAREHOUSE" \
+            --database "$LIVE_DATABASE_A" --schema AGENTS --no-interactive
+      - name: Qualify exact release wheel live
+        run: |
+          python scripts/verify_live_multi_database.py \
+            --wheel dist/*.whl --project-dir integration_tests \
+            --connection live-ci --target sandbox \
+            --database-a "$LIVE_DATABASE_A" --database-b "$LIVE_DATABASE_B" \
+            --eval-database "$LIVE_EVAL_DATABASE" \
+            --role "$SNOWFLAKE_ROLE" --warehouse "$SNOWFLAKE_WAREHOUSE" \
+            --artifact-dir "$RUNNER_TEMP/live-proof" --apply
+      - name: Clean dedicated proof objects
+        if: always()
+        run: |
+          python scripts/verify_live_multi_database.py \
+            --wheel dist/*.whl --project-dir integration_tests \
+            --connection live-ci --target sandbox \
+            --database-a "$LIVE_DATABASE_A" --database-b "$LIVE_DATABASE_B" \
+            --eval-database "$LIVE_EVAL_DATABASE" \
+            --role "$SNOWFLAKE_ROLE" --warehouse "$SNOWFLAKE_WAREHOUSE" \
+            --artifact-dir "$RUNNER_TEMP/live-proof" --apply --cleanup-only
+      - name: Upload release qualification
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-live-qualification
+          path: |
+            ${{ runner.temp }}/qualified-wheel-sha256.txt
+            ${{ runner.temp }}/live-proof/live-attestation.json
+          if-no-files-found: error
+      - if: always()
+        run: rm -f "$SNOWFLAKE_PRIVATE_KEY_PATH"
+
   publish:
     if: github.event_name == 'release' && github.event.action == 'published' && startsWith(github.event.release.tag_name, 'v')
-    needs: build
+    needs: [build, live-proof]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

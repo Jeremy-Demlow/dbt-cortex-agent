@@ -106,7 +106,11 @@ def run_doctor(config: Config, runner: CommandRunner | None = None) -> list[Diag
         agents = cortex_agents(manifest)
         evals = cortex_evals(manifest)
         diagnostics.append(
-            Diagnostic("enabled Agents", "PASS", ", ".join(item["name"] for item in agents) or "none")
+            Diagnostic(
+                "enabled Agents",
+                "PASS",
+                ", ".join(item["physical_fqn"] for item in agents) or "none",
+            )
         )
         diagnostics.append(
             Diagnostic("enabled evals", "PASS", ", ".join(item.model_name for item in evals) or "none")
@@ -131,6 +135,9 @@ def run_doctor(config: Config, runner: CommandRunner | None = None) -> list[Diag
         [legacy_target] if legacy_target else []
     )
     allowed_databases = variables.get("cortex_agent_allowed_databases") or []
+    resolved_databases = sorted(
+        {item["database"] for item in cortex_agents(manifest)} if manifest else set()
+    )
     if not allowed_targets or not allowed_databases:
         diagnostics.append(
             Diagnostic(
@@ -157,12 +164,23 @@ def run_doctor(config: Config, runner: CommandRunner | None = None) -> list[Diag
                 f"active target {config.target!r} cannot mutate allowlisted targets {allowed_targets}",
             )
         )
+    elif missing := sorted(
+        set(resolved_databases) - {str(item).upper() for item in allowed_databases}
+    ):
+        diagnostics.append(
+            Diagnostic(
+                "deployment safety",
+                "FAIL",
+                f"Agent databases missing from allowlist: {', '.join(missing)}",
+            )
+        )
     else:
         diagnostics.append(
             Diagnostic(
                 "deployment safety",
                 "PASS",
-                f"active target is allowed; databases={allowed_databases}",
+                f"active target is allowed; Agent databases={resolved_databases}; "
+                f"allowed databases={allowed_databases}",
             )
         )
 

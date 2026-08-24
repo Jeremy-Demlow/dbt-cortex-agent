@@ -423,6 +423,11 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {# Fail-closed: this primitive mutates, so guard it directly rather than
      trusting the caller. #}
   {% do dbt_cortex_agent.cortex_agent__assert_deploy_target('cortex_agent__apply_deploy') %}
+  {% set agent_parts = agent_fqn.split('.') %}
+  {% if agent_parts | length != 3 %}
+    {{ exceptions.raise_compiler_error('cortex_agent__apply_deploy requires a three-part Agent FQN') }}
+  {% endif %}
+  {% do dbt_cortex_agent.cortex_agent__assert_database_allowed('cortex_agent__apply_deploy', agent_parts[0]) %}
   {% if '$$' in spec_json %}
     {{ exceptions.raise_compiler_error("Rendered agent spec contains '$$' delimiter") }}
   {% endif %}

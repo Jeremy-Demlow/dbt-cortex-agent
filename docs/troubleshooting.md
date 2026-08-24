@@ -19,10 +19,9 @@ Use this sequence rather than skipping directly to deploy or evaluation:
    and eval suite are discovered from the fresh manifest.
 5. Run `skill plan --agent <logical-name> --json` when the Agent
    declares skills; fix missing local paths before deployment.
-6. Run `agent render`, then `agent deploy` without `--apply`; inspect
-   `logs/dbt.log` for the rendered spec, physical name, hashes, and dry-run DDL.
-7. For an approved Agent apply, supply an explicit connection, matching
-   database, and both CLI allowlists. The CLI uploads declared skills first.
+6. Run `dbt compile --select <agent_model>` and inspect the rendered full spec.
+7. For an approved Agent apply, upload declared skills and run dependency-aware
+   `dbt build --select +<agent_model>` with matching dbt target/database allowlists.
 8. For evaluation, separately materialize/test the optional eval model after the
    normal Agent is deployed; then preview `eval run` and consider its paid
    `--apply` path. Do not deploy a second Agent.
@@ -36,8 +35,8 @@ Use this sequence rather than skipping directly to deploy or evaluation:
 | dbt/project/executable failure | Verify `--project-dir`, `--dbt-executable`, dependency install, and profile target; rerun doctor. |
 | Snow CLI executable failure | Install Snow CLI or set `--snow-executable`/`SNOW_EXECUTABLE`; rerun doctor. |
 | Immutable SHA package version fails | Run `dbt deps` and verify `dbt_packages/dbt_cortex_agent/dbt_project.yml` reports the CLI version. A source-root `dbt_project.yml`, branch revision, missing install, or mismatched installed version is not accepted. |
-| `init` completed but no Agent exists | Expected: init only appends dependency and selected project vars; author the exposure, semantic view, and eval model separately. |
-| No enabled exposure | Set `config.meta.cortex_agent.enabled: true`; use the logical exposure name. |
+| `init` completed but no Agent exists | Expected: init only appends dependency and selected project vars; author the full-body Agent model, Semantic View, and optional eval model separately. |
+| No enabled Agent model | Configure a model with `materialized='cortex_agent'`, explicit naming metadata, and a native YAML body. |
 | Semantic model does not resolve | Make the model name unique and materialize it as `semantic_view`. |
 | Package macro undefined in model SQL | Call package helpers as `dbt_cortex_agent.<macro>`. |
 | Macro call in property YAML fails | Property YAML supports `target`, `var`, and `env_var`, not custom macros. |
@@ -54,6 +53,5 @@ Use this sequence rather than skipping directly to deploy or evaluation:
 | Baseline comparison rejected | Keep suite signature/policy compatible and use the accepted baseline's tolerances. |
 | Unexpected target suffix | Review `naming.<target>` and `cortex_agent_env_suffixes`; evaluation does not add an Agent suffix. |
 | Controlled error lacks JSON on stdout | Errors are emitted to stderr; process exit is `2`. |
-| `agent render --json` has no specification | Expected: CLI JSON is an orchestration summary and successful dbt stdout is captured; inspect `logs/dbt.log` or call `cortex_agent__render_spec` directly. |
 
 See the [CLI reference](reference/cli.md) and [configuration model](guides/configuration-model.md).

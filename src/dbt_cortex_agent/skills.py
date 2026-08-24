@@ -132,14 +132,6 @@ def upload_skills(
     plan: list[SkillUpload], config: Config, runner: CommandRunner | None = None
 ) -> None:
     command_runner = runner or CommandRunner()
-    target_database = config.database.upper() if config.database else ""
-    for upload in plan:
-        if stage_database(upload.stage_path).upper() != target_database:
-            raise ValueError(
-                f"Skill stage {upload.stage_path} targets database "
-                f"{stage_database(upload.stage_path)!r}, not {config.database!r}"
-            )
-
     validated: set[str] = set()
     for upload in plan:
         stage_key = upload.stage_fqn.casefold()

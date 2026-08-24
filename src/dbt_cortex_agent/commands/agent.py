@@ -6,7 +6,11 @@ import json
 from ..config import Config
 from ..identifiers import identifier
 from ..invoke import invoke_agent
-from ..manifest import assert_config_database, physical_agent_name, select_agents
+from ..manifest import (
+    assert_resource_databases_allowed,
+    physical_agent_name,
+    select_agents,
+)
 from ..skills import assert_apply_safety
 from .common import add_allowlists, emit_json, fresh_manifest, require_explicit_connection
 
@@ -59,13 +63,21 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
     passed = None
     if args.apply:
         require_explicit_connection(config, "Agent smoke")
-        database = assert_config_database(manifest, config.database)
         assert_apply_safety(config, args.allow_target, args.allow_database)
-        if not config.schema:
-            raise ValueError("Agent smoke requires --schema or SNOWFLAKE_SCHEMA")
+        assert_resource_databases_allowed({selected["database"]}, args.allow_database)
+        if config.database and config.database.upper() != selected["database"]:
+            raise ValueError(
+                f"Configured database {config.database!r} does not match selected Agent database "
+                f"{selected['database']!r}"
+            )
+        if config.schema and config.schema.upper() != selected["schema"]:
+            raise ValueError(
+                f"Configured schema {config.schema!r} does not match selected Agent schema "
+                f"{selected['schema']!r}"
+            )
         response = invoke_agent(
-            database,
-            config.schema,
+            selected["database"],
+            selected["schema"],
             agent_object,
             question,
             str(config.connection),

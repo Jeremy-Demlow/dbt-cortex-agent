@@ -7,7 +7,7 @@ Eval metadata lives at `models[].config.meta.cortex_eval` on a table model.
 | Field | Type | Contract |
 |---|---|---|
 | `name` | string | Suite name |
-| `agent` | string | Enabled Agent exposure name |
+| `agent` | string | Enabled full-body Agent model name |
 | `metrics` | non-empty list | Built-in names or custom metric objects |
 | `questions` | non-empty list | Suite contract rows |
 
