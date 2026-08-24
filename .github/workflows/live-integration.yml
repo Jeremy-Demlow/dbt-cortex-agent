@@ -45,7 +45,7 @@ jobs:
     env:
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
       SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
-      SNOWFLAKE_PRIVATE_KEY_PATH: ${{ runner.temp }}/snowflake_key.p8
+      SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/snowflake_key.p8
       SNOWFLAKE_ROLE: ${{ vars.SNOWFLAKE_LIVE_ROLE }}
       SNOWFLAKE_WAREHOUSE: ${{ vars.SNOWFLAKE_LIVE_WAREHOUSE }}
       LIVE_DATABASE_A: ${{ vars.SNOWFLAKE_LIVE_DATABASE_A }}
