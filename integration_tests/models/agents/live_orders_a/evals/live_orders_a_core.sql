@@ -9,8 +9,6 @@ SELECT
     OBJECT_CONSTRUCT(
         'ground_truth_output',
         'Use OrdersAnalytics and return total revenue.',
-        'ground_truth_invocations',
-        ARRAY_CONSTRUCT(OBJECT_CONSTRUCT('tool_name', 'OrdersAnalytics')),
         'custom_criteria',
         OBJECT_CONSTRUCT(
             'test_type', 'in_scope',

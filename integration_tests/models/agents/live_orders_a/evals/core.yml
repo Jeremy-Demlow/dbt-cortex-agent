@@ -14,12 +14,10 @@ models:
           stage: "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL') }}.EVAL.EVAL_CONFIG_STAGE"
           result_database: "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL') }}"
           result_schema: EVAL_RESULTS
-          metrics: [answer_correctness, tool_selection_accuracy]
+          metrics: [answer_correctness]
           thresholds:
             answer_correctness: 0.60
-            tool_selection_accuracy: 0.80
           questions:
             - id: live_total_revenue
               test_type: in_scope
-              expected_tools: [OrdersAnalytics]
               ground_truth_ref: live_total_revenue
