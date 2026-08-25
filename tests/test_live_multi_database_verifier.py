@@ -60,6 +60,7 @@ def test_plan_uses_exact_wheel_and_covers_both_agents(tmp_path):
     assert "eval run" in combined
     assert "--agent live_orders_a --suite core" in combined
     assert "+live_orders_a +live_orders_b live_orders_a_core" in combined
+    assert '"cortex_agent_allowed_databases": ["LIVE_A", "LIVE_B", "LIVE_EVAL"]' in combined
     assert "--apply" in combined
     assert "eval run --apply" not in combined
 

@@ -67,15 +67,22 @@ def commands(config: LiveConfig, python: Path) -> list[list[str]]:
         "--warehouse", config.warehouse,
     ]
     selection = "+live_orders_a +live_orders_b live_orders_a_core"
+    dbt_vars = json.dumps(
+        {
+            "cortex_agent_allowed_databases": list(config.databases),
+            "cortex_agent_allowed_targets": [config.target],
+            "cortex_agent_deploy_target": config.target,
+        }
+    )
     return [
         [str(python), "-m", "pip", "install", "--disable-pip-version-check", str(config.wheel),
          "dbt-core~=1.11.0", "dbt-snowflake==1.11.4"],
         [str(dbt), "deps", "--project-dir", str(config.project_dir), "--profiles-dir", str(config.project_dir)],
         [str(dbt), "parse", "--project-dir", str(config.project_dir), "--profiles-dir", str(config.project_dir),
-         "--target", config.target, "--no-partial-parse"],
+         "--target", config.target, "--vars", dbt_vars, "--no-partial-parse"],
         [str(cli), "manifest", "validate", *common, "--agent", "live_orders_a", "--json"],
         [str(dbt), "build", "--project-dir", str(config.project_dir), "--profiles-dir", str(config.project_dir),
-         "--target", config.target, "--select", selection],
+         "--target", config.target, "--vars", dbt_vars, "--select", selection],
         [str(cli), "agent", "smoke", *common, "--schema", "AGENTS", "--agent", "live_orders_a",
          "--question", "What was total order revenue?", "--allow-target", config.target, *allow, "--apply"],
         [str(cli), "agent", "smoke", *common, "--database", config.database_b, "--schema", "AGENTS",
@@ -83,7 +90,7 @@ def commands(config: LiveConfig, python: Path) -> list[list[str]]:
          "--allow-target", config.target, *allow, "--apply"],
         [str(cli), "eval", "run", *common, "--agent", "live_orders_a", "--suite", "core", "--json"],
         [str(dbt), "build", "--project-dir", str(config.project_dir), "--profiles-dir", str(config.project_dir),
-         "--target", config.target, "--select", selection],
+         "--target", config.target, "--vars", dbt_vars, "--select", selection],
     ]
 
 
