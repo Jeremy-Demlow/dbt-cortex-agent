@@ -1,6 +1,6 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` 0.0.4 is a Snowflake-only dbt package and Python companion for
+`dbt_cortex_agent` 0.0.5 is a Snowflake-only dbt package and Python companion for
 defining, versioning, and evaluating Cortex Agents from dbt models. A
 `materialized='cortex_agent'` model body is the native Agent YAML specification.
 dbt owns the complete Agent lifecycle; Python is limited to local skill files,
@@ -11,25 +11,25 @@ runtime smoke, and evaluation coordination.
 Install the Python companion from PyPI:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.0.4'
+pipx install 'dbt-cortex-agent[runtime]==0.0.5'
 ```
 
 For a managed Python environment, use:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.4'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.5'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
-public HTTPS `v0.0.4` Git tag in `packages.yml`:
+public HTTPS `v0.0.5` Git tag in `packages.yml`:
 
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.4
+    revision: v0.0.5
 ```
 
-PyPI version `0.0.4` and Git tag `v0.0.4` identify the same immutable release
+PyPI version `0.0.5` and Git tag `v0.0.5` identify the same immutable release
 across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
 declared dbt dependency, and installed consumer dbt package versions align. A
@@ -79,7 +79,7 @@ For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
 It discovers an existing dbt project, establishes objective/levers/data/proof,
 and guides an existing semantic view, the fixed Orders starter, or an existing
-Agent into dbt-owned metadata. It is script-free, shows manual 0.0.4 command
+Agent into dbt-owned metadata. It is script-free, shows manual 0.0.5 command
 parity, and stops separately before local writes, Snowflake mutation/runtime,
 paid evaluation, and baseline movement. The checked-in skill is not a claim of
 catalog publication or live Snowflake verification.

@@ -3,6 +3,15 @@
 This project had no public beta or stable release before `0.0.1`. Earlier Git
 history records design experiments, not supported package versions.
 
+## 0.0.5 — 2026-08-27
+
+- Resolve an explicitly supplied Snow CLI connection into dbt's environment for
+  every command that parses, not only applied commands. Governed projects build
+  `profiles.yml` from environment variables, so `agent deploy` and `eval verify`
+  previews previously failed with a missing `SNOWFLAKE_ACCOUNT` parse error even
+  when `--connection` was given. Resolution reads local Snow CLI configuration
+  only; mutation, runtime, and spend still require explicit `--apply`.
+
 ## 0.0.4 — 2026-08-27
 
 - Add package-native `agent deploy`, which previews or applies selected Agent

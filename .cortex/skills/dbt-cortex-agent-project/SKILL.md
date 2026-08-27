@@ -14,7 +14,7 @@ lifecycle logic.
 
 - Detect the installed `dbt-cortex-agent` version and require the Python and dbt
   package surfaces to identify the same immutable release. Package-native
-  `agent deploy` and `eval verify` require `0.0.4` or later; on an older release,
+  `agent deploy` and `eval verify` require `0.0.5` or later; on an older release,
   say so and use only the commands that release actually ships.
 - Define each Agent as a dbt model with `materialized='cortex_agent'`; dbt compile
   renders it and the `agent deploy` workflow invokes dbt build as the only Agent

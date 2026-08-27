@@ -60,11 +60,15 @@ def require_explicit_connection(config: Config, operation: str) -> None:
 
 
 def command_needs_execution_context(args: argparse.Namespace) -> bool:
-    if not getattr(args, "connection", None):
-        return False
-    if getattr(args, "command", None) == "doctor":
-        return True
-    return bool(getattr(args, "apply", False))
+    """Report whether an explicit connection should be resolved into dbt's environment.
+
+    Resolving a named connection only reads local Snow CLI configuration, so it is
+    safe before a preview. It is also necessary: governed projects normally build
+    `profiles.yml` from environment variables, and every manifest-dependent command
+    runs a fresh `dbt parse`, which fails without them. Commands that connect or
+    mutate still enforce their own explicit `--apply` and allowlist gates.
+    """
+    return bool(getattr(args, "connection", None))
 
 
 def emit_json(value: Any) -> None:

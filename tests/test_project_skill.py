@@ -12,7 +12,7 @@ def test_project_skill_is_single_file_and_release_aware():
     frontmatter = yaml.safe_load(text.split("---", 2)[1])
 
     assert frontmatter["name"] == "dbt-cortex-agent-project"
-    assert "0.0.4" not in frontmatter["description"]
+    assert "0.0.5" not in frontmatter["description"]
     assert not (SKILL.parent / "scripts").exists()
 
 
@@ -22,7 +22,7 @@ def test_project_skill_preserves_materialization_ownership():
     assert "dbt build" in text
     assert "dbt-cortex-agent agent deploy" in text
     assert "dbt-cortex-agent eval verify" in text
-    assert "require `0.0.4` or later" in text
+    assert "require `0.0.5` or later" in text
     assert "materialized='cortex_agent'" in text or "materialized: cortex_agent" in text
     for removed in (
         "dbt-cortex-agent agent render",

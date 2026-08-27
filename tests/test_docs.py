@@ -12,7 +12,7 @@ def test_active_docs_describe_v001_materialization_boundary():
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
-    assert "0.0.4" in combined
+    assert "0.0.5" in combined
     assert "dbt build --select" in combined
     assert "Python must not render, create, alter, commit, alias, grant, promote" in combined
     assert "Legacy exposure declarations remain supported" not in combined
@@ -36,7 +36,7 @@ def test_readme_documents_package_agent_commands():
 def test_changelog_starts_public_history_at_v001():
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert "## 0.0.4 — 2026-08-27" in changelog
+    assert "## 0.0.5 — 2026-08-27" in changelog
     for old in ("## 0.1.0", "## 0.2.0", "## 0.3.0", "## 0.3.1"):
         assert old not in changelog
 

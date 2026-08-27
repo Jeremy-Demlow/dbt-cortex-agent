@@ -10,6 +10,7 @@ import yaml
 
 from dbt_cortex_agent import __version__
 from dbt_cortex_agent.cli import build_parser, main
+from dbt_cortex_agent.commands.common import command_needs_execution_context
 
 
 ROOT = Path(__file__).parents[1]
@@ -101,6 +102,26 @@ def test_eval_local_commands_parse_without_connection():
     parser.parse_args(["eval", "accept-baseline", "candidate.json"])
 
 
+def test_explicit_connection_supplies_dbt_environment_for_previews():
+    parser = build_parser()
+
+    # Governed profiles build credentials from environment variables, and every
+    # manifest-dependent command parses first, so previews need the resolved
+    # child environment even though they never mutate or invoke.
+    for argv in (
+        ["agent", "deploy", "--agent", "a", "--connection", "sandbox"],
+        ["eval", "verify", "--agent", "a", "--suite", "core", "--connection", "sandbox"],
+        ["manifest", "validate", "--connection", "sandbox"],
+        ["doctor", "--connection", "sandbox"],
+    ):
+        args = parser.parse_args(argv)
+        assert command_needs_execution_context(args) is True
+        assert getattr(args, "apply", False) is False
+
+    without_connection = parser.parse_args(["agent", "deploy", "--agent", "a"])
+    assert command_needs_execution_context(without_connection) is False
+
+
 def test_v001_identity_is_consistent():
     project = yaml.safe_load((ROOT / "dbt_project.yml").read_text())
     package = tomllib.loads((ROOT / "pyproject.toml").read_text())
@@ -109,13 +130,13 @@ def test_v001_identity_is_consistent():
     readme = (ROOT / "README.md").read_text()
     changelog = (ROOT / "CHANGELOG.md").read_text()
 
-    assert project["version"] == "0.0.4"
-    assert package["project"]["version"] == "0.0.4"
-    assert citation["version"] == "0.0.4"
-    assert __version__ == "0.0.4"
-    assert 'name = "dbt-cortex-agent"\nversion = "0.0.4"' in lock
-    assert "revision: v0.0.4" in readme
-    assert "## 0.0.4 — 2026-08-27" in changelog
+    assert project["version"] == "0.0.5"
+    assert package["project"]["version"] == "0.0.5"
+    assert citation["version"] == "0.0.5"
+    assert __version__ == "0.0.5"
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.5"' in lock
+    assert "revision: v0.0.5" in readme
+    assert "## 0.0.5 — 2026-08-27" in changelog
 
 
 def test_runtime_is_the_only_connector_extra():
