@@ -3,7 +3,21 @@
 This project had no public beta or stable release before `0.0.1`. Earlier Git
 history records design experiments, not supported package versions.
 
-## Unreleased
+## 0.0.4 — 2026-08-27
+
+- Add package-native `agent deploy`, which previews or applies selected Agent
+  deployment by validating physical identities and resource databases, uploading
+  declared skills, and invoking the dbt dependency closure. The `cortex_agent`
+  materialization remains the only Agent DDL authority.
+- Add package-native `eval verify`, which materializes the eval model, revalidates
+  the signed plan, executes native evaluation, consumes the exact candidate, and
+  applies intrinsic thresholds or an accepted baseline.
+- Add an explicit `--role` execution context and resolve Snow CLI credentials only
+  for operations that connect, so previews no longer inspect authentication.
+- Recognize `WORKLOAD_IDENTITY` alongside `SNOWFLAKE_JWT` when resolving a Snow
+  CLI connection into the dbt child environment.
+- Consumers no longer need copied Makefiles or Python sequencers for deployment or
+  evaluation workflows; adopter tooling is limited to environment policy.
 
 ## 0.0.3 — 2026-08-24
 

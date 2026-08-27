@@ -10,6 +10,7 @@ import yaml
 
 from . import __version__
 from .commands import agent, bootstrap, eval, manifest, skill
+from .commands.common import command_needs_execution_context
 from .commands.common import shared_parser
 from .config import resolve_config
 from .execution_context import resolve_execution_context
@@ -61,17 +62,19 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         config = resolve_config(args)
-        if config.connection_explicit and config.connection:
+        if command_needs_execution_context(args) and config.connection_explicit and config.connection:
             context = resolve_execution_context(
                 connection=config.connection,
                 snow_executable=config.snow_executable,
                 target=config.target,
                 database=config.database if config.database_explicit else None,
+                role=config.role,
                 warehouse=config.warehouse if config.warehouse_explicit else None,
             )
             config = replace(
                 config,
                 database=context.database,
+                role=context.role,
                 warehouse=context.warehouse,
                 execution_context=context,
             )

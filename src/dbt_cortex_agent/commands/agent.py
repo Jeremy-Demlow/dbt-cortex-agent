@@ -4,6 +4,7 @@ import argparse
 import json
 
 from ..config import Config
+from ..deployment import apply_deploy_plan, build_deploy_plan, validate_deploy_plan
 from ..identifiers import identifier
 from ..invoke import invoke_agent
 from ..manifest import (
@@ -28,6 +29,13 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     commands = parser.add_subparsers(dest="agent_command", required=True)
+    deploy = commands.add_parser(
+        "deploy", parents=[shared], help="preview or deploy Agents through dbt [MUTATION with --apply]"
+    )
+    deploy.add_argument("--agent", action="append", dest="agents", required=True, help="logical Agent name; repeatable")
+    deploy.add_argument("--apply", action="store_true", help="[MUTATION] upload skills and run dbt build; default is preview")
+    add_allowlists(deploy)
+    deploy.set_defaults(handler=handle)
     smoke = commands.add_parser(
         "smoke",
         parents=[shared],
@@ -112,4 +120,33 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
 
 def handle(args: argparse.Namespace, config: Config) -> int:
     manifest = fresh_manifest(config, no_parse=args.no_parse)
+    if args.agent_command == "deploy":
+        plan = build_deploy_plan(manifest, config, args.agents)
+        validate_deploy_plan(plan, config, args.allow_target, args.allow_database)
+        if args.apply:
+            require_explicit_connection(config, "Agent deploy")
+            apply_deploy_plan(plan, config)
+        payload = {
+            "command": "agent deploy",
+            "applied": bool(args.apply),
+            "target": config.target,
+            "agents": list(plan.agents),
+            "skill_uploads": [
+                {
+                    "stage_path": item.stage_path,
+                    "local_dir": str(item.local_dir),
+                    "skills": list(item.skill_names),
+                    "agents": list(item.agent_names),
+                }
+                for item in plan.skill_uploads
+            ],
+            "dbt_selection": list(plan.dbt_selection),
+        }
+        if args.json:
+            emit_json(payload)
+        elif args.apply:
+            print("PASS deployed " + ", ".join(item["physical_fqn"] for item in plan.agents))
+        else:
+            print("[DRY RUN] " + json.dumps(payload, indent=2))
+        return 0
     return _handle_smoke(args, config, manifest)

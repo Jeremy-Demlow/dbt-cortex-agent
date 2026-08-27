@@ -22,10 +22,17 @@ def test_parser_exposes_v001_domains_and_no_python_agent_lifecycle():
     )
     assert set(choices) == {"init", "doctor", "manifest", "skill", "agent", "eval"}
 
-    for removed in ("render", "deploy", "grant", "promote", "rollback"):
+    for removed in ("render", "grant", "promote", "rollback"):
         with pytest.raises(SystemExit) as exc:
             parser.parse_args(["agent", removed])
         assert exc.value.code == 2
+
+    deploy = parser.parse_args([
+        "agent", "deploy", "--agent", "orders_assistant",
+        "--target", "sandbox", "--allow-target", "sandbox",
+        "--allow-database", "DB",
+    ])
+    assert deploy.apply is False
 
 
 @pytest.mark.parametrize(
@@ -36,6 +43,7 @@ def test_parser_exposes_v001_domains_and_no_python_agent_lifecycle():
         (["skill", "smoke", "--help"], "RUNTIME"),
         (["agent", "smoke", "--help"], "RUNTIME"),
         (["eval", "run", "--help"], "PAID"),
+        (["eval", "verify", "--help"], "PAID"),
         (["eval", "accept-baseline", "--help"], "MUTATION"),
     ],
 )
@@ -80,6 +88,11 @@ def test_eval_run_is_paid_opt_in():
     )
     assert args.apply is False
 
+    verify = build_parser().parse_args(
+        ["eval", "verify", "--agent", "orders_assistant", "--suite", "core"]
+    )
+    assert verify.apply is False
+
 
 def test_eval_local_commands_parse_without_connection():
     parser = build_parser()
@@ -96,13 +109,13 @@ def test_v001_identity_is_consistent():
     readme = (ROOT / "README.md").read_text()
     changelog = (ROOT / "CHANGELOG.md").read_text()
 
-    assert project["version"] == "0.0.3"
-    assert package["project"]["version"] == "0.0.3"
-    assert citation["version"] == "0.0.3"
-    assert __version__ == "0.0.3"
-    assert 'name = "dbt-cortex-agent"\nversion = "0.0.3"' in lock
-    assert "revision: v0.0.3" in readme
-    assert "## 0.0.3 — 2026-08-24" in changelog
+    assert project["version"] == "0.0.4"
+    assert package["project"]["version"] == "0.0.4"
+    assert citation["version"] == "0.0.4"
+    assert __version__ == "0.0.4"
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.4"' in lock
+    assert "revision: v0.0.4" in readme
+    assert "## 0.0.4 — 2026-08-27" in changelog
 
 
 def test_runtime_is_the_only_connector_extra():

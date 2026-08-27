@@ -1,6 +1,6 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` 0.0.3 is a Snowflake-only dbt package and Python companion for
+`dbt_cortex_agent` 0.0.4 is a Snowflake-only dbt package and Python companion for
 defining, versioning, and evaluating Cortex Agents from dbt models. A
 `materialized='cortex_agent'` model body is the native Agent YAML specification.
 dbt owns the complete Agent lifecycle; Python is limited to local skill files,
@@ -11,25 +11,25 @@ runtime smoke, and evaluation coordination.
 Install the Python companion from PyPI:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.0.3'
+pipx install 'dbt-cortex-agent[runtime]==0.0.4'
 ```
 
 For a managed Python environment, use:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.3'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.4'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
-public HTTPS `v0.0.3` Git tag in `packages.yml`:
+public HTTPS `v0.0.4` Git tag in `packages.yml`:
 
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.3
+    revision: v0.0.4
 ```
 
-PyPI version `0.0.3` and Git tag `v0.0.3` identify the same immutable release
+PyPI version `0.0.4` and Git tag `v0.0.4` identify the same immutable release
 across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
 declared dbt dependency, and installed consumer dbt package versions align. A
@@ -79,27 +79,27 @@ For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
 It discovers an existing dbt project, establishes objective/levers/data/proof,
 and guides an existing semantic view, the fixed Orders starter, or an existing
-Agent into dbt-owned metadata. It is script-free, shows manual 0.0.3 command
+Agent into dbt-owned metadata. It is script-free, shows manual 0.0.4 command
 parity, and stops separately before local writes, Snowflake mutation/runtime,
 paid evaluation, and baseline movement. The checked-in skill is not a claim of
 catalog publication or live Snowflake verification.
 
 ## Controlled deploy
 
-Upload declared skills, use an isolated target/database, then build explicitly:
+Deploy selected Agents and their declared skills through one package workflow:
 
 ```bash
-dbt-cortex-agent skill upload --project-dir . --target sandbox \
+dbt-cortex-agent agent deploy --project-dir . --target sandbox \
   --agent orders_assistant --connection sandbox --database ANALYTICS_DEV \
   --allow-target sandbox --allow-database ANALYTICS_DEV --apply
-dbt build --select orders_assistant
 ```
 
 The model relation determines the physical Agent FQN. The model body is passed
 directly to the materialization, which validates explicit orchestration, checks
 staged skills, updates LIVE, commits immutable `VERSION$N`, and reconciles the
-configured alias. Skill upload remains a separate Python responsibility and
-must succeed before `dbt build`.
+configured alias. The package preflights and uploads selected skills before it
+invokes the dbt dependency closure. dbt remains the sole Agent DDL authority.
+No Makefile or copied adopter Python script is required.
 
 A target-resolved manifest may contain Agents in multiple approved databases.
 The package carries each selected Agent's complete `database.schema.object`
@@ -128,10 +128,10 @@ before crossing this boundary.
 | Diagnose a project | `doctor` | — |
 | Validate resolved metadata | `manifest validate` | `cortex_agent__validate` |
 | Render the full Agent spec | — | `dbt compile --select <agent_model>` |
-| Deploy/version an Agent | — | `dbt build --select <agent_model>` |
+| Deploy/version an Agent | `agent deploy` | `dbt build --select <agent_model>` |
 | Preview/invoke any Agent | `agent smoke` | — |
 | Plan/upload/smoke skills | `skill plan/upload/smoke` | deploy validates staged skills |
-| Render/run optional evaluation | `eval run` | `cortex_eval__execution_plan`, `cortex_eval__run` |
+| Render/run optional evaluation | `eval run`, `eval verify` | `cortex_eval__execution_plan`, `cortex_eval__run` |
 | Compare/gate/accept artifacts | `eval compare/gate/accept-baseline` | threshold macros only |
 
 Use dbt for Agent render and deployment. Use Python when local file upload,
@@ -151,6 +151,11 @@ eval table, and an evaluation stage; `--apply` incurs Cortex spend. It never
 deploys or changes an Agent. It writes candidate JSON with plan identity,
 ordered ground-truth refs, policy, and pre/post DEFAULT provenance for threshold
 and accepted-baseline gates. See [evaluations](docs/guides/evaluations.md).
+
+For a complete evaluation workflow, `eval verify` materializes and tests the
+selected eval model, executes native evaluation, consumes the exact candidate,
+and applies intrinsic thresholds or an established baseline. Preview is free;
+`--apply` is paid. Baseline acceptance remains a separate explicit command.
 
 ## Documentation
 

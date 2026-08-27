@@ -20,6 +20,7 @@ class Config:
     database: str | None
     database_explicit: bool
     schema: str | None
+    role: str | None
     warehouse: str | None
     warehouse_explicit: bool
     artifact_dir: Path
@@ -70,6 +71,7 @@ def resolve_config(args: object, env: Mapping[str, str] | None = None) -> Config
         database=_value(getattr(args, "database", None), values, "SNOWFLAKE_DATABASE"),
         database_explicit=getattr(args, "database", None) is not None,
         schema=_value(getattr(args, "schema", None), values, "SNOWFLAKE_SCHEMA"),
+        role=_value(getattr(args, "role", None), values, "SNOWFLAKE_ROLE"),
         warehouse=_value(getattr(args, "warehouse", None), values, "SNOWFLAKE_WAREHOUSE"),
         warehouse_explicit=getattr(args, "warehouse", None) is not None,
         artifact_dir=(

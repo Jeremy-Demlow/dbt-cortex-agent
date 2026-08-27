@@ -1,4 +1,4 @@
-# CLI reference (v0.0.3)
+# CLI reference (v0.0.4)
 
 `dbt-cortex-agent` is the single console entry. Manifest-dependent commands run
 a fresh `dbt parse` unless `--no-parse` is supplied for a controlled fixture.
@@ -27,6 +27,7 @@ are preview/dry-run by default and require `--apply`.
 | `--connection` | Explicit Snowflake connection; required as a flag for applied remote operations. |
 | `--database` | Expected Snowflake target database. |
 | `--schema` | Agent schema for runtime operations. |
+| `--role` | Expected Snowflake execution role. |
 | `--warehouse` | Warehouse for paid evaluation. |
 | `--artifact-dir` | Local eval artifact root; default `target/dbt_cortex_agent`. |
 | `--dbt-executable` | dbt executable; default `dbt`. |
@@ -44,7 +45,7 @@ Precedence is CLI option, then environment variable, then built-in default.
 ### `dbt-cortex-agent init` — MUTATION with `--apply`
 
 Preview or append missing package/project-var entries. Options: shared options,
-`--package-source`, `--revision` (default `v0.0.3`), `--agent-schema`,
+`--package-source`, `--revision` (default `v0.0.4`), `--agent-schema`,
 `--eval-schema`, both repeatable allowlists, `--apply`, and `--run-dbt-deps`.
 Output is messages or JSON with `applied`, `changed_files`, and `messages`.
 By default, the command configures an existing dbt project only; it does not scaffold a dbt
@@ -84,12 +85,18 @@ Preview mappings or invoke live Agents. Options: shared options, repeatable
 `--agent`, `--agent-object`, `--endpoint`, both allowlists, and `--apply`.
 Applied smoke requires `--connection`, database, schema, and the `runtime` extra.
 
-## Agent runtime
+## Agent lifecycle and runtime
 
-Agent rendering and deployment are dbt operations: use `dbt compile --select
-<agent_model>` for offline preview and an approved `dbt build --select
-+<agent_model>` for dependency-aware deployment. The Python Agent command only
-smokes an Agent already deployed by dbt.
+Agent rendering and deployment remain dbt operations. The package can sequence
+deployment without becoming a second DDL authority.
+
+### `dbt-cortex-agent agent deploy` — MUTATION with `--apply`
+
+Preview selected physical Agents, skill uploads, and dependency-aware dbt
+selectors. Applied execution requires an explicit connection and complete
+target/database allowlists, preflights and uploads skills, then runs dbt build.
+The workflow is non-transactional and reports possible partial application if
+dbt fails after upload. No Makefile or adopter Python wrapper is required.
 
 ### `dbt-cortex-agent agent smoke` — RUNTIME with `--apply`
 
@@ -109,6 +116,15 @@ allowlists. It reuses the package's bounded SSE invocation client. Runtime,
 configuration, and expected-tool assertion failures exit `2`.
 
 ## Evaluations
+
+### `dbt-cortex-agent eval verify` — PAID with `--apply`
+
+Preview an Agent and one or more repeatable `--suite` selections. Applied
+execution materializes and tests each eval model, runs native evaluation,
+consumes the exact candidate, and gates against an established baseline when
+present. Missing baselines use intrinsic thresholds and report
+`baseline_state=not_established`. Quality failure exits `1`; controlled
+configuration or runtime failure exits `2`. Baseline acceptance stays separate.
 
 ### `dbt-cortex-agent eval run` — PAID with `--apply`
 

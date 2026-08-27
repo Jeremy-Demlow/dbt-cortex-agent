@@ -70,6 +70,36 @@ def run_dbt_parse(
     return _run(runner, command, cwd=project_dir, env=env)
 
 
+def run_dbt_build(
+    executable: str,
+    project_dir: str | Path,
+    target: str | None,
+    selectors: Sequence[str],
+    runner: CommandRunner,
+    env: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    command = [executable, "build", "--project-dir", str(project_dir)]
+    if target:
+        command.extend(["--target", target])
+    command.extend(["--select", *selectors])
+    return _run(runner, command, cwd=project_dir, env=env)
+
+
+def run_dbt_test(
+    executable: str,
+    project_dir: str | Path,
+    target: str | None,
+    selectors: Sequence[str],
+    runner: CommandRunner,
+    env: Mapping[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    command = [executable, "test", "--project-dir", str(project_dir)]
+    if target:
+        command.extend(["--target", target])
+    command.extend(["--select", *selectors])
+    return _run(runner, command, cwd=project_dir, env=env)
+
+
 def run_dbt_operation(
     executable: str,
     project_dir: str | Path,

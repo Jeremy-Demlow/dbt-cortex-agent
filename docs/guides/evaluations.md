@@ -28,6 +28,11 @@ and `--allow-database` values. The plan target and database must match the
 configured context and both allowlists before the connector is loaded. The CLI
 then sets the dbt-rendered plan role before warehouse, database, and schema.
 
+For the complete package-owned workflow, `eval verify` materializes and tests
+the selected eval model before starting native evaluation, then consumes the
+exact candidate and applies intrinsic or accepted-baseline policy. It still
+never deploys or changes the Agent.
+
 ## Python client path
 
 Render the plan without spend:
@@ -57,6 +62,20 @@ dbt-cortex-agent eval run --project-dir . --target sandbox \
   --database ANALYTICS_DEV --warehouse EVAL_WH \
   --allow-target sandbox --allow-database ANALYTICS_DEV --apply --json
 ```
+
+The composed equivalent is:
+
+```bash
+dbt-cortex-agent eval verify --project-dir . --target sandbox \
+  --agent orders_assistant --suite core --connection sandbox \
+  --database ANALYTICS_DEV --role EVAL_ROLE --warehouse EVAL_WH \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --apply --json
+```
+
+If no accepted baseline exists, intrinsic thresholds determine the outcome and
+JSON reports `baseline_state=not_established`. A completed quality failure exits
+`1`; a controlled configuration or infrastructure failure exits `2`. Baseline
+acceptance remains a separate reviewed operation.
 
 The CLI parses, calls `cortex_eval__execution_plan`, verifies plan identity and
 signature, proves the Agent exists with a DEFAULT version before upload/START,

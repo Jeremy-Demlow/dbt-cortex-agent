@@ -49,6 +49,5 @@ def test_environment_supplies_shared_snowflake_options(tmp_path):
         },
     )
 
-    assert (config.connection, config.schema, config.warehouse) == ("conn", "S", "W")
-    assert not hasattr(config, "role")
+    assert (config.connection, config.schema, config.role, config.warehouse) == ("conn", "S", "R", "W")
     assert config.connection_explicit is False

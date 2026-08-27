@@ -17,6 +17,7 @@ def shared_parser() -> argparse.ArgumentParser:
     parser.add_argument("--connection", help="explicit Snowflake connection name for runtime operations")
     parser.add_argument("--database", help="expected Snowflake target database")
     parser.add_argument("--schema", help="Snowflake Agent schema for runtime operations")
+    parser.add_argument("--role", help="expected Snowflake role")
     parser.add_argument("--warehouse", help="Snowflake warehouse for paid evaluation")
     parser.add_argument("--artifact-dir", help="local evaluation artifact directory")
     parser.add_argument("--dbt-executable", help="dbt executable (default: dbt)")
@@ -56,6 +57,14 @@ def fresh_manifest(
 def require_explicit_connection(config: Config, operation: str) -> None:
     if not config.connection_explicit or not config.connection:
         raise ValueError(f"{operation} requires an explicitly supplied --connection")
+
+
+def command_needs_execution_context(args: argparse.Namespace) -> bool:
+    if not getattr(args, "connection", None):
+        return False
+    if getattr(args, "command", None) == "doctor":
+        return True
+    return bool(getattr(args, "apply", False))
 
 
 def emit_json(value: Any) -> None:

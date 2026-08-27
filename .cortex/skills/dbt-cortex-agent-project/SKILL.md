@@ -1,6 +1,6 @@
 ---
 name: dbt-cortex-agent-project
-description: "Guide adoption or migration of a dbt-owned Snowflake Cortex Agent with dbt_cortex_agent 0.0.3. Use when a user wants to add Cortex Agents to a new or existing dbt project, adopt an existing semantic view, try the Orders starter, migrate an existing Agent into dbt, or optionally author manifest-owned Agent evaluations. Triggers: adopt dbt cortex agent, add cortex agent to dbt, migrate cortex agent to dbt, author dbt agent evaluation, dbt agent project, orders agent starter."
+description: "Guide adoption, deployment, or evaluation of a dbt-owned Snowflake Cortex Agent with dbt_cortex_agent. Use when a user wants to add Cortex Agents to a new or existing dbt project, adopt an existing semantic view, try the Orders starter, migrate an existing Agent into dbt, deploy Agent models and skills, or author and verify manifest-owned Agent evaluations. Triggers: adopt dbt cortex agent, add cortex agent to dbt, migrate cortex agent to dbt, deploy dbt cortex agent, verify dbt agent evaluation, dbt agent project, orders agent starter."
 ---
 
 # dbt Cortex Agent project adoption
@@ -12,9 +12,13 @@ lifecycle logic.
 
 ## Authority and invariants
 
-- Use `dbt_cortex_agent` **0.0.3** commands and metadata contracts.
+- Detect the installed `dbt-cortex-agent` version and require the Python and dbt
+  package surfaces to identify the same immutable release. Package-native
+  `agent deploy` and `eval verify` require `0.0.4` or later; on an older release,
+  say so and use only the commands that release actually ships.
 - Define each Agent as a dbt model with `materialized='cortex_agent'`; dbt compile
-  renders it and dbt build is the only deployment path.
+  renders it and the `agent deploy` workflow invokes dbt build as the only Agent
+  deployment authority.
 - dbt Core with `dbt-snowflake` is authoritative for parse, graph, manifest, and release
   proof. Fusion/fdbt may provide advisory feedback but never replaces dbt Core evidence.
 - dbt owns Agent/eval definitions, rendering, physical naming, lifecycle macros, versions,
@@ -58,9 +62,9 @@ Before choosing files or commands, state and confirm:
   ground truth available to prove feasibility. Record gaps instead of inventing semantics.
 - **Proof:** offline parse/validation/render evidence first; optional runtime and evaluation
   evidence only behind later approvals.
-- **Assembly line:** Agent metadata -> parse -> validate -> render -> deploy preview -> optional
-  approved deploy/runtime -> optional eval-model authoring and approved eval -> separately approved
-  baseline policy.
+- **Assembly line:** Agent metadata -> parse -> validate -> package deploy preview -> optional
+  approved package deploy/runtime -> optional eval-model authoring and package verify preview ->
+  approved paid verification -> separately approved baseline policy.
 
 If objective, controllable lever, or supporting data is missing, stop with a concise gap report.
 
@@ -89,7 +93,7 @@ Preview package/dependency, safety-var, seed, semantic-view, Agent, eval, and `.
 actions:
 
 ```bash
-dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision v0.0.3 --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --json
+dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision <PACKAGE_TAG> --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --json
 ```
 
 #### C. Existing Agent migration
@@ -120,7 +124,7 @@ can be authored, rendered, deployed, and smoked without an eval model. Plan a ta
 The suite's `agent` field names the same enabled exposure; never create, deploy, clone, or suffix a
 second Agent for evaluation. Each row must emit one `OUTPUT` VARIANT. Use
 `ground_truth_output` for answer correctness and `ground_truth_invocations` for tool metrics;
-expected tool names must match projected tool names exactly.
+expected tool names must match declared native tool names exactly.
 
 Skills and MCP behavior require separate smoke/integration proof because native Agent Evaluation
 does not cover them.
@@ -151,7 +155,7 @@ revised packet and stop again.
 For route B, manual command parity is the reviewed preview plus `--apply`:
 
 ```bash
-dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision v0.0.3 --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
+dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision <PACKAGE_TAG> --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
 ```
 
 For routes A, C, or D, use Cortex Code file tools to make only the approved metadata/model/test
@@ -166,6 +170,7 @@ dbt parse --project-dir <PROJECT_DIR> --target <TARGET>
 dbt-cortex-agent doctor --project-dir <PROJECT_DIR> --target <TARGET> --json
 dbt-cortex-agent manifest validate --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --json
 dbt compile --project-dir <PROJECT_DIR> --target <TARGET> --select <AGENT>
+dbt-cortex-agent agent deploy --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --allow-target <TARGET> --allow-database <DATABASE> --json
 ```
 
 Run the applicable commands through Cortex Code. The deploy command above is a preview: it does
@@ -175,17 +180,17 @@ mutation, and failures. Do not paper over dbt Core failures with advisory Fusion
 If route D is selected, preview its authoritative plan without spend:
 
 ```bash
-dbt-cortex-agent eval run --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --suite <SUITE> --json
+dbt-cortex-agent eval verify --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --suite <SUITE> --baseline-dir <BASELINE_DIR> --allow-target <TARGET> --allow-database <DATABASE> --json
 ```
 
 ### 6. Prepare optional Snowflake proof
 
 Only when the user requests live proof, present separate exact plans for the needed boundary.
 
-Deployment manual parity:
+Package-native deployment manual parity:
 
 ```bash
-dbt build --project-dir <PROJECT_DIR> --target <TARGET> --select <AGENT>
+dbt-cortex-agent agent deploy --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --connection <CONNECTION> --database <DATABASE> --role <ROLE> --warehouse <WAREHOUSE> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
 ```
 
 Runtime smoke manual parity:
@@ -200,8 +205,8 @@ expected proof, risks, and the single-command resume condition.
 
 ## STOP 2 — Snowflake mutation or runtime
 
-Do not add or execute `--apply` for deploy, grant, promote, rollback, skill upload/smoke, or Agent
-smoke until the user explicitly approves the exact command and Snowflake context. Approval of local
+Do not add or execute `--apply` for Agent deploy, skill smoke, or Agent smoke until the user
+explicitly approves the exact command and Snowflake context. Approval of local
 writes or a dry run does not satisfy this stop.
 
 Resume only for the approved command. If its context, scope, or command changes, return to preview,
@@ -209,13 +214,14 @@ present a revised packet, and stop again.
 
 ### 7. Prepare optional paid evaluation
 
-Require the already deployed Agent selected by the exposure, a materialized eval table, evaluation
-stage access, explicit connection/warehouse, matching target/database, and both allowlists. Never
-propose a second Agent deployment for this step. Show the exact suite,
+Require the already deployed Agent selected by the model, evaluation-stage access, explicit
+connection/role/warehouse, matching target/resource databases, and complete allowlists. The
+package workflow materializes and tests the eval model before paid execution. Never propose a
+second Agent deployment for this step. Show the exact suite,
 metrics, row scope, prerequisites, and command:
 
 ```bash
-dbt-cortex-agent eval run --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --suite <SUITE> --connection <CONNECTION> --database <DATABASE> --warehouse <WAREHOUSE> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
+dbt-cortex-agent eval verify --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --suite <SUITE> --baseline-dir <BASELINE_DIR> --connection <CONNECTION> --database <DATABASE> --role <ROLE> --warehouse <WAREHOUSE> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
 ```
 
 Present one boundary packet containing the objective, exact command, prerequisites and paid scope,
@@ -273,6 +279,6 @@ Report:
 - objective, chosen route, levers, data, and proof status;
 - files changed and dbt-owned metadata created;
 - exact manual commands shown and commands actually run;
-- parse/validate/render/deploy-preview/eval-plan results;
+- parse/validate/render/package-deploy-preview/eval-verify-preview results;
 - approvals received and boundaries not crossed;
 - remaining blockers or optional next boundary.

@@ -8,6 +8,7 @@ from ..eval.compare import compare_results
 from ..eval.gate import gate_candidate
 from ..eval.lifecycle import build_plan, run_evaluation
 from ..eval.results import load_result
+from ..eval.verify import build_verify_selections, verify_evaluations
 from .common import add_allowlists, emit_json, require_explicit_connection
 
 
@@ -35,6 +36,19 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
     run.add_argument("--apply", action="store_true", help="[PAID] start evaluation; default only renders the plan")
     run.set_defaults(handler=handle)
 
+    verify = commands.add_parser(
+        "verify", parents=[shared], help="materialize, run, and gate evaluations [PAID with --apply]"
+    )
+    verify.add_argument("--agent", required=True, help="logical Agent name")
+    verify.add_argument("--suite", action="append", dest="suites", required=True, help="evaluation suite; repeatable")
+    verify.add_argument("--baseline-dir")
+    verify.add_argument("--poll-attempts", type=int, default=60)
+    verify.add_argument("--poll-interval", type=float, default=30)
+    verify.add_argument("--transient-retries", type=int, default=1)
+    add_allowlists(verify)
+    verify.add_argument("--apply", action="store_true", help="[PAID] materialize and execute evaluations; default is preview")
+    verify.set_defaults(handler=handle)
+
     compare = commands.add_parser("compare", parents=[shared], help="compare baseline and candidate artifacts")
     compare.add_argument("baseline")
     compare.add_argument("candidate")
@@ -57,6 +71,21 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
 
 
 def handle(args: argparse.Namespace, config: Config) -> int:
+    if args.eval_command == "verify":
+        if args.apply:
+            require_explicit_connection(config, "Evaluation verify apply")
+        baseline_dir = args.baseline_dir or str(config.artifact_dir / "baselines")
+        selections = build_verify_selections(
+            config, args.agent, args.suites, baseline_dir, parse=not args.no_parse
+        )
+        result = verify_evaluations(
+            config, selections, apply=args.apply,
+            allowed_targets=args.allow_target, allowed_databases=args.allow_database,
+            poll_attempts=args.poll_attempts, poll_interval=args.poll_interval,
+            transient_retries=args.transient_retries,
+        )
+        emit_json(result)
+        return 0 if result["passed"] is not False else 1
     if args.eval_command == "run":
         if args.apply:
             require_explicit_connection(config, "Evaluation apply")

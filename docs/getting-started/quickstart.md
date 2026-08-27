@@ -42,7 +42,16 @@ does not invoke the Agent materialization.
 
 ## 4. Controlled deployment
 
-The next boundary is the controlled deployment guide. Upload staged skills with
-explicit apply approval, then run `dbt build --select orders_assistant`. The
-materialization validates allowlists and staged skills, updates LIVE, commits an
-immutable version, and reconciles the configured alias.
+The next boundary is package-native deployment. Preview the exact physical
+Agent, skill uploads, and dependency selector without connecting:
+
+```bash
+dbt-cortex-agent agent deploy --project-dir . --target sandbox \
+  --agent orders_assistant \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --json
+```
+
+After review, provide the explicit connection, database, role, and warehouse,
+then add `--apply`. The package uploads selected skills and invokes dbt build;
+the materialization remains the sole owner of LIVE updates, immutable versions,
+aliases, and grants. A Makefile or copied Python wrapper is not required.

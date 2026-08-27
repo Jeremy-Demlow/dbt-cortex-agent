@@ -50,8 +50,10 @@ def _evidence(tmp_path, *, include_eval, fqn="WHEEL_VERIFY_DB.AGENTS.ORDERS_ASSI
         },
         (
             {
-                "candidate": None,
-                "plan": {"agent_object": fqn, "paid_apply": False},
+                "applied": False,
+                "passed": None,
+                "outcome": "planned",
+                "suites": [{"agent_fqn": fqn, "suite": "core"}],
             }
             if include_eval
             else None

@@ -53,6 +53,7 @@ def test_resolves_key_pair_connection_into_isolated_dbt_environment(tmp_path, mo
         snow_executable="snow-custom",
         target="sandbox",
         database="CLI_DB",
+        role="CLI_ROLE",
         warehouse="CLI_WH",
         parent_env={
             "KEEP": "yes",
@@ -64,6 +65,8 @@ def test_resolves_key_pair_connection_into_isolated_dbt_environment(tmp_path, mo
     assert fake.calls[0][0] == ["snow-custom", "connection", "list", "--format", "json"]
     assert context.database == "CLI_DB"
     assert context.warehouse == "CLI_WH"
+    assert context.role == "CLI_ROLE"
+    assert context.authenticator == "SNOWFLAKE_JWT"
     assert context.dbt_env == {
         "KEEP": "yes",
         "SNOWFLAKE_ACCOUNT": "acct",
@@ -71,7 +74,7 @@ def test_resolves_key_pair_connection_into_isolated_dbt_environment(tmp_path, mo
         "SNOWFLAKE_PRIVATE_KEY_PATH": str(key),
         "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE": "real-passphrase",  # pragma: allowlist secret
         "SNOWFLAKE_DATABASE": "CLI_DB",
-        "SNOWFLAKE_ROLE": "ROLE",
+        "SNOWFLAKE_ROLE": "CLI_ROLE",
         "SNOWFLAKE_WAREHOUSE": "CLI_WH",
         "DBT_TARGET": "sandbox",
     }
@@ -88,6 +91,7 @@ def test_missing_connection_fails_without_leaking_parameters(tmp_path):
             snow_executable="snow",
             target=None,
             database=None,
+            role=None,
             warehouse=None,
             parent_env={},
             runner=CommandRunner(FakeSnow(_payload(key))),
@@ -102,8 +106,7 @@ def test_missing_connection_fails_without_leaking_parameters(tmp_path):
         ({"account": ""}, "missing required parameter 'account'"),
         ({"user": ""}, "missing required parameter 'user'"),
         ({"private_key_file": None}, "file-based key-pair authentication"),
-        ({"authenticator": None}, "must use authenticator SNOWFLAKE_JWT"),
-        ({"authenticator": "externalbrowser"}, "must use authenticator SNOWFLAKE_JWT"),
+        ({"authenticator": "externalbrowser"}, "unsupported authenticator"),
         ({"password": "active-password"}, "unsupported authentication parameter"),  # pragma: allowlist secret
         ({"private_key": "inline-key"}, "unsupported authentication parameter"),  # pragma: allowlist secret
     ],
@@ -118,6 +121,7 @@ def test_rejects_incomplete_or_unsupported_connection(tmp_path, overrides, messa
             snow_executable="snow",
             target=None,
             database=None,
+            role=None,
             warehouse=None,
             parent_env={},
             runner=CommandRunner(FakeSnow(_payload(key, **overrides))),
@@ -132,9 +136,34 @@ def test_masked_passphrase_is_never_forwarded(tmp_path):
         snow_executable="snow",
         target=None,
         database=None,
+        role=None,
         warehouse=None,
         parent_env={},
         runner=CommandRunner(FakeSnow(_payload(key))),
     )
 
     assert "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE" not in context.dbt_env
+
+
+def test_workload_identity_connection_is_accepted_without_private_key(tmp_path):
+    payload = _payload(
+        tmp_path / "unused.p8",
+        authenticator="WORKLOAD_IDENTITY",
+        workload_identity_provider="OIDC",
+        private_key_file=None,
+    )
+
+    context = resolve_execution_context(
+        connection="named",
+        snow_executable="snow",
+        target="sandbox",
+        database="DB",
+        role="ROLE_OVERRIDE",
+        warehouse="WH",
+        parent_env={"SNOWFLAKE_PRIVATE_KEY_PATH": "/ambient/key"},
+        runner=CommandRunner(FakeSnow(payload)),
+    )
+
+    assert context.authenticator == "WORKLOAD_IDENTITY"
+    assert context.role == "ROLE_OVERRIDE"
+    assert "SNOWFLAKE_PRIVATE_KEY_PATH" not in context.dbt_env

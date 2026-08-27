@@ -239,10 +239,10 @@ def validate_project_evidence(evidence: ProjectEvidence, *, include_eval: bool) 
     if include_eval:
         if evidence.eval_plan is None:
             raise AssertionError(f"{evidence.name}: missing optional eval plan")
-        if evidence.eval_plan.get("candidate") is not None:
+        if evidence.eval_plan.get("applied") is not False or evidence.eval_plan.get("passed") is not None:
             raise AssertionError(f"{evidence.name}: eval preview produced a candidate")
-        plan = evidence.eval_plan.get("plan", {})
-        if plan.get("paid_apply") is not False or plan.get("agent_object") != fqn:
+        suites = evidence.eval_plan.get("suites") or []
+        if len(suites) != 1 or suites[0].get("agent_fqn") != fqn:
             raise AssertionError(f"{evidence.name}: eval plan identity or paid boundary mismatch")
         if contains_key(evidence.eval_plan, "projection"):
             raise AssertionError(f"{evidence.name}: eval plan contains projection metadata")
@@ -336,6 +336,20 @@ def exercise_project(
         cwd=project_dir,
         env=env,
     )
+    deploy = _cli_json(
+        cli,
+        [
+            "agent", "deploy", *common,
+            "--dbt-executable", str(dbt),
+            "--agent", AGENT,
+            "--allow-target", TARGET,
+            "--allow-database", DATABASE,
+        ],
+        cwd=project_dir,
+        env=env,
+    )
+    if deploy.get("applied") is not False or deploy.get("dbt_selection") != [f"+{AGENT}"]:
+        raise AssertionError(f"{project_dir.name}: invalid Agent deploy preview")
     compiled_agent, before = compiled_agent_evidence(project_dir)
     smoke = _cli_json(
         cli,
@@ -362,7 +376,7 @@ def exercise_project(
             cli,
             [
                 "eval",
-                "run",
+                "verify",
                 *common,
                 "--dbt-executable",
                 str(dbt),

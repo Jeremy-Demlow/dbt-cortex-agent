@@ -1,5 +1,5 @@
 name: 'dbt_cortex_agent'
-version: '0.0.3'
+version: '0.0.4'
 config-version: 2
 
 # Installable dbt package: model-backed Cortex Agent materialization, evaluation
