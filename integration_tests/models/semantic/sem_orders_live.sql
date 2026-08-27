@@ -1,6 +1,6 @@
 {{ config(
     materialized='semantic_view',
-    database=env_var('CORTEX_AGENT_LIVE_DATABASE_A', target.database),
+    database=env_var('CORTEX_AGENT_LIVE_DATABASE_A', 'DBT_CORTEX_AGENT_SANDBOX_A'),
     schema='semantic'
 ) }}
 

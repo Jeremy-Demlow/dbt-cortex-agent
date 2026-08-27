@@ -2,7 +2,7 @@
 {{
   config(
     materialized='cortex_agent',
-    database=env_var('CORTEX_AGENT_LIVE_DATABASE_B', target.database),
+    database=env_var('CORTEX_AGENT_LIVE_DATABASE_B', 'DBT_CORTEX_AGENT_SANDBOX_B'),
     schema='AGENTS',
     alias='SHARED_ASSISTANT',
     meta={'deploy_alias': 'latest', 'cortex_agent': {'enabled': true}}
@@ -24,7 +24,7 @@ tools:
 
 tool_resources:
   OrdersAnalytics:
-    semantic_view: "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_A', target.database) }}.SEMANTIC.SEM_ORDERS_LIVE"
+    semantic_view: "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_A', 'DBT_CORTEX_AGENT_SANDBOX_A') }}.SEMANTIC.SEM_ORDERS_LIVE"
     execution_environment:
       type: warehouse
       warehouse: "{{ target.warehouse }}"

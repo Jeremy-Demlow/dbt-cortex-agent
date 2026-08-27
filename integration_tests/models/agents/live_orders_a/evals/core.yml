@@ -5,14 +5,14 @@ models:
     description: Cross-database evaluation-plan proof for live Agent A.
     config:
       materialized: table
-      database: "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL') }}"
+      database: "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL', 'DBT_CORTEX_AGENT_SANDBOX_EVAL') }}"
       schema: eval
       meta:
         cortex_eval:
           name: core
           agent: live_orders_a
-          stage: "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL') }}.EVAL.EVAL_CONFIG_STAGE"
-          result_database: "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL') }}"
+          stage: "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL', 'DBT_CORTEX_AGENT_SANDBOX_EVAL') }}.EVAL.EVAL_CONFIG_STAGE"
+          result_database: "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL', 'DBT_CORTEX_AGENT_SANDBOX_EVAL') }}"
           result_schema: EVAL_RESULTS
           metrics: [answer_correctness]
           thresholds:

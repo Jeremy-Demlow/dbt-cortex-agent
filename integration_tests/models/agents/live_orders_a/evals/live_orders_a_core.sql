@@ -1,6 +1,6 @@
 {{ config(
     materialized='table',
-    database=env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL'),
+    database=env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL', 'DBT_CORTEX_AGENT_SANDBOX_EVAL'),
     schema='eval'
 ) }}
 
