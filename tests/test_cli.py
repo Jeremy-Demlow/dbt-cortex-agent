@@ -1,5 +1,6 @@
-from pathlib import Path
 import json
+from pathlib import Path
+
 try:
     import tomllib
 except ModuleNotFoundError:
@@ -12,28 +13,71 @@ from dbt_cortex_agent import __version__
 from dbt_cortex_agent.cli import build_parser, main
 from dbt_cortex_agent.commands.common import command_needs_execution_context
 
-
 ROOT = Path(__file__).parents[1]
 
 
 def test_parser_exposes_v001_domains_and_no_python_agent_lifecycle():
     parser = build_parser()
-    choices = next(
-        action.choices for action in parser._actions if getattr(action, "choices", None)
-    )
+    choices = next(action.choices for action in parser._actions if getattr(action, "choices", None))
     assert set(choices) == {"init", "doctor", "manifest", "skill", "agent", "eval"}
 
-    for removed in ("render", "grant", "promote", "rollback"):
+    for removed in ("render", "grant"):
         with pytest.raises(SystemExit) as exc:
             parser.parse_args(["agent", removed])
         assert exc.value.code == 2
 
-    deploy = parser.parse_args([
-        "agent", "deploy", "--agent", "orders_assistant",
-        "--target", "sandbox", "--allow-target", "sandbox",
-        "--allow-database", "DB",
-    ])
+    deploy = parser.parse_args(
+        [
+            "agent",
+            "deploy",
+            "--agent",
+            "orders_assistant",
+            "--target",
+            "sandbox",
+            "--allow-target",
+            "sandbox",
+            "--allow-database",
+            "DB",
+        ]
+    )
     assert deploy.apply is False
+    parser.parse_args(
+        [
+            "agent",
+            "promote",
+            "--agent",
+            "orders_assistant",
+            "--version",
+            "VERSION$2",
+            "--alias",
+            "production",
+        ]
+    )
+    parser.parse_args(
+        [
+            "agent",
+            "rollback",
+            "--agent",
+            "orders_assistant",
+            "--to-version",
+            "VERSION$1",
+            "--alias",
+            "production",
+        ]
+    )
+    smoke = parser.parse_args(
+        [
+            "agent",
+            "smoke",
+            "--agent",
+            "orders_assistant",
+            "--version",
+            "VERSION$2",
+            "--question",
+            "How many orders?",
+        ]
+    )
+    assert smoke.agent_version == "VERSION$2"
 
 
 @pytest.mark.parametrize(
@@ -73,11 +117,25 @@ def test_agent_smoke_preview_is_structured(monkeypatch, capsys, tmp_path):
         "dbt_cortex_agent.commands.agent.fresh_manifest", lambda *args, **kwargs: manifest
     )
 
-    assert main([
-        "agent", "smoke", "--project-dir", str(tmp_path), "--no-parse",
-        "--target", "sandbox", "--agent", "orders_assistant",
-        "--question", "How many orders?", "--json",
-    ]) == 0
+    assert (
+        main(
+            [
+                "agent",
+                "smoke",
+                "--project-dir",
+                str(tmp_path),
+                "--no-parse",
+                "--target",
+                "sandbox",
+                "--agent",
+                "orders_assistant",
+                "--question",
+                "How many orders?",
+                "--json",
+            ]
+        )
+        == 0
+    )
     payload = json.loads(capsys.readouterr().out)
     assert payload["agent_object"] == "ORDERS_ASSISTANT"
     assert payload["applied"] is False
@@ -100,6 +158,23 @@ def test_eval_local_commands_parse_without_connection():
     parser.parse_args(["eval", "compare", "baseline.json", "candidate.json"])
     parser.parse_args(["eval", "gate", "candidate.json"])
     parser.parse_args(["eval", "accept-baseline", "candidate.json"])
+
+
+def test_cli_accepts_structured_controlled_failure_from_handler(monkeypatch, tmp_path):
+    parser = build_parser()
+    args = parser.parse_args(["doctor", "--project-dir", str(tmp_path)])
+    args.handler = lambda _args, _config: 2
+    monkeypatch.setattr("dbt_cortex_agent.cli.build_parser", lambda: SimpleParser(args))
+
+    assert main([]) == 2
+
+
+class SimpleParser:
+    def __init__(self, args):
+        self.args = args
+
+    def parse_args(self, _argv):
+        return self.args
 
 
 def test_explicit_connection_supplies_dbt_environment_for_previews():
@@ -130,13 +205,13 @@ def test_v001_identity_is_consistent():
     readme = (ROOT / "README.md").read_text()
     changelog = (ROOT / "CHANGELOG.md").read_text()
 
-    assert project["version"] == "0.0.5"
-    assert package["project"]["version"] == "0.0.5"
-    assert citation["version"] == "0.0.5"
-    assert __version__ == "0.0.5"
-    assert 'name = "dbt-cortex-agent"\nversion = "0.0.5"' in lock
-    assert "revision: v0.0.5" in readme
-    assert "## 0.0.5 — 2026-08-27" in changelog
+    assert project["version"] == "0.0.6"
+    assert package["project"]["version"] == "0.0.6"
+    assert citation["version"] == "0.0.6"
+    assert __version__ == "0.0.6"
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.6"' in lock
+    assert "revision: v0.0.6" in readme
+    assert "## 0.0.6 — 2026-08-28" in changelog
 
 
 def test_runtime_is_the_only_connector_extra():

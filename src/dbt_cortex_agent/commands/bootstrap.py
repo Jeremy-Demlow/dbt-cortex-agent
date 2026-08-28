@@ -17,22 +17,34 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
         epilog="Example: dbt-cortex-agent init --package-source <git-url> --json",
     )
     init_parser.add_argument("--package-source", help="Git URL for a new package declaration")
-    init_parser.add_argument("--revision", default=DEFAULT_REVISION, help=f"immutable package revision (default: {DEFAULT_REVISION})")
+    init_parser.add_argument(
+        "--revision",
+        default=DEFAULT_REVISION,
+        help=f"immutable package revision (default: {DEFAULT_REVISION})",
+    )
     init_parser.add_argument("--agent-schema", help="set cortex_agent_schema when absent")
     init_parser.add_argument("--eval-schema", help="set cortex_eval_schema when absent")
     init_parser.add_argument(
         "--starter", choices=["orders"], help="add the deterministic Orders tutorial starter"
     )
     add_allowlists(init_parser)
-    init_parser.add_argument("--apply", action="store_true", help="[MUTATION] write bootstrap changes; default is preview")
-    init_parser.add_argument("--run-dbt-deps", action="store_true", help="[MUTATION] run dbt deps after --apply")
+    init_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="[MUTATION] write bootstrap changes; default is preview",
+    )
+    init_parser.add_argument(
+        "--run-dbt-deps", action="store_true", help="[MUTATION] run dbt deps after --apply"
+    )
     init_parser.set_defaults(handler=handle_init)
 
     doctor_parser = subparsers.add_parser(
         "doctor",
         parents=[shared],
         help="run non-mutating project diagnostics",
-        description="Run local project, executable, manifest, safety, and optional connection diagnostics.",
+        description=(
+            "Run local project, executable, manifest, safety, and optional connection diagnostics."
+        ),
         epilog="Example: dbt-cortex-agent doctor --project-dir . --json",
     )
     doctor_parser.set_defaults(handler=handle_doctor)
@@ -60,8 +72,7 @@ def handle_init(args: argparse.Namespace, config: Config) -> int:
                 "changed_files": [str(path) for path in result.changed_files],
                 "starter": args.starter,
                 "actions": [
-                    {"path": str(action.path), "action": action.action}
-                    for action in result.actions
+                    {"path": str(action.path), "action": action.action} for action in result.actions
                 ],
                 "messages": list(result.messages),
             }

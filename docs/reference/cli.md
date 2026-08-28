@@ -1,4 +1,4 @@
-# CLI reference (v0.0.5)
+# CLI reference (v0.0.6)
 
 `dbt-cortex-agent` is the single console entry. Manifest-dependent commands run
 a fresh `dbt parse` unless `--no-parse` is supplied for a controlled fixture.
@@ -45,7 +45,7 @@ Precedence is CLI option, then environment variable, then built-in default.
 ### `dbt-cortex-agent init` — MUTATION with `--apply`
 
 Preview or append missing package/project-var entries. Options: shared options,
-`--package-source`, `--revision` (default `v0.0.5`), `--agent-schema`,
+`--package-source`, `--revision` (default `v0.0.6`), `--agent-schema`,
 `--eval-schema`, both repeatable allowlists, `--apply`, and `--run-dbt-deps`.
 Output is messages or JSON with `applied`, `changed_files`, and `messages`.
 By default, the command configures an existing dbt project only; it does not scaffold a dbt
@@ -90,6 +90,30 @@ Applied smoke requires `--connection`, database, schema, and the `runtime` extra
 Agent rendering and deployment remain dbt operations. The package can sequence
 deployment without becoming a second DDL authority.
 
+### `dbt-cortex-agent agent scaffold` — LOCAL MUTATION with `--apply`
+
+Preview or create a generic full-body Agent model, metadata file, and skill
+directory. `--semantic-view-model` optionally adds an Analyst tool;
+`--with-eval` optionally adds an editable suite. A Semantic View is not required.
+Private-preview experimental keys remain user-authored YAML, not CLI options.
+
+### `dbt-cortex-agent agent versions` — READ ONLY
+
+Inspect immutable versions, aliases, DEFAULT, LAST, and LIVE through a dbt macro.
+Requires an explicit connection because it reads Snowflake state.
+
+### `dbt-cortex-agent agent promote` and `agent rollback` — MUTATION with `--apply`
+
+Preview an immutable `VERSION$N`, alias, and optional `--set-default`; apply
+delegates routing to dbt and verifies postconditions. Rollback preserves newer
+versions.
+
+### `dbt-cortex-agent agent drop` — DESTRUCTIVE with `--apply`
+
+Retire exactly one manifest-owned Agent. Apply requires exact physical-FQN
+confirmation, connection, target/database allowlists, dbt-owned DDL, and absence
+verification. Dependent data objects, source, stages, and evaluation evidence remain.
+
 ### `dbt-cortex-agent agent deploy` — MUTATION with `--apply`
 
 Preview selected physical Agents, skill uploads, and dependency-aware dbt
@@ -102,7 +126,8 @@ dbt fails after upload. No Makefile or adopter Python wrapper is required.
 
 Preview or invoke one manifest-owned Agent without requiring a skill declaration.
 Required options are one logical `--agent` and a nonblank `--question`. Optional
-options are `--expect-tool` for an exact returned tool-name assertion,
+options are `--expect-tool` for an exact returned tool-name assertion, `--version`
+for a committed version, alias, or shortcut,
 `--agent-object` for a physical Agent override, `--endpoint`, both repeatable
 allowlists, and `--apply`.
 

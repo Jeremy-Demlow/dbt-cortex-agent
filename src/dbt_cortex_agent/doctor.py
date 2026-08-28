@@ -12,7 +12,6 @@ from .dbt_runner import CommandRunner, executable_version
 from .manifest import cortex_agents, cortex_evals, load_manifest, skill_declarations
 from .snow import connection_test
 
-
 _FULL_GIT_SHA = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
@@ -48,19 +47,22 @@ def _dbt_package_versions(project_dir: Path) -> list[str]:
     return versions
 
 
-def run_doctor(config: Config, runner: CommandRunner | None = None) -> list[Diagnostic]:
+def run_doctor(  # noqa: C901
+    config: Config, runner: CommandRunner | None = None
+) -> list[Diagnostic]:
     command_runner = runner or CommandRunner()
     diagnostics: list[Diagnostic] = []
-    for name, executable in (("dbt executable", config.dbt_executable), ("snow executable", config.snow_executable)):
+    for name, executable in (
+        ("dbt executable", config.dbt_executable),
+        ("snow executable", config.snow_executable),
+    ):
         try:
             result = executable_version(executable, command_runner)
         except OSError as exc:
             diagnostics.append(Diagnostic(name, "FAIL", str(exc)))
             continue
         output = result.stdout.strip() or result.stderr.strip()
-        diagnostics.append(
-            Diagnostic(name, "PASS" if result.returncode == 0 else "FAIL", output)
-        )
+        diagnostics.append(Diagnostic(name, "PASS" if result.returncode == 0 else "FAIL", output))
 
     dbt_package_versions = _dbt_package_versions(config.project_dir)
     if dbt_package_versions:
@@ -113,7 +115,9 @@ def run_doctor(config: Config, runner: CommandRunner | None = None) -> list[Diag
             )
         )
         diagnostics.append(
-            Diagnostic("enabled evals", "PASS", ", ".join(item.model_name for item in evals) or "none")
+            Diagnostic(
+                "enabled evals", "PASS", ", ".join(item.model_name for item in evals) or "none"
+            )
         )
         try:
             skills = skill_declarations(manifest, config.project_dir)
@@ -143,7 +147,8 @@ def run_doctor(config: Config, runner: CommandRunner | None = None) -> list[Diag
             Diagnostic(
                 "deployment safety",
                 "FAIL",
-                "cortex_agent_allowed_targets and cortex_agent_allowed_databases must be non-empty; "
+                "cortex_agent_allowed_targets and cortex_agent_allowed_databases must be "
+                "non-empty; "
                 "configure them explicitly or preview init with --target and --allow-database",
             )
         )
@@ -161,7 +166,8 @@ def run_doctor(config: Config, runner: CommandRunner | None = None) -> list[Diag
             Diagnostic(
                 "deployment safety",
                 "PASS",
-                f"active target {config.target!r} cannot mutate allowlisted targets {allowed_targets}",
+                f"active target {config.target!r} cannot mutate allowlisted targets "
+                f"{allowed_targets}",
             )
         )
     elif missing := sorted(
@@ -189,7 +195,9 @@ def run_doctor(config: Config, runner: CommandRunner | None = None) -> list[Diag
             result = connection_test(config.snow_executable, config.connection, command_runner)
             output = result.stdout.strip() or result.stderr.strip()
             diagnostics.append(
-                Diagnostic("Snowflake connection", "PASS" if result.returncode == 0 else "FAIL", output)
+                Diagnostic(
+                    "Snowflake connection", "PASS" if result.returncode == 0 else "FAIL", output
+                )
             )
         except OSError as exc:
             diagnostics.append(Diagnostic("Snowflake connection", "FAIL", str(exc)))

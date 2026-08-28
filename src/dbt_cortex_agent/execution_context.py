@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 from .dbt_runner import CommandRunner
 
@@ -24,7 +24,9 @@ class SnowflakeExecutionContext:
 def _required(parameters: Mapping[str, object], name: str, connection: str) -> str:
     value = parameters.get(name)
     if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"Snow CLI connection {connection!r} is missing required parameter {name!r}")
+        raise ValueError(
+            f"Snow CLI connection {connection!r} is missing required parameter {name!r}"
+        )
     return value.strip()
 
 
@@ -52,9 +54,7 @@ def resolve_execution_context(
     runner: CommandRunner | None = None,
 ) -> SnowflakeExecutionContext:
     command_runner = runner or CommandRunner()
-    result = command_runner.run(
-        [snow_executable, "connection", "list", "--format", "json"]
-    )
+    result = command_runner.run([snow_executable, "connection", "list", "--format", "json"])
     if result.returncode != 0:
         raise RuntimeError(
             result.stderr.strip()

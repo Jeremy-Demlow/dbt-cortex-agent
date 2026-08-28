@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import yaml
 
@@ -52,19 +53,25 @@ def _value(explicit: str | None, env: Mapping[str, str], name: str) -> str | Non
 
 def resolve_config(args: object, env: Mapping[str, str] | None = None) -> Config:
     values = os.environ if env is None else env
-    project_dir = Path(
-        _value(getattr(args, "project_dir", None), values, "DBT_PROJECT_DIR") or "."
-    ).expanduser().resolve()
+    project_dir = (
+        Path(_value(getattr(args, "project_dir", None), values, "DBT_PROJECT_DIR") or ".")
+        .expanduser()
+        .resolve()
+    )
     manifest_value = _value(getattr(args, "manifest", None), values, "DBT_MANIFEST")
     artifact_value = _value(
         getattr(args, "artifact_dir", None), values, "DBT_CORTEX_AGENT_ARTIFACT_DIR"
     )
     manifest = Path(manifest_value).expanduser() if manifest_value else Path("target/manifest.json")
-    artifact_dir = Path(artifact_value).expanduser() if artifact_value else Path("target/dbt_cortex_agent")
+    artifact_dir = (
+        Path(artifact_value).expanduser() if artifact_value else Path("target/dbt_cortex_agent")
+    )
 
     return Config(
         project_dir=project_dir,
-        manifest=manifest.resolve() if manifest.is_absolute() else (project_dir / manifest).resolve(),
+        manifest=manifest.resolve()
+        if manifest.is_absolute()
+        else (project_dir / manifest).resolve(),
         target=_value(getattr(args, "target", None), values, "DBT_TARGET"),
         connection=_value(getattr(args, "connection", None), values, "SNOWFLAKE_CONNECTION_NAME"),
         connection_explicit=getattr(args, "connection", None) is not None,
@@ -79,12 +86,8 @@ def resolve_config(args: object, env: Mapping[str, str] | None = None) -> Config
             if artifact_dir.is_absolute()
             else (project_dir / artifact_dir).resolve()
         ),
-        dbt_executable=_value(
-            getattr(args, "dbt_executable", None), values, "DBT_EXECUTABLE"
-        )
+        dbt_executable=_value(getattr(args, "dbt_executable", None), values, "DBT_EXECUTABLE")
         or "dbt",
-        snow_executable=_value(
-            getattr(args, "snow_executable", None), values, "SNOW_EXECUTABLE"
-        )
+        snow_executable=_value(getattr(args, "snow_executable", None), values, "SNOW_EXECUTABLE")
         or "snow",
     )

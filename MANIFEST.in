@@ -1,4 +1,3 @@
-prune requirements
-exclude tests/test_cases.md
-exclude tests/regression.md
-exclude tests/test_req_013_contract.py
+recursive-include requirements *.md
+include tests/test_cases.md
+include tests/regression.md

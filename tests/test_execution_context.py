@@ -6,6 +6,7 @@ import subprocess
 
 import pytest
 
+# Evidence: TC-022-03 TC-022-04
 from dbt_cortex_agent.dbt_runner import CommandRunner
 from dbt_cortex_agent.execution_context import resolve_execution_context
 
@@ -107,8 +108,28 @@ def test_missing_connection_fails_without_leaking_parameters(tmp_path):
         ({"user": ""}, "missing required parameter 'user'"),
         ({"private_key_file": None}, "file-based key-pair authentication"),
         ({"authenticator": "externalbrowser"}, "unsupported authenticator"),
-        ({"password": "active-password"}, "unsupported authentication parameter"),  # pragma: allowlist secret
-        ({"private_key": "inline-key"}, "unsupported authentication parameter"),  # pragma: allowlist secret
+        ({"authenticator": "oauth"}, "unsupported authenticator"),
+        ({"authenticator": "username_password_mfa"}, "unsupported authenticator"),
+        (
+            {"password": "active-password"},
+            "unsupported authentication parameter",
+        ),  # pragma: allowlist secret
+        (
+            {"private_key": "inline-key"},
+            "unsupported authentication parameter",
+        ),  # pragma: allowlist secret
+        (
+            {"token": "active-token"},
+            "unsupported authentication parameter",
+        ),  # pragma: allowlist secret
+        (
+            {"oauth_client_id": "client-id"},
+            "unsupported authentication parameter",
+        ),  # pragma: allowlist secret
+        (
+            {"oauth_client_secret": "client-secret"},
+            "unsupported authentication parameter",
+        ),  # pragma: allowlist secret
     ],
 )
 def test_rejects_incomplete_or_unsupported_connection(tmp_path, overrides, message):
@@ -143,6 +164,43 @@ def test_masked_passphrase_is_never_forwarded(tmp_path):
     )
 
     assert "SNOWFLAKE_PRIVATE_KEY_PASSPHRASE" not in context.dbt_env
+
+
+@pytest.mark.parametrize(
+    "parameter",
+    ["password", "token", "oauth_client_id", "oauth_client_secret", "private_key"],
+)
+def test_masked_unsupported_parameters_are_inactive(tmp_path, parameter):
+    key = tmp_path / "key.p8"
+    key.write_text("not-a-real-key")
+
+    context = resolve_execution_context(
+        connection="named",
+        snow_executable="snow",
+        target="sandbox",
+        database=None,
+        role=None,
+        warehouse=None,
+        parent_env={},
+        runner=CommandRunner(FakeSnow(_payload(key, **{parameter: "****"}))),
+    )
+
+    assert context.authenticator == "SNOWFLAKE_JWT"
+
+
+def test_missing_key_file_is_rejected_before_child_execution(tmp_path):
+    missing = tmp_path / "missing.p8"
+    with pytest.raises(ValueError, match="does not exist"):
+        resolve_execution_context(
+            connection="named",
+            snow_executable="snow",
+            target="sandbox",
+            database=None,
+            role=None,
+            warehouse=None,
+            parent_env={},
+            runner=CommandRunner(FakeSnow(_payload(missing))),
+        )
 
 
 def test_workload_identity_connection_is_accepted_without_private_key(tmp_path):

@@ -7,9 +7,16 @@ from dbt_cortex_agent.config import resolve_config
 
 def _args(**values):
     defaults = {
-        "project_dir": None, "manifest": None, "target": None, "connection": None,
-        "database": None, "schema": None, "warehouse": None,
-        "artifact_dir": None, "dbt_executable": None, "snow_executable": None,
+        "project_dir": None,
+        "manifest": None,
+        "target": None,
+        "connection": None,
+        "database": None,
+        "schema": None,
+        "warehouse": None,
+        "artifact_dir": None,
+        "dbt_executable": None,
+        "snow_executable": None,
     }
     return Namespace(**(defaults | values))
 
@@ -44,10 +51,17 @@ def test_environment_supplies_shared_snowflake_options(tmp_path):
     config = resolve_config(
         _args(project_dir=str(tmp_path)),
         env={
-            "SNOWFLAKE_CONNECTION_NAME": "conn", "SNOWFLAKE_SCHEMA": "S",
-            "SNOWFLAKE_ROLE": "R", "SNOWFLAKE_WAREHOUSE": "W",
+            "SNOWFLAKE_CONNECTION_NAME": "conn",
+            "SNOWFLAKE_SCHEMA": "S",
+            "SNOWFLAKE_ROLE": "R",
+            "SNOWFLAKE_WAREHOUSE": "W",
         },
     )
 
-    assert (config.connection, config.schema, config.role, config.warehouse) == ("conn", "S", "R", "W")
+    assert (config.connection, config.schema, config.role, config.warehouse) == (
+        "conn",
+        "S",
+        "R",
+        "W",
+    )
     assert config.connection_explicit is False

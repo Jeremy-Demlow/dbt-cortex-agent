@@ -1,8 +1,8 @@
 # Lifecycle and versioning
 
-dbt owns Cortex Agent DDL and version semantics. Python owns local skill upload,
-runtime smoke, and evaluation coordination; it exposes no Agent render, deploy,
-grant, promote, or rollback commands.
+dbt owns Cortex Agent DDL and version semantics. Python owns planning, local
+skill upload, runtime smoke, and evaluation coordination. Package lifecycle
+commands delegate mutation to dbt macros.
 
 ## Compile before mutation
 
@@ -49,12 +49,14 @@ For a changed full specification, the `cortex_agent` materialization:
 2. derives the physical FQN from the dbt model relation;
 3. enforces target, database, and staged-skill readiness;
 4. hashes the deterministic specification and staged skill state;
-5. modifies the LIVE draft and commits an immutable `VERSION$N`;
+5. creates `VERSION$1` directly from the first specification, or modifies LIVE
+   and commits one later immutable `VERSION$N` when content changed;
 6. reconciles the requested alias, profile, and comment;
 7. recreates LIVE from the committed version and returns no fake relation.
 
-An unchanged spec and skill hash skips version churn. Alias drift can be
-reconciled without creating another immutable version.
+An unchanged spec and skill hash skips version churn by finding the newest
+matching managed version independently of serving DEFAULT. This remains true
+after rollback.
 
 ## Smoke is a separate runtime boundary
 
@@ -68,7 +70,13 @@ Preview resolves the physical identity without invoking it. Add the explicit
 connection, database/schema, allowlists, and `--apply` only for an approved live
 runtime check. Smoke never deploys or changes an Agent.
 
-Explicit alias, grant, and rollback macros are listed in the
-[macro reference](../reference/macros.md). They are post-build operations for
-automation that already owns dbt profile context and safety approval; they are
-not Python CLI commands.
+Use `agent versions`, `agent promote`, and `agent rollback` for explicit routing.
+Alias movement does not change DEFAULT unless `--set-default` is supplied. Use
+`agent drop` only for deliberately confirmed retirement; dbt model removal does
+not delete an Agent.
+
+Alias reassignment is two durable Snowflake statements: the current owner is
+unset before the target version receives the alias. The package rejects stale
+observed state, verifies the final owner, and reports partial state if either
+statement fails. Snowflake does not provide an atomic compare-and-swap for this
+operation, so conflicting operators must retry from freshly inspected state.

@@ -27,7 +27,10 @@ def _manifest(skills):
                 "database": "DB",
                 "schema": "AGENTS",
                 "alias": name.upper(),
-                "config": {"materialized": "cortex_agent", "meta": {"cortex_agent": {"skills": values}}},
+                "config": {
+                    "materialized": "cortex_agent",
+                    "meta": {"cortex_agent": {"skills": values}},
+                },
             }
             for name, values in skills.items()
         },

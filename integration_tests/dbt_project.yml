@@ -17,9 +17,9 @@ vars:
   cortex_agent_deploy_target: sandbox
   cortex_agent_allowed_targets: [sandbox]
   cortex_agent_allowed_databases:
-    - "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_A', 'DBT_CORTEX_AGENT_SANDBOX_A') }}"
-    - "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_B', 'DBT_CORTEX_AGENT_SANDBOX_B') }}"
-    - "{{ env_var('CORTEX_AGENT_LIVE_DATABASE_EVAL', 'DBT_CORTEX_AGENT_SANDBOX_EVAL') }}"
+    - DBT_CORTEX_AGENT_SANDBOX_A
+    - DBT_CORTEX_AGENT_SANDBOX_B
+    - DBT_CORTEX_AGENT_SANDBOX_EVAL
   cortex_agent_schema: AGENTS
   cortex_eval_schema: EVAL
 

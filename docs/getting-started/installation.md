@@ -1,6 +1,6 @@
 # Installation
 
-Version 0.0.5 has two install surfaces with one immutable release identity: the dbt package
+Version 0.0.6 has two install surfaces with one immutable release identity: the dbt package
 provides metadata contracts and macros; the Python distribution provides the
 `dbt-cortex-agent` CLI. Pin both to the same release source. The GitHub tag and
 release and PyPI distribution use the same version.
@@ -13,10 +13,10 @@ consumer project's `packages.yml`:
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.5
+    revision: v0.0.6
 ```
 
-There is no dbt Hub coordinate in 0.0.5. Use the immutable tag, not a branch.
+There is no dbt Hub coordinate in 0.0.6. Use the immutable tag, not a branch.
 For local package development only,
 replace the Git declaration with an explicit `local:` path.
 
@@ -25,7 +25,7 @@ Analyst tools also require a compatible semantic-view package, such as:
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.5
+    revision: v0.0.6
   - package: Snowflake-Labs/dbt_semantic_view
     version: 1.0.5
 ```
@@ -48,28 +48,28 @@ selected with `--snow-executable` or `SNOW_EXECUTABLE`.
 Install the CLI and connector-backed runtime support from PyPI:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.0.5'
+pipx install 'dbt-cortex-agent[runtime]==0.0.6'
 dbt-cortex-agent --version
 ```
 
 For a managed Python environment, the pip equivalent is:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.5'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.6'
 ```
 
 The base distribution can omit `[runtime]` when connector-backed skill smoke and
 paid evaluation are not needed. `runtime` is the only connector extra; the
 former `invoke` and `eval` extras no longer exist; both map to `runtime`.
 
-PyPI version `0.0.5` and Git tag `v0.0.5` identify the same immutable release.
+PyPI version `0.0.6` and Git tag `v0.0.6` identify the same immutable release.
 After `dbt deps`, run `dbt-cortex-agent doctor --project-dir . --json`.
 `doctor` compares the CLI version with the declared dependency revision and the
 installed consumer dbt package version so mixed releases fail visibly. A full
 40-character Git SHA is accepted only when
-`dbt_packages/dbt_cortex_agent/dbt_project.yml` reports version `0.0.5`; the
+`dbt_packages/dbt_cortex_agent/dbt_project.yml` reports version `0.0.6`; the
 package source root is not installation evidence. Branch revisions and missing
-or mismatched installed metadata fail closed. A semantic `v0.0.5` declaration
+or mismatched installed metadata fail closed. A semantic `v0.0.6` declaration
 continues to match the CLI version directly.
 
 ## 4. Configure an existing dbt project
@@ -80,7 +80,7 @@ and deployment configuration requires a target plus at least one allowed databas
 ```bash
 dbt-cortex-agent init --project-dir . \
   --package-source 'https://github.com/Jeremy-Demlow/dbt-cortex-agent.git' \
-  --revision v0.0.5 --target sandbox --allow-target sandbox \
+  --revision v0.0.6 --target sandbox --allow-target sandbox \
   --allow-database ANALYTICS_DEV --agent-schema AGENTS --eval-schema EVAL
 ```
 
@@ -89,11 +89,12 @@ nothing. After review, repeat with `--apply`; add `--run-dbt-deps` only when the
 CLI should run dependency installation after writing. Init appends missing
 top-level entries without replacing existing values.
 
-By default, `init` is a configuration helper, not a scaffold command. The destination must
+By default, `init` is a configuration helper. The destination must
 already be a dbt project with `dbt_project.yml`. It can append a missing package
 declaration and selected top-level safety/schema variables, but it does not
 create full-body Agent models, semantic-view models, evaluation models, seeds,
-skills, profiles, or a new dbt project. The explicit `--starter orders` option is
+profiles, or a new dbt project. Use `agent scaffold` for a generic Agent; the
+explicit `--starter orders` option is
 the only curated exception: it adds the fixed package-owned Orders tutorial to
 the existing project after collision-safe preview.
 

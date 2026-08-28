@@ -3,6 +3,23 @@
 This project had no public beta or stable release before `0.0.1`. Earlier Git
 history records design experiments, not supported package versions.
 
+## 0.0.6 — 2026-08-28
+
+- Add generic preview-first Agent scaffolding with optional Analyst and evaluation
+  capabilities; Semantic Views are not required and private-preview experimental
+  mappings remain user-authored full-body YAML.
+- Add package-native version inventory, promotion, rollback, version-specific
+  smoke, and exact-confirmation Agent retirement while retaining dbt as the only
+  Agent DDL authority.
+- Make deployment content identity independent of serving DEFAULT so rollback
+  and roll-forward reuse immutable versions without redundant commits.
+- Replace oversized smoke output with a framed, normalized, bounded Agent SSE
+  result and concise answer-first human rendering.
+- Harden complete dependency authorization, finite evaluation values,
+  pre-provisioned evaluation stages, evidence collisions, tracked requirements,
+  installed-consumer guidance, lint, typing, and branch coverage.
+- Remove orphaned legacy macros and fictional public macro documentation.
+
 ## 0.0.5 — 2026-08-27
 
 - Resolve an explicitly supplied Snow CLI connection into dbt's environment for

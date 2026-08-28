@@ -10,16 +10,14 @@ import yaml
 
 from . import __version__
 from .commands import agent, bootstrap, eval, manifest, skill
-from .commands.common import command_needs_execution_context
-from .commands.common import shared_parser
+from .commands.common import command_needs_execution_context, shared_parser
 from .config import resolve_config
 from .execution_context import resolve_execution_context
-
 
 EXIT_SUCCESS = 0
 EXIT_DIAGNOSTIC_FAILURE = 1
 EXIT_CONTROLLED_ERROR = 2
-VALID_HANDLER_EXIT_CODES = {EXIT_SUCCESS, EXIT_DIAGNOSTIC_FAILURE}
+VALID_HANDLER_EXIT_CODES = {EXIT_SUCCESS, EXIT_DIAGNOSTIC_FAILURE, EXIT_CONTROLLED_ERROR}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,7 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
             "  dbt-cortex-agent doctor --project-dir . --json\n"
             "  dbt-cortex-agent skill plan --agent orders_assistant\n"
             "  dbt-cortex-agent eval run --agent orders_assistant --suite core\n\n"
-            "Mutation and paid commands are dry-run by default and label the required --apply option."
+            "Mutation and paid commands are dry-run by default and label the required "
+            "--apply option."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -62,7 +61,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         config = resolve_config(args)
-        if command_needs_execution_context(args) and config.connection_explicit and config.connection:
+        if (
+            command_needs_execution_context(args)
+            and config.connection_explicit
+            and config.connection
+        ):
             context = resolve_execution_context(
                 connection=config.connection,
                 snow_executable=config.snow_executable,

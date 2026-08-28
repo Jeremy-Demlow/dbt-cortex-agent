@@ -1,0 +1,38 @@
+{
+  "version": "0.0.5",
+  "top_level_commands": [
+    "agent",
+    "doctor",
+    "eval",
+    "init",
+    "manifest",
+    "skill"
+  ],
+  "agent_commands": [
+    "deploy",
+    "smoke"
+  ],
+  "exit_codes": {
+    "success": 0,
+    "quality_or_diagnostic_failure": 1,
+    "controlled_error": 2
+  },
+  "smoke_preview_fields": [
+    "agent",
+    "agent_object",
+    "applied",
+    "command",
+    "expected_tool",
+    "passed",
+    "question",
+    "response"
+  ],
+  "candidate_schema_version": 2,
+  "lifecycle_owner": "dbt materialization",
+  "python_agent_ddl": false,
+  "notes": [
+    "No public promote, rollback, versions, drop, or scaffold command existed.",
+    "Documented public lifecycle macros were not implemented and are not compatibility APIs.",
+    "Applied smoke printed the complete parsed response; 0.0.6 may make human output compact while retaining normalized JSON."
+  ]
+}

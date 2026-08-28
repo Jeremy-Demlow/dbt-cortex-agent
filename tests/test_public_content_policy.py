@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import subprocess
 import re
+import subprocess
 from pathlib import Path
 
+# Evidence: TC-026-04 TC-026-07
 
 ROOT = Path(__file__).resolve().parents[1]
 TEXT_SUFFIXES = {".csv", ".json", ".md", ".py", ".sql", ".toml", ".txt", ".yaml", ".yml"}
@@ -62,7 +63,9 @@ def test_public_policy_keeps_internal_stage_as_product_terminology():
 
 
 def test_only_neutral_enterprise_compatibility_fixtures_are_public():
-    macro_names = sorted(path.name for path in (ROOT / "integration_tests/macros").glob("*compatibility*"))
+    macro_names = sorted(
+        path.name for path in (ROOT / "integration_tests/macros").glob("*compatibility*")
+    )
     model_names = sorted(
         path.name for path in (ROOT / "integration_tests/models/agents").glob("*compatibility*")
     )

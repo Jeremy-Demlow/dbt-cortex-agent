@@ -8,7 +8,6 @@ from dbt_cortex_agent.config import resolve_config
 from dbt_cortex_agent.dbt_runner import CommandRunner
 from dbt_cortex_agent.doctor import run_doctor
 
-
 SYNTHETIC_COMMIT_SHA = "8e8df8e9754a0089532fffea3dd7005242866c59"  # pragma: allowlist secret
 
 
@@ -18,14 +17,21 @@ def _manifest():
         "exposures": {},
         "nodes": {
             "model.p.agent": {
-                "unique_id": "model.p.agent", "resource_type": "model",
-                "name": "agent", "database": "DB", "schema": "AGENTS",
-                "alias": "AGENT", "config": {"materialized": "cortex_agent"},
+                "unique_id": "model.p.agent",
+                "resource_type": "model",
+                "name": "agent",
+                "database": "DB",
+                "schema": "AGENTS",
+                "alias": "AGENT",
+                "config": {"materialized": "cortex_agent"},
             },
             "model.p.eval": {
-                "name": "eval", "database": "DB", "schema": "EVAL", "alias": "EVAL",
+                "name": "eval",
+                "database": "DB",
+                "schema": "EVAL",
+                "alias": "EVAL",
                 "meta": {"cortex_eval": {"enabled": True}},
-            }
+            },
         },
     }
 
@@ -42,9 +48,17 @@ def _config(tmp_path, connection=None):
     manifest.write_text(json.dumps(_manifest()))
     return resolve_config(
         Namespace(
-            project_dir=str(tmp_path), manifest=str(manifest), target="dev",
-            connection=connection, database=None, schema=None, role=None, warehouse=None,
-            artifact_dir=None, dbt_executable="dbt-custom", snow_executable="snow-custom",
+            project_dir=str(tmp_path),
+            manifest=str(manifest),
+            target="dev",
+            connection=connection,
+            database=None,
+            schema=None,
+            role=None,
+            warehouse=None,
+            artifact_dir=None,
+            dbt_executable="dbt-custom",
+            snow_executable="snow-custom",
         ),
         env={},
     )
@@ -61,8 +75,13 @@ def test_doctor_runs_only_version_checks_without_connection(tmp_path):
     diagnostics = run_doctor(config, CommandRunner(fake_run))
 
     assert commands == [["dbt-custom", "--version"], ["snow-custom", "--version"]]
-    assert next(item for item in diagnostics if item.name == "Snowflake connection").status == "SKIP"
-    assert next(item for item in diagnostics if item.name == "enabled Agents").detail == "DB.AGENTS.AGENT"
+    assert (
+        next(item for item in diagnostics if item.name == "Snowflake connection").status == "SKIP"
+    )
+    assert (
+        next(item for item in diagnostics if item.name == "enabled Agents").detail
+        == "DB.AGENTS.AGENT"
+    )
     assert next(item for item in diagnostics if item.name == "enabled evals").detail == "eval"
     assert next(item for item in diagnostics if item.name == "deployment safety").status == "PASS"
 
@@ -95,7 +114,9 @@ def test_doctor_does_not_connect_for_environment_only_connection(tmp_path):
     diagnostics = run_doctor(config, CommandRunner(fake_run))
 
     assert commands == [["dbt-custom", "--version"], ["snow-custom", "--version"]]
-    assert next(item for item in diagnostics if item.name == "Snowflake connection").status == "SKIP"
+    assert (
+        next(item for item in diagnostics if item.name == "Snowflake connection").status == "SKIP"
+    )
 
 
 def test_doctor_fails_closed_on_manifest_and_safety_errors(tmp_path):
@@ -153,7 +174,7 @@ def test_doctor_accepts_immutable_sha_when_installed_dbt_version_matches(tmp_pat
     )
     installed = tmp_path / "dbt_packages/dbt_cortex_agent/dbt_project.yml"
     installed.parent.mkdir(parents=True)
-    installed.write_text("name: dbt_cortex_agent\nversion: 0.0.5\nconfig-version: 2\n")
+    installed.write_text("name: dbt_cortex_agent\nversion: 0.0.6\nconfig-version: 2\n")
 
     diagnostics = run_doctor(
         config,
@@ -228,7 +249,7 @@ def test_doctor_preserves_semantic_revision_direct_match(tmp_path):
     config = _config(tmp_path)
     (tmp_path / "packages.yml").write_text(
         "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
-        "    revision: v0.0.5\n"
+        "    revision: v0.0.6\n"
     )
 
     diagnostics = run_doctor(

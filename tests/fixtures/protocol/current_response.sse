@@ -1,0 +1,17 @@
+event: response.tool_use
+data: {"name":"OrdersAnalytics","input":{"question":"revenue"}}
+
+event: response.tool_result
+data: {"content":[{"json":{"sql":"select sum(revenue) from orders","result_set":{"resultSetMetaData":{"rowType":[{"name":"TOTAL"}]},"data":[[405.75]]}}}]}
+
+event: response.chart
+data: {"chart_spec":"{\"type\":\"bar\"}"}
+
+event: response.text.annotation
+data: {"kind":"citation","value":"orders"}
+
+event: future.additive.event
+data: {"ignored":true}
+
+event: response
+data: {"status":"completed","content":[{"type":"text","text":"$405.75"}],"metadata":{"resolved_version":"VERSION$2"}}

@@ -6,7 +6,6 @@ import subprocess
 from datetime import date
 from pathlib import Path
 
-
 TAG_PATTERN = re.compile(r"^v(?P<version>\d+\.\d+\.\d+)$")
 PYPROJECT_VERSION = re.compile(r'^version\s*=\s*"([^"]+)"\s*$', re.MULTILINE)
 DBT_VERSION = re.compile(r"^version:\s*['\"]?([^'\"\s]+)['\"]?\s*$", re.MULTILINE)
@@ -59,8 +58,10 @@ def validate_release(root: Path, tag: str) -> str:
         raise ValueError(f"CHANGELOG.md still marks {version} as Unreleased")
     try:
         date.fromisoformat(release_marker)
-    except ValueError:
-        raise ValueError(f"CHANGELOG.md release heading must use YYYY-MM-DD: {release_marker}")
+    except ValueError as exc:
+        raise ValueError(
+            f"CHANGELOG.md release heading must use YYYY-MM-DD: {release_marker}"
+        ) from exc
 
     return version
 

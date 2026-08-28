@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 TOOL_METRICS = {"tool_selection_accuracy", "tool_execution_accuracy"}
 
 
@@ -31,7 +30,9 @@ def metric_names(metrics: list[Any]) -> list[str]:
     return names
 
 
-def validate_eval_meta(meta: dict[str, Any]) -> tuple[list[str], dict[str, float], dict[str, float]]:
+def validate_eval_meta(
+    meta: dict[str, Any],
+) -> tuple[list[str], dict[str, float], dict[str, float]]:
     names = metric_names(list(meta.get("metrics") or []))
     thresholds = _numeric_map(meta.get("thresholds"), "threshold")
     tolerances = _numeric_map(meta.get("regression_tolerances"), "regression tolerance")
@@ -67,14 +68,17 @@ def validate_table(
     if count == 0:
         raise ValueError(f"Eval table {table_fqn} is empty")
     cursor.execute(
-        f"SELECT input_query, output:custom_criteria:ground_truth_ref::STRING "
-        f"FROM {table_fqn}"
+        f"SELECT input_query, output:custom_criteria:ground_truth_ref::STRING FROM {table_fqn}"
     )
-    identity_rows = [(str(row[0]), None if row[1] is None else str(row[1])) for row in cursor.fetchall()]
+    identity_rows = [
+        (str(row[0]), None if row[1] is None else str(row[1])) for row in cursor.fetchall()
+    ]
     inputs = [row[0] for row in identity_rows]
     refs = [row[1] for row in identity_rows]
     duplicate_inputs = sorted({value for value in inputs if inputs.count(value) > 1})
-    duplicate_refs = sorted({value for value in refs if value is not None and refs.count(value) > 1})
+    duplicate_refs = sorted(
+        {value for value in refs if value is not None and refs.count(value) > 1}
+    )
     if duplicate_inputs:
         raise ValueError(f"Eval table {table_fqn} has duplicate INPUT_QUERY values")
     if any(ref is None or not ref for ref in refs):
@@ -93,7 +97,9 @@ def validate_table(
         )
         missing_output = int(cursor.fetchone()[0])
         if missing_output:
-            raise ValueError(f"Eval table {table_fqn} has {missing_output} row(s) missing ground_truth_output")
+            raise ValueError(
+                f"Eval table {table_fqn} has {missing_output} row(s) missing ground_truth_output"
+            )
     if TOOL_METRICS & set(metrics):
         cursor.execute(
             f"SELECT COUNT(*) FROM {table_fqn} "
@@ -104,7 +110,8 @@ def validate_table(
         missing_tools = int(cursor.fetchone()[0])
         if missing_tools:
             raise ValueError(
-                f"Eval table {table_fqn} has {missing_tools} in-scope row(s) missing ground_truth_invocations"
+                f"Eval table {table_fqn} has {missing_tools} in-scope row(s) missing "
+                "ground_truth_invocations"
             )
     return count
 

@@ -16,9 +16,17 @@ from dbt_cortex_agent.init import DEFAULT_REVISION, STARTER_PATHS, initialize
 def _config(project_dir, target=None):
     return resolve_config(
         Namespace(
-            project_dir=str(project_dir), manifest=None, target=target, connection=None,
-            database=None, schema=None, role=None, warehouse=None, artifact_dir=None,
-            dbt_executable="custom-dbt", snow_executable=None,
+            project_dir=str(project_dir),
+            manifest=None,
+            target=target,
+            connection=None,
+            database=None,
+            schema=None,
+            role=None,
+            warehouse=None,
+            artifact_dir=None,
+            dbt_executable="custom-dbt",
+            snow_executable=None,
         ),
         env={},
     )
@@ -42,7 +50,7 @@ def test_init_preview_does_not_write(tmp_path):
 
 
 def test_init_defaults_to_installed_product_revision():
-    assert DEFAULT_REVISION == f"v{__version__}"
+    assert f"v{__version__}" == DEFAULT_REVISION
 
 
 def test_init_requires_package_source_without_existing_dependency(tmp_path):
@@ -86,7 +94,9 @@ def test_init_apply_preserves_existing_yaml_text_and_comments(tmp_path):
         "vars:\n  existing: keep  # inline comment\nmodels:\n  consumer: {}\n"
     )
     config = _project(tmp_path, project_text)
-    packages_text = "# dependency comment\npackages:\n  - package: vendor/existing\n    version: 1.0.0\n"
+    packages_text = (
+        "# dependency comment\npackages:\n  - package: vendor/existing\n    version: 1.0.0\n"
+    )
     (tmp_path / "packages.yml").write_text(packages_text)
 
     initialize(config, apply=True, package_source="https://example.invalid/dbt-cortex-agent.git")
@@ -260,7 +270,9 @@ def test_orders_starter_preview_reports_exact_paths_without_writing(tmp_path):
     )
 
     assert result.changed_files == ()
-    assert [(action.path.relative_to(tmp_path).as_posix(), action.action) for action in result.actions] == [
+    assert [
+        (action.path.relative_to(tmp_path).as_posix(), action.action) for action in result.actions
+    ] == [
         ("packages.yml", "create"),
         *((path, "create") for path in STARTER_PATHS),
         (".dbtignore", "create"),
@@ -274,7 +286,8 @@ def test_orders_starter_apply_is_deterministic_and_idempotent(tmp_path):
 
     first = initialize(config, package_source=source, starter="orders", apply=True)
     first_contents = {
-        path: (tmp_path / path).read_bytes() for path in (*STARTER_PATHS, "packages.yml", ".dbtignore")
+        path: (tmp_path / path).read_bytes()
+        for path in (*STARTER_PATHS, "packages.yml", ".dbtignore")
     }
     second = initialize(config, package_source=source, starter="orders", apply=True)
 
@@ -286,7 +299,8 @@ def test_orders_starter_apply_is_deterministic_and_idempotent(tmp_path):
     assert second.changed_files == ()
     assert all(action.action == "unchanged" for action in second.actions)
     assert first_contents == {
-        path: (tmp_path / path).read_bytes() for path in (*STARTER_PATHS, "packages.yml", ".dbtignore")
+        path: (tmp_path / path).read_bytes()
+        for path in (*STARTER_PATHS, "packages.yml", ".dbtignore")
     }
     packages = yaml.safe_load((tmp_path / "packages.yml").read_text())
     assert packages["packages"] == [
@@ -311,9 +325,7 @@ def test_orders_starter_preserves_semantic_dependency_and_appends_dbtignore(tmp_
     initialize(config, starter="orders", apply=True)
 
     assert (tmp_path / "packages.yml").read_text() == packages_text
-    assert (tmp_path / ".dbtignore").read_text() == (
-        f"{ignore_text}models/agents/*/skills/**\n"
-    )
+    assert (tmp_path / ".dbtignore").read_text() == (f"{ignore_text}models/agents/*/skills/**\n")
 
 
 def test_orders_starter_validates_all_collisions_before_writes(tmp_path):

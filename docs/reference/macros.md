@@ -1,22 +1,19 @@
 # Macro reference
 
-The `cortex_agent` materialization is the primary lifecycle API. The macros below
-remain available for explicit post-build operations and legacy compatibility.
+The `cortex_agent` materialization is the deployment API. Package CLI commands
+call the lifecycle macros below; consumers should normally use the CLI rather
+than invoking mutating macros directly.
 
 ## Agent lifecycle
 
 | Macro | Important arguments | Remote/mutation behavior |
 |---|---|---|
-| `cortex_agent__validate` | `agent_name`, `execute_checks=false` | Structural; optional staged LIST |
-| `cortex_agent__render_spec` | `agent_name` | Non-mutating full-spec render |
-| `cortex_agent__deploy` | `agent_name`, `dry_run=true`, `alias` | Apply is sandbox-guarded |
-| `cortex_agent__build` | `dry_run=true`, `alias` | Legacy iterator over enabled models/exposures |
-| `cortex_agent__grant_usage` | `agent_name`, `dry_run=true` | Apply Agent usage and monitor grants |
-| `cortex_agent__set_alias` | `agent_name`, `alias`, `to_version` or `from_alias`, `dry_run=true` | Apply moves alias |
-| `cortex_agent__promote_alias` | `agent_name`, `from_alias`, `to_alias`, `dry_run=true` | Alias wrapper |
-| `cortex_agent__rollback_alias` | `agent_name`, `alias`, `to_version`, `dry_run=true` | Alias wrapper |
+| `cortex_agent__version_state_for_model` | `agent_name` | Read-only version/default/alias inventory |
+| `cortex_agent__route_version` | `agent_name`, `to_version`, `alias`, `set_default=false` | Guarded alias and optional DEFAULT reconciliation |
+| `cortex_agent__drop` | `agent_name` | Guarded retirement used only after CLI confirmation |
 
-Provide exactly one of `to_version` and `from_alias` to `set_alias`.
+These macros validate the manifest-owned physical identity and package
+target/database policy. Python contains no Agent DDL.
 
 ## Evaluations
 

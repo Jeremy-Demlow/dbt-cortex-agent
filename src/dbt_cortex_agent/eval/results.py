@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from ..artifacts import ARTIFACT_SCHEMA_VERSION, artifact_slug, contained_path
+from ..domain import finite_number
 from .dataset import TOOL_METRICS
-
 
 CURRENT_PLAN_SCHEMA_VERSION = 2
 
@@ -18,7 +18,8 @@ def _identity_components(value: dict[str, Any]) -> tuple[str, str, str, str]:
     parts = str(value.get("agent_fqn") or "").split(".")
     if len(parts) != 3:
         raise ValueError("Evaluation artifact agent_fqn must have database.schema.object")
-    return (target, *(artifact_slug(part, "Agent FQN component") for part in parts))
+    database, schema, name = (artifact_slug(part, "Agent FQN component") for part in parts)
+    return (target, database, schema, name)
 
 
 def compute_summary(rows: list[dict[str, Any]]) -> dict[str, dict[str, float | int]]:
@@ -30,17 +31,16 @@ def compute_summary(rows: list[dict[str, Any]]) -> dict[str, dict[str, float | i
             continue
         if name in TOOL_METRICS and row.get("test_type", "in_scope") != "in_scope":
             continue
-        try:
-            grouped.setdefault(str(name), []).append(float(score))
-        except (TypeError, ValueError):
-            continue
+        grouped.setdefault(str(name), []).append(finite_number(score, f"score for {name}"))
     return {
         name: {"avg": sum(scores) / len(scores), "n": len(scores)}
         for name, scores in sorted(grouped.items())
     }
 
 
-def threshold_failures(summary: dict[str, dict[str, Any]], thresholds: dict[str, float]) -> list[str]:
+def threshold_failures(
+    summary: dict[str, dict[str, Any]], thresholds: dict[str, float]
+) -> list[str]:
     failures: list[str] = []
     for metric, threshold in thresholds.items():
         stats = summary.get(metric)
@@ -91,10 +91,18 @@ def write_candidate(candidate: dict[str, Any], artifact_dir: str | Path) -> Path
     validate_result(candidate, "candidate")
     target_name, database, schema, agent_object = _identity_components(candidate)
     target = contained_path(
-        artifact_dir, "candidates", target_name, database, schema, agent_object,
-        candidate["suite"], f"{candidate['run_name']}.json",
+        artifact_dir,
+        "candidates",
+        target_name,
+        database,
+        schema,
+        agent_object,
+        candidate["suite"],
+        f"{candidate['run_name']}.json",
     )
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        raise FileExistsError(f"Evaluation candidate already exists: {target}")
     target.write_text(json.dumps(candidate, indent=2, default=str) + "\n", encoding="utf-8")
     return target
 
@@ -104,19 +112,27 @@ def write_diagnostic(diagnostic: dict[str, Any], artifact_dir: str | Path) -> Pa
         raise ValueError("Expected evaluation_diagnostic artifact")
     target_name, database, schema, agent_object = _identity_components(diagnostic)
     target = contained_path(
-        artifact_dir, "diagnostics", target_name, database, schema, agent_object,
-        diagnostic["suite"], f"{diagnostic['run_name']}.json",
+        artifact_dir,
+        "diagnostics",
+        target_name,
+        database,
+        schema,
+        agent_object,
+        diagnostic["suite"],
+        f"{diagnostic['run_name']}.json",
     )
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        raise FileExistsError(f"Evaluation diagnostic already exists: {target}")
     target.write_text(json.dumps(diagnostic, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return target
 
 
-def validate_result(value: dict[str, Any], expected_type: str | None = None) -> dict[str, Any]:
+def validate_result(  # noqa: C901
+    value: dict[str, Any], expected_type: str | None = None
+) -> dict[str, Any]:
     if value.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
-        raise ValueError(
-            f"Evaluation artifact schema_version must be {ARTIFACT_SCHEMA_VERSION}"
-        )
+        raise ValueError(f"Evaluation artifact schema_version must be {ARTIFACT_SCHEMA_VERSION}")
     if value.get("plan_schema_version") != CURRENT_PLAN_SCHEMA_VERSION:
         raise ValueError(
             f"Evaluation artifact plan_schema_version must be {CURRENT_PLAN_SCHEMA_VERSION}"
@@ -150,7 +166,9 @@ def validate_result(value: dict[str, Any], expected_type: str | None = None) -> 
     missing = sorted(required - value.keys())
     if missing:
         raise ValueError(f"Evaluation artifact is missing required fields: {', '.join(missing)}")
-    if not isinstance(value["summary"], dict) or not isinstance(value["ordered_ground_truth_refs"], list):
+    if not isinstance(value["summary"], dict) or not isinstance(
+        value["ordered_ground_truth_refs"], list
+    ):
         raise ValueError("Evaluation artifact summary must be an object and ordered refs a list")
     if len(value["ordered_ground_truth_refs"]) != len(set(value["ordered_ground_truth_refs"])):
         raise ValueError("Evaluation artifact ordered_ground_truth_refs must be unique")
@@ -160,10 +178,14 @@ def validate_result(value: dict[str, Any], expected_type: str | None = None) -> 
     if not isinstance(metadata, dict):
         raise ValueError("Evaluation artifact run_metadata must be an object")
     plan_identity = metadata.get("plan_identity")
-    if not isinstance(plan_identity, dict) or plan_identity.get("agent_fqn") != value.get("agent_fqn"):
+    if not isinstance(plan_identity, dict) or plan_identity.get("agent_fqn") != value.get(
+        "agent_fqn"
+    ):
         raise ValueError("Evaluation artifact run_metadata.plan_identity must match agent_fqn")
     if value.get("plan_identity") != plan_identity:
-        raise ValueError("Evaluation artifact plan_identity must match signed run metadata identity")
+        raise ValueError(
+            "Evaluation artifact plan_identity must match signed run metadata identity"
+        )
     expected_identity = {
         "agent_name": value.get("agent"),
         "suite_name": value.get("suite"),
@@ -177,10 +199,14 @@ def validate_result(value: dict[str, Any], expected_type: str | None = None) -> 
     for phase in ("pre_start", "post_completion"):
         provenance = metadata.get(phase)
         if not isinstance(provenance, dict) or not provenance.get("default_version"):
-            raise ValueError(f"Evaluation artifact run_metadata.{phase} must include default_version")
+            raise ValueError(
+                f"Evaluation artifact run_metadata.{phase} must include default_version"
+            )
     if metadata.get("evaluated_version") != metadata["pre_start"]["default_version"]:
         raise ValueError("Evaluation artifact evaluated_version must equal pre-start DEFAULT")
-    changed = metadata["pre_start"]["default_version"] != metadata["post_completion"]["default_version"]
+    changed = (
+        metadata["pre_start"]["default_version"] != metadata["post_completion"]["default_version"]
+    )
     if metadata.get("default_version_changed") is not changed:
         raise ValueError("Evaluation artifact DEFAULT drift flag is inconsistent with provenance")
     if changed and (value.get("status") != "indeterminate" or value.get("passed") is not False):

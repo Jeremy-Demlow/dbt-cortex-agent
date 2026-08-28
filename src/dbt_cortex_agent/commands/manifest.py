@@ -18,7 +18,9 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
     validate = commands.add_parser(
         "validate", parents=[shared], help="validate manifest and selected Agents"
     )
-    validate.add_argument("--agent", action="append", dest="agents", help="logical Agent name; repeatable")
+    validate.add_argument(
+        "--agent", action="append", dest="agents", help="logical Agent name; repeatable"
+    )
     validate.set_defaults(handler=handle_validate)
 
 

@@ -1,10 +1,23 @@
 from __future__ import annotations
 
 import builtins
+from pathlib import Path
 
 import pytest
 
-from dbt_cortex_agent.invoke import invoke_agent, parse_sse, smoke_skills
+# Evidence: TC-025-08 TC-027-01 TC-027-02 TC-027-03 TC-027-04 TC-027-05
+# Evidence: TC-027-06 TC-027-07 TC-027-08 TC-027-09 TC-027-10
+from dbt_cortex_agent.invoke import (
+    AgentEvent,
+    compact_agent_output,
+    invoke_agent,
+    parse_sse,
+    smoke_skills,
+    write_raw_events,
+)
+from dbt_cortex_agent.manifest import SkillDeclaration
+
+ROOT = Path(__file__).parents[1]
 
 
 def test_missing_invoke_dependency_message_names_runtime_extra(monkeypatch):
@@ -18,7 +31,6 @@ def test_missing_invoke_dependency_message_names_runtime_extra(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", fail_snowflake)
     with pytest.raises(RuntimeError, match=r"dbt-cortex-agent\[runtime\]"):
         invoke_agent("DB", "SCHEMA", "AGENT", "question", "connection")
-from dbt_cortex_agent.manifest import SkillDeclaration
 
 
 def test_parse_sse_captures_tool_use_and_answer():
@@ -34,6 +46,114 @@ def test_parse_sse_captures_tool_use_and_answer():
 
     assert result["tool_uses"][0]["input"]["skill_name"] == "triage"
     assert result["answer"] == "done"
+
+
+def test_recorded_protocol_fixture_replays_additive_current_response() -> None:
+    fixture = ROOT / "tests/fixtures/protocol/current_response.sse"
+    result = parse_sse(fixture.read_text(encoding="utf-8").splitlines(keepends=True))
+
+    assert result["answer"] == "$405.75"
+    assert result["tool_uses"][0]["name"] == "OrdersAnalytics"
+    assert result["sql_queries"] == ["select sum(revenue) from orders"]
+    assert result["result_summaries"][0]["preview"] == [[405.75]]
+    assert result["charts"] == [{"type": "bar"}]
+    assert result["annotations"][0]["kind"] == "citation"
+    assert result["metadata"]["resolved_version"] == "VERSION$2"
+
+
+def test_raw_event_artifact_is_explicit_bounded_and_collision_safe(tmp_path, monkeypatch) -> None:
+    events = [AgentEvent("response", {"status": "completed"})]
+    target = tmp_path / "raw" / "events.jsonl"
+
+    assert write_raw_events(events, target) == target
+    assert '"event": "response"' in target.read_text(encoding="utf-8")
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_raw_events(events, target)
+
+    monkeypatch.setattr("dbt_cortex_agent.invoke.MAX_RAW_EVENT_BYTES", 1)
+    with pytest.raises(ValueError, match="byte limit"):
+        write_raw_events(events, tmp_path / "too-large.jsonl")
+
+
+def test_documented_terminal_response_completes_without_done_marker():
+    lines = [
+        "event: response.text.delta\n",
+        'data: {"text":"partial"}\n',
+        "\n",
+        "event: response\n",
+        'data: {"role":"assistant","content":[{"type":"text","text":"final answer"}],'
+        '"warnings":[{"code":"W1","message":"degraded"}],'
+        '"metadata":{"run_id":"run-1"},"status":"completed"}\n',
+        "\n",
+    ]
+
+    result = parse_sse(lines)
+
+    assert result["answer"] == "final answer"
+    assert result["metadata"]["run_id"] == "run-1"
+    assert result["metadata"]["warnings"][0]["code"] == "W1"
+
+
+def test_parse_sse_frames_multiline_events_and_bounds_results():
+    import json
+
+    rows = [[index, f"value-{index}"] for index in range(8)]
+    payload = json.dumps(
+        {
+            "content": [
+                {
+                    "json": {
+                        "sql": "select 1",
+                        "result_set": {
+                            "resultSetMetaData": {"rowType": [{"name": "ID"}, {"name": "VALUE"}]},
+                            "data": rows,
+                        },
+                    }
+                }
+            ]
+        }
+    )
+    midpoint = payload.index('"result_set"')
+    lines = [
+        "event: response.tool_result\n",
+        f"data: {payload[:midpoint]}\n",
+        f"data: {payload[midpoint:]}\n",
+        "\n",
+        "data: [DONE]\n",
+        "\n",
+    ]
+
+    result = parse_sse(lines)
+
+    assert result["sql_queries"] == ["select 1"]
+    assert result["result_summaries"] == [
+        {
+            "row_count": 8,
+            "column_count": 2,
+            "columns": ["ID", "VALUE"],
+            "preview": rows[:5],
+            "truncated": True,
+        }
+    ]
+
+
+def test_compact_output_omits_result_payloads():
+    result = {
+        "answer": "Revenue was 10.",
+        "tool_uses": [{"name": "analyst", "input": {"large": "secret" * 1000}}],
+        "sql_queries": ["select 10"],
+        "result_summaries": [{"row_count": 1, "preview": [["large" * 1000]]}],
+        "metadata": {"resolved_version": "VERSION$2"},
+        "duration_seconds": 1.25,
+    }
+
+    output = compact_agent_output(result)
+
+    assert output == (
+        "Revenue was 10.\nTools: analyst\nSQL statements: 1\n"
+        "Result sets: 1 (1 rows)\nVersion: VERSION$2\nDuration: 1.25s"
+    )
+    assert "secret" not in output and "largelarge" not in output
 
 
 def test_smoke_skills_uses_direct_invoker_and_requires_server_skill(tmp_path):
@@ -161,7 +281,7 @@ def test_direct_invocation_passes_bounded_http_timeout(monkeypatch):
 
     class Response:
         def __enter__(self):
-            return iter(['data: [DONE]'])
+            return iter(["data: [DONE]"])
 
         def __exit__(self, *args):
             pass
@@ -177,8 +297,113 @@ def test_direct_invocation_passes_bounded_http_timeout(monkeypatch):
         lambda request, timeout: observed.append(timeout) or Response(),
     )
 
-    assert invoke_agent(
-        "DB", "S", "A", "question", "conn",
-        "https://example.snowflakecomputing.com", timeout=12,
-    )["answer"] == ""
+    assert (
+        invoke_agent(
+            "DB",
+            "S",
+            "A",
+            "question",
+            "conn",
+            "https://example.snowflakecomputing.com",
+            timeout=12,
+        )["answer"]
+        == ""
+    )
     assert observed == [12]
+
+
+def test_direct_invocation_uses_versioned_rest_path(monkeypatch):
+    import sys
+    import types
+
+    class Cursor:
+        def close(self):
+            pass
+
+    class Connection:
+        rest = types.SimpleNamespace(token="secret")
+
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            pass
+
+    class Response:
+        def __enter__(self):
+            return iter(["data: [DONE]"])
+
+        def __exit__(self, *args):
+            pass
+
+    connector = types.SimpleNamespace(connect=lambda **kwargs: Connection())
+    snowflake = types.ModuleType("snowflake")
+    snowflake.connector = connector
+    monkeypatch.setitem(sys.modules, "snowflake", snowflake)
+    monkeypatch.setitem(sys.modules, "snowflake.connector", connector)
+    requests = []
+    monkeypatch.setattr(
+        "dbt_cortex_agent.invoke.urlopen",
+        lambda request, timeout: requests.append(request.full_url) or Response(),
+    )
+
+    invoke_agent(
+        "DB",
+        "S",
+        "A!VERSION$2",
+        "question",
+        "conn",
+        "https://example.snowflakecomputing.com",
+    )
+
+    assert requests == [
+        "https://example.snowflakecomputing.com/api/v2/databases/DB/schemas/S/agents/A/versions/VERSION%242:run"
+    ]
+
+
+def test_direct_invocation_sends_explicit_runtime_role(monkeypatch):
+    import sys
+    import types
+
+    class Cursor:
+        def close(self):
+            pass
+
+    class Connection:
+        rest = types.SimpleNamespace(token="secret")
+
+        def cursor(self):
+            return Cursor()
+
+        def close(self):
+            pass
+
+    class Response:
+        def __enter__(self):
+            return iter(["data: [DONE]"])
+
+        def __exit__(self, *args):
+            pass
+
+    connector = types.SimpleNamespace(connect=lambda **kwargs: Connection())
+    snowflake = types.ModuleType("snowflake")
+    snowflake.connector = connector
+    monkeypatch.setitem(sys.modules, "snowflake", snowflake)
+    monkeypatch.setitem(sys.modules, "snowflake.connector", connector)
+    requests = []
+    monkeypatch.setattr(
+        "dbt_cortex_agent.invoke.urlopen",
+        lambda request, timeout: requests.append(request) or Response(),
+    )
+
+    invoke_agent(
+        "DB",
+        "S",
+        "A",
+        "question",
+        "conn",
+        "https://example.snowflakecomputing.com",
+        role="runtime_role",
+    )
+
+    assert requests[0].headers["X-snowflake-role"] == "RUNTIME_ROLE"

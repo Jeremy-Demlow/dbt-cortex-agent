@@ -1,6 +1,6 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` 0.0.5 is a Snowflake-only dbt package and Python companion for
+`dbt_cortex_agent` 0.0.6 is a Snowflake-only dbt package and Python companion for
 defining, versioning, and evaluating Cortex Agents from dbt models. A
 `materialized='cortex_agent'` model body is the native Agent YAML specification.
 dbt owns the complete Agent lifecycle; Python is limited to local skill files,
@@ -11,25 +11,25 @@ runtime smoke, and evaluation coordination.
 Install the Python companion from PyPI:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.0.5'
+pipx install 'dbt-cortex-agent[runtime]==0.0.6'
 ```
 
 For a managed Python environment, use:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.5'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.6'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
-public HTTPS `v0.0.5` Git tag in `packages.yml`:
+public HTTPS `v0.0.6` Git tag in `packages.yml`:
 
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.5
+    revision: v0.0.6
 ```
 
-PyPI version `0.0.5` and Git tag `v0.0.5` identify the same immutable release
+PyPI version `0.0.6` and Git tag `v0.0.6` identify the same immutable release
 across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
 declared dbt dependency, and installed consumer dbt package versions align. A
@@ -41,10 +41,10 @@ runtime is Python `>=3.10,<4`, dbt
 and [installation](docs/getting-started/installation.md).
 
 The CLI also requires the Snowflake CLI (`snow`) on `PATH`; `doctor` checks both
-the `dbt` and `snow` executables. By default, `dbt-cortex-agent init` configures an existing
-dbt project by appending missing dependency and safety-variable entries. It does
-not create a dbt project or scaffold Agent models, semantic views, evaluation
-models, seeds, or skill files.
+the `dbt` and `snow` executables. By default, `dbt-cortex-agent init` configures
+an existing dbt project by appending missing dependency and safety-variable
+entries. It does not create a dbt project. Use `agent scaffold` to preview and
+create a generic Agent model; a Semantic View and evaluation are optional.
 
 For the fixed synthetic tutorial, preview the package-owned Orders starter in an
 existing dbt project:
@@ -62,9 +62,10 @@ force mode and is not a generic project or Agent wizard.
 
 ## Five-minute non-mutating quickstart
 
-From a consumer dbt project with a full-body Agent model:
+From a consumer dbt project, preview a generic Agent before local writes:
 
 ```bash
+dbt-cortex-agent agent scaffold --project-dir . --agent orders_assistant --json
 dbt-cortex-agent doctor --project-dir . --target sandbox --json
 dbt-cortex-agent manifest validate --project-dir . --target sandbox --json
 dbt compile --select orders_assistant
@@ -79,7 +80,7 @@ For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
 It discovers an existing dbt project, establishes objective/levers/data/proof,
 and guides an existing semantic view, the fixed Orders starter, or an existing
-Agent into dbt-owned metadata. It is script-free, shows manual 0.0.5 command
+Agent into dbt-owned metadata. It is script-free, shows manual 0.0.6 command
 parity, and stops separately before local writes, Snowflake mutation/runtime,
 paid evaluation, and baseline movement. The checked-in skill is not a claim of
 catalog publication or live Snowflake verification.
@@ -126,10 +127,13 @@ before crossing this boundary.
 | Need | Shipped CLI | Public dbt macro |
 |---|---|---|
 | Diagnose a project | `doctor` | — |
-| Validate resolved metadata | `manifest validate` | `cortex_agent__validate` |
+| Scaffold an Agent | `agent scaffold` | — |
+| Validate resolved metadata | `manifest validate` | — |
 | Render the full Agent spec | — | `dbt compile --select <agent_model>` |
 | Deploy/version an Agent | `agent deploy` | `dbt build --select <agent_model>` |
 | Preview/invoke any Agent | `agent smoke` | — |
+| Inspect/promote/rollback versions | `agent versions`, `agent promote`, `agent rollback` | lifecycle macros |
+| Retire an Agent | `agent drop` | `cortex_agent__drop` |
 | Plan/upload/smoke skills | `skill plan/upload/smoke` | deploy validates staged skills |
 | Render/run optional evaluation | `eval run`, `eval verify` | `cortex_eval__execution_plan`, `cortex_eval__run` |
 | Compare/gate/accept artifacts | `eval compare/gate/accept-baseline` | threshold macros only |
@@ -141,9 +145,10 @@ are required. Python owns no Agent lifecycle operation and provisions no stage.
 ## Lifecycle and evaluation
 
 The materialization validates and hashes the rendered spec plus staged skills,
-skips unchanged versions, modifies LIVE, commits an immutable version, and
-applies the requested alias. Promotion, rollback, grants, MCP attachment, and
-skill smoke remain explicit operations.
+skips unchanged managed versions independently of serving DEFAULT, commits an
+immutable version only when content changes, and applies the requested alias.
+Promotion, rollback, guarded retirement, grants, MCP attachment, and skill smoke
+remain explicit operations.
 
 Evaluation is optional and targets the same Agent selected by the model relation.
 `eval run` is a client for that already deployed Agent, a materialized

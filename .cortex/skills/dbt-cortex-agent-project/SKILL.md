@@ -1,6 +1,6 @@
 ---
 name: dbt-cortex-agent-project
-description: "Guide adoption, deployment, or evaluation of a dbt-owned Snowflake Cortex Agent with dbt_cortex_agent. Use when a user wants to add Cortex Agents to a new or existing dbt project, adopt an existing semantic view, try the Orders starter, migrate an existing Agent into dbt, deploy Agent models and skills, or author and verify manifest-owned Agent evaluations. Triggers: adopt dbt cortex agent, add cortex agent to dbt, migrate cortex agent to dbt, deploy dbt cortex agent, verify dbt agent evaluation, dbt agent project, orders agent starter."
+description: "Guide creation, deployment, versioning, retirement, or evaluation of a dbt-owned Snowflake Cortex Agent with dbt_cortex_agent. Use for a generic Agent, optional Semantic View, Orders starter, existing Agent migration, lifecycle operation, or manifest-owned evaluation."
 ---
 
 # dbt Cortex Agent project adoption
@@ -14,7 +14,8 @@ lifecycle logic.
 
 - Detect the installed `dbt-cortex-agent` version and require the Python and dbt
   package surfaces to identify the same immutable release. Package-native
-  `agent deploy` and `eval verify` require `0.0.5` or later; on an older release,
+  `agent deploy` and `eval verify` require `0.0.5` or later; lifecycle and generic
+  scaffold commands require `0.0.6`; on an older release,
   say so and use only the commands that release actually ships.
 - Define each Agent as a dbt model with `materialized='cortex_agent'`; dbt compile
   renders it and the `agent deploy` workflow invokes dbt build as the only Agent
@@ -29,6 +30,9 @@ lifecycle logic.
   views, and safety allowlists from the project and user. Do not invent environment values.
 - Preview is evidence, not approval for a later write, mutation, runtime, spend, or policy
   boundary.
+- An Agent does not require a Semantic View. Treat Analyst, Search, skills, MCP,
+  evaluation, and experimental configuration as optional capabilities. Preserve
+  experimental mappings, but do not invent private-preview-specific scaffold options.
 
 ## Workflow
 
@@ -72,7 +76,18 @@ If objective, controllable lever, or supporting data is missing, stop with a con
 
 Choose from discovered evidence and user intent. Do not combine routes unless needed.
 
-#### A. Existing semantic view
+#### A. Generic Agent scaffold
+
+Use when the user wants a new Agent and no governed data capability is required yet.
+Preview before local writes:
+
+```bash
+dbt-cortex-agent agent scaffold --project-dir <PROJECT_DIR> --agent <AGENT> --json
+```
+
+Optionally add `--semantic-view-model <MODEL>` or `--with-eval`. Neither is required.
+
+#### B. Existing semantic view
 
 Use when a dbt semantic-view model already represents the governed domain.
 
@@ -84,7 +99,7 @@ Plan an Agent exposure under the consumer project's conventions with:
 - objective-aligned orchestration and response instructions;
 - project-selected physical naming and usage roles only when evidence provides them.
 
-#### B. Fixed Orders starter
+#### C. Fixed Orders starter
 
 Use only for the package-owned synthetic tutorial. It is not a generic wizard and must not be
 adapted into inferred business semantics.
@@ -96,7 +111,7 @@ actions:
 dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision <PACKAGE_TAG> --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --json
 ```
 
-#### C. Existing Agent migration
+#### D. Existing Agent migration
 
 Use when an Agent exists outside dbt. Read its provided definition and map it into one exposure;
 do not write a lifecycle importer or infer missing business meaning.
@@ -116,7 +131,7 @@ Create a migration table for review:
 Flag unsupported or unavailable fields. Preserve the existing live Agent until dbt render and an
 approved migration plan prove parity; never mutate it during discovery or authoring.
 
-#### D. Optional evaluation authoring
+#### E. Optional evaluation authoring
 
 Add this route only when representative questions and ground truth exist. It is optional: an Agent
 can be authored, rendered, deployed, and smoked without an eval model. Plan a table model with
@@ -152,13 +167,19 @@ revised packet and stop again.
 
 ### 5. Apply approved local changes
 
-For route B, manual command parity is the reviewed preview plus `--apply`:
+For route A, manual command parity is the reviewed preview plus `--apply`:
+
+```bash
+dbt-cortex-agent agent scaffold --project-dir <PROJECT_DIR> --agent <AGENT> --apply --json
+```
+
+For route C, manual command parity is the reviewed preview plus `--apply`:
 
 ```bash
 dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision <PACKAGE_TAG> --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
 ```
 
-For routes A, C, or D, use Cortex Code file tools to make only the approved metadata/model/test
+For routes B, D, or E, use Cortex Code file tools to make only the approved metadata/model/test
 changes. Do not generate scripts. Add the pinned package dependency and explicit safety vars only
 when absent; preserve adopter configuration.
 

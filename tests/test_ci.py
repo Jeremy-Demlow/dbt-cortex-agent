@@ -1,6 +1,7 @@
-from pathlib import Path
 import json
 import re
+from pathlib import Path
+
 try:
     import tomllib
 except ModuleNotFoundError:
@@ -8,9 +9,10 @@ except ModuleNotFoundError:
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/package-check.yml"
+
+# Evidence: TC-021-07 TC-021-08 TC-028-06 TC-028-10
 RELEASE_WORKFLOW = ROOT / ".github/workflows/release.yml"
 LIVE_WORKFLOW = ROOT / ".github/workflows/live-integration.yml"
 
@@ -93,7 +95,12 @@ def test_python_and_dbt_matrices_match_declared_compatibility():
     assert package["project"]["requires-python"] == ">=3.10,<4"
     assert '["3.10", "3.11", "3.12", "3.13"]' in text
     assert project["require-dbt-version"] == [">=1.10.0", "<2.0.0"]
-    for value in ('dbt-core: "~=1.10.0"', 'dbt-snowflake: "1.10.3"', 'dbt-core: "~=1.11.0"', 'dbt-snowflake: "1.11.4"'):
+    for value in (
+        'dbt-core: "~=1.10.0"',
+        'dbt-snowflake: "1.10.3"',
+        'dbt-core: "~=1.11.0"',
+        'dbt-snowflake: "1.11.4"',
+    ):
         assert value in text
 
 
@@ -111,7 +118,7 @@ def test_workflow_covers_release_and_deterministic_contracts():
         "python -m twine check",
         "tests/verify_wheel.py",
         "scripts/verify_installed_wheel.py",
-        "dbt-cortex-agent\" --help",
+        'dbt-cortex-agent" --help',
         "detect-secrets==1.5.0",
         "pip-licenses==5.5.0",
         "cyclonedx-bom==7.1.0",
@@ -146,9 +153,9 @@ def test_current_product_versions_and_project_names_align():
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
 
     assert package["project"]["name"].replace("-", "_") == project["name"]
-    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.5"
-    assert '__version__ = "0.0.5"' in init_source
-    assert 'name = "dbt-cortex-agent"\nversion = "0.0.5"' in lock
+    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.6"
+    assert '__version__ = "0.0.6"' in init_source
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.6"' in lock
 
 
 def test_generated_residue_is_ignored_or_cleaned_by_workflow():
@@ -171,11 +178,7 @@ def test_secret_scan_is_limited_to_tracked_non_lock_files():
 
 def test_synthetic_immutable_sha_is_narrowly_allowlisted():
     source = (ROOT / "tests/test_doctor.py").read_text(encoding="utf-8")
-    matching_lines = [
-        line
-        for line in source.splitlines()
-        if "pragma: allowlist secret" in line
-    ]
+    matching_lines = [line for line in source.splitlines() if "pragma: allowlist secret" in line]
 
     assert len(matching_lines) == 1
     assert re.search(r'^SYNTHETIC_COMMIT_SHA = "[0-9a-f]{40}"', matching_lines[0])

@@ -1,7 +1,7 @@
 from pathlib import Path
 
+# Evidence: TC-022-12 TC-024-10 TC-028-02 TC-028-09
 import yaml
-
 
 ROOT = Path(__file__).parents[1]
 SKILL = ROOT / ".cortex/skills/dbt-cortex-agent-project/SKILL.md"
@@ -20,16 +20,12 @@ def test_project_skill_preserves_materialization_ownership():
     text = SKILL.read_text(encoding="utf-8")
 
     assert "dbt build" in text
+    assert "dbt-cortex-agent agent scaffold" in text
     assert "dbt-cortex-agent agent deploy" in text
     assert "dbt-cortex-agent eval verify" in text
     assert "require `0.0.5` or later" in text
     assert "materialized='cortex_agent'" in text or "materialized: cortex_agent" in text
-    for removed in (
-        "dbt-cortex-agent agent render",
-        "dbt-cortex-agent agent grant",
-        "dbt-cortex-agent agent promote",
-        "dbt-cortex-agent agent rollback",
-    ):
+    for removed in ("dbt-cortex-agent agent render", "dbt-cortex-agent agent grant"):
         assert removed not in text
 
 

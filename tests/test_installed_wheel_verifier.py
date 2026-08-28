@@ -1,11 +1,9 @@
 import importlib.util
 import os
-import subprocess
 import sys
 from pathlib import Path
 
 import pytest
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/verify_installed_wheel.py"
@@ -75,9 +73,10 @@ def test_create_consumer_project_is_isolated_and_eval_optional(tmp_path):
     assert str(ROOT) not in (agent_only / "packages.yml").read_text()
     assert "../dbt_cortex_agent" in (agent_only / "packages.yml").read_text()
     assert not any((agent_only / path).exists() for path in verifier.EVAL_FILES)
-    assert "cortex_agent_allowed_databases: [WHEEL_VERIFY_DB]" in (
-        optional_eval / "dbt_project.yml"
-    ).read_text()
+    assert (
+        "cortex_agent_allowed_databases: [WHEEL_VERIFY_DB]"
+        in (optional_eval / "dbt_project.yml").read_text()
+    )
 
 
 def test_validate_pair_proves_same_agent_and_optional_eval(tmp_path):

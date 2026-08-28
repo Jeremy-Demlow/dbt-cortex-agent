@@ -1,6 +1,6 @@
 # End-to-end architecture flow
 
-`dbt_cortex_agent` 0.0.5 has two shipped surfaces and one metadata authority:
+`dbt_cortex_agent` 0.0.6 has two shipped surfaces and one metadata authority:
 
 - **dbt package:** full-body Agent materialization, eval contracts, graph
   resolution, deterministic rendering, lifecycle DDL, and versioning;
@@ -11,7 +11,7 @@
 
 ```text
 AUTHORING [consumer dbt project]
-  full-body Agent model: materialized='cortex_agent'
+  generic or capability-backed full-body Agent model: materialized='cortex_agent'
   eval table model:      config.meta.cortex_eval
   Semantic View/Search models and skill folders
                          |
@@ -55,9 +55,9 @@ verifies staged skills, hashes spec plus skill state, skips unchanged versions,
 or modifies LIVE and commits an immutable version before reconciling alias,
 profile, and comment. It returns no fake table/view relation.
 
-Python does not implement Agent DDL. Upload local skills before build and use
-`agent smoke` only after deployment. Grants, alias movement, and rollback are
-explicit dbt macro or infrastructure-policy concerns.
+Python does not implement Agent DDL. Package lifecycle commands validate and
+coordinate real dbt macros for version inventory, alias/default routing, and
+guarded retirement.
 
 ## Optional evaluation
 

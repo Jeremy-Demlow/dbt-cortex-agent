@@ -6,6 +6,14 @@
   {{ return(text | upper) }}
 {% endmacro %}
 
+{% macro cortex_agent__routing_alias(value, label='Agent alias') %}
+  {% set safe_alias = dbt_cortex_agent.cortex_agent__unquoted_identifier(value, label) %}
+  {% if safe_alias in ['DEFAULT', 'FIRST', 'LAST', 'LIVE'] %}
+    {{ exceptions.raise_compiler_error(label ~ " is reserved for Snowflake routing: " ~ safe_alias) }}
+  {% endif %}
+  {{ return(safe_alias) }}
+{% endmacro %}
+
 {% macro cortex_agent__unquoted_fqn(value, label='object') %}
   {% set text = value | string %}
   {% set parts = text.split('.') %}
@@ -24,234 +32,6 @@
   {% set schema_name = cortex_agent__unquoted_identifier(resource.schema, 'schema') %}
   {% set agent_name = cortex_agent__unquoted_identifier(resource.alias or resource.name, 'Agent object') %}
   {{ return(database_name ~ '.' ~ schema_name ~ '.' ~ agent_name) }}
-{% endmacro %}
-
-{% macro cortex_agent__legacy_render_tool(tool) %}
-
-  {% set spec_entry = {
-    'tool_spec': {
-      'type': tool.get('type'),
-      'name': tool.get('name'),
-      'description': tool.get('description') | trim
-    }
-  } %}
-
-  {% set execution_environment = {
-    'type': 'warehouse',
-    'warehouse': tool.get('warehouse', target.warehouse),
-    'query_timeout': tool.get('query_timeout', 300)
-  } %}
-
-  {% set resource = none %}
-  {% if tool.get('type') == 'cortex_analyst_text_to_sql' %}
-    {% set resource = {
-      'semantic_view': cortex_agent__semantic_view_fqn(tool.get('semantic_view_model')),
-      'execution_environment': execution_environment
-    } %}
-  {% elif tool.get('type') == 'cortex_search' %}
-    {% set resource = {
-      'search_service': tool.get('search_service'),
-      'execution_environment': execution_environment
-    } %}
-  {% elif tool.get('type') == 'generic' %}
-    {% set resource = {
-      'type': 'procedure',
-      'identifier': tool.get('identifier'),
-      'execution_environment': execution_environment
-    } %}
-  {% endif %}
-
-  {{ return({'spec_entry': spec_entry, 'resource_key': tool.get('name'), 'resource': resource}) }}
-{% endmacro %}
-
-{% macro cortex_agent__legacy_render_capabilities(caps) %}
-  {% set tools = [] %}
-  {% set resources = {} %}
-  {% set skills_out = [] %}
-
-  {% set skills = caps.get('skills', []) %}
-  {% if skills | length > 0 %}
-    {% for skill in skills %}
-      {% set source = skill.get('source', {}) %}
-      {% set skill_source = {'type': (source.get('type') | string | upper), 'path': source.get('path')} %}
-      {% do skills_out.append({'name': skill.get('name'), 'source': skill_source}) %}
-    {% endfor %}
-  {% endif %}
-
-  {% set web = caps.get('web_search', {}) %}
-  {% if web.get('enabled') %}
-    {% do tools.append({'tool_spec': {'type': 'web_search', 'name': 'web_search'}}) %}
-    {% if web.get('max_results') is not none %}
-      {% do resources.update({'web_search': {'max_results': web.get('max_results')}}) %}
-    {% endif %}
-  {% endif %}
-
-  {% set chart = caps.get('data_to_chart', {}) %}
-  {% if chart.get('enabled') %}
-    {% do tools.append({'tool_spec': {
-      'type': 'data_to_chart',
-      'name': 'data_to_chart',
-      'description': chart.get('description', 'Generates visualizations from data')
-    }}) %}
-  {% endif %}
-
-  {% set code_exec = caps.get('code_execution', {}) %}
-  {% if code_exec.get('enabled') and var('code_execution_enabled', false) %}
-    {% do tools.append({'tool_spec': {'type': 'code_execution', 'name': 'code_execution'}}) %}
-    {% set code_res = {} %}
-    {% if code_exec.get('artifact_repositories') %}
-      {% do code_res.update({'artifact_repositories': code_exec.get('artifact_repositories')}) %}
-    {% endif %}
-    {% if code_exec.get('external_access_integrations') %}
-      {% do code_res.update({'external_access_integrations': code_exec.get('external_access_integrations')}) %}
-    {% endif %}
-    {% do resources.update({'code_execution': code_res}) %}
-  {% elif code_exec.get('enabled') and not var('code_execution_enabled', false) %}
-    {% do log("[INFO] code_execution is declared but not rendered because var('code_execution_enabled') is false", info=True) %}
-  {% endif %}
-
-  {{ return({'tools': tools, 'resources': resources, 'skills': skills_out}) }}
-{% endmacro %}
-
-{% macro cortex_agent__legacy_render_instructions(agent) %}
-  {# Build the instructions block (orchestration/response/sample_questions). #}
-  {% set instructions = agent.get('instructions', {}) %}
-  {% set sample_questions = [] %}
-  {% for question in agent.get('sample_questions', []) %}
-    {% do sample_questions.append({'question': question}) %}
-  {% endfor %}
-  {{ return({
-    'orchestration': instructions.get('orchestration', '') | trim,
-    'response': instructions.get('response', '') | trim,
-    'sample_questions': sample_questions
-  }) }}
-{% endmacro %}
-
-{% macro cortex_agent__legacy_build_spec(agent_name) %}
-  {# Compose the deployable spec from single-responsibility renderers. Output is
-     insertion-order stable: declared tools (YAML order) then capability tools;
-     tool_resources follow the same order. #}
-  {% do cortex_agent__validate(agent_name) %}
-  {% set resource = cortex_agent__get_agent(agent_name) %}
-  {% set agent = cortex_agent__agent_meta(resource) %}
-  {% if cortex_agent__is_model(resource) %}
-    {{ exceptions.raise_compiler_error("cortex_agent model '" ~ agent_name ~ "' is rendered and deployed by dbt build") }}
-  {% endif %}
-  {% set tools = [] %}
-  {% set tool_resources = {} %}
-
-  {% for tool in agent.get('tools', []) %}
-    {% set rendered = cortex_agent__render_tool(tool) %}
-    {% if rendered is not none %}
-      {% do tools.append(rendered.spec_entry) %}
-      {% if rendered.resource is not none %}
-        {% do tool_resources.update({rendered.resource_key: rendered.resource}) %}
-      {% endif %}
-    {% endif %}
-  {% endfor %}
-
-  {% set capabilities = cortex_agent__render_capabilities(agent.get('capabilities', {})) %}
-  {% do tools.extend(capabilities.tools) %}
-  {% do tool_resources.update(capabilities.resources) %}
-
-  {% set spec = {
-    'models': {'orchestration': agent.get('model', {}).get('orchestration')},
-    'orchestration': {'budget': agent.get('orchestration', {}).get('budget', {'seconds': 300, 'tokens': 50000})},
-    'instructions': cortex_agent__render_instructions(agent),
-    'tools': tools,
-    'tool_resources': tool_resources
-  } %}
-
-  {% if capabilities.skills | length > 0 %}
-    {% do spec.update({'skills': capabilities.skills}) %}
-  {% endif %}
-
-  {{ return(spec) }}
-{% endmacro %}
-
-{% macro cortex_agent__legacy_render_mcp_ddl(agent, agent_fqn) %}
-  {% set statements = [] %}
-  {% for connector in agent.get('capabilities', {}).get('mcp_connectors', []) %}
-    {% if connector.get('enabled') %}
-      {% do statements.append("ALTER AGENT " ~ agent_fqn ~ " ADD MCP_SERVER = '" ~ connector.get('server') ~ "'") %}
-    {% endif %}
-  {% endfor %}
-  {{ return(statements) }}
-{% endmacro %}
-
-{% macro cortex_agent__legacy_render_spec(agent_name) %}
-  {% set resource = cortex_agent__get_agent(agent_name) %}
-  {% set agent = cortex_agent__agent_meta(resource) %}
-  {% set spec = cortex_agent__build_spec(agent_name) %}
-  {% set payload = {
-    'agent': agent_name,
-    'physical_agent': cortex_agent__resource_agent_fqn(resource, agent),
-    'lifecycle_contract': 'single_agent',
-    'spec': spec,
-    'target': target.name
-  } %}
-  {% do log(tojson(spec), info=True) %}
-  {% do log('__DBT_CORTEX_AGENT_RENDER__=' ~ tojson(payload), info=True) %}
-  {{ return(tojson(spec)) }}
-{% endmacro %}
-
-{% macro cortex_agent__legacy_deploy(agent_name, dry_run=True, alias=None) %}
-  {% set resource = cortex_agent__get_agent(agent_name) %}
-  {% set agent = cortex_agent__agent_meta(resource) %}
-  {% set spec = cortex_agent__build_spec(agent_name) %}
-  {% set spec_json = tojson(spec) %}
-  {% set agent_fqn = cortex_agent__resource_agent_fqn(resource, agent) %}
-  {% set deploy_alias = alias or cortex_agent__deploy_alias(agent) %}
-  {% set deploy_alias = cortex_agent__unquoted_identifier(deploy_alias, 'deploy alias') %}
-  {% set mcp_statements = cortex_agent__render_mcp_ddl(agent, agent_fqn) %}
-  {% set payload = {
-    'agent': agent_name,
-    'physical_agent': agent_fqn,
-    'lifecycle_contract': 'single_agent',
-    'spec': spec,
-    'target': target.name
-  } %}
-  {% do log('__DBT_CORTEX_AGENT_RENDER__=' ~ tojson(payload), info=True) %}
-
-  {% if '$$' in spec_json %}
-    {{ exceptions.raise_compiler_error("Rendered agent spec contains '$$' delimiter") }}
-  {% endif %}
-
-  {% set ddl %}
--- Native Cortex Agent versioning deploy (applied path branches on current state).
--- See docs/architecture.md for the lifecycle contract.
--- First deploy: CREATE AGENT (auto VERSION$1 + LIVE draft) -> MODIFY LIVE SET SPEC
---   -> COMMIT (VERSION$N, DEFAULT auto-advances) -> MODIFY VERSION SET ALIAS -> ADD LIVE FROM LAST.
--- Re-deploy: ADD LIVE FROM LAST -> MODIFY LIVE SET SPEC -> COMMIT -> SET ALIAS -> ADD LIVE FROM LAST.
-CREATE AGENT IF NOT EXISTS {{ agent_fqn }} COMMENT = 'Managed by dbt cortex_agent__deploy (sandbox)';
-ALTER AGENT {{ agent_fqn }} MODIFY LIVE VERSION SET SPECIFICATION = $$<spec_json, logged separately>$$;
-ALTER AGENT {{ agent_fqn }} COMMIT;
-ALTER AGENT {{ agent_fqn }} MODIFY VERSION <committed VERSION$N> SET ALIAS = {{ deploy_alias }};
-ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
-  {% endset %}
-
-  {% if dry_run %}
-    {% do log("[DRY RUN] would deploy " ~ agent_fqn ~ " (full specification, alias=" ~ deploy_alias ~ ")", info=True) %}
-    {% do log(ddl | trim, info=True) %}
-    {% for stmt in mcp_statements %}
-      {% do log("[DRY RUN] would attach MCP connector: " ~ stmt, info=True) %}
-    {% endfor %}
-    {% do log("Generated spec JSON:", info=True) %}
-    {% do log(spec_json, info=True) %}
-    {{ return(ddl | trim) }}
-  {% else %}
-    {% do cortex_agent__assert_deploy_target('cortex_agent__deploy') %}
-    {# Fail-closed by construction: a mutating deploy must never mint a version
-       whose spec references a staged skill missing from the stage. On by default
-       here; var('cortex_agent_validate_staged_skills', false) is the escape hatch. #}
-    {% if var('cortex_agent_validate_staged_skills', true) %}
-      {% do cortex_agent__assert_staged_skills_ready(agent) %}
-    {% else %}
-      {% do log("[WARN] staged-skill readiness check skipped via var('cortex_agent_validate_staged_skills', false) escape hatch", info=True) %}
-    {% endif %}
-    {% set skill_hash = cortex_agent__skills_hash(agent) %}
-    {{ return(cortex_agent__apply_deploy(agent_fqn, spec_json, deploy_alias, mcp_statements, skill_hash, alias is not none)) }}
-  {% endif %}
 {% endmacro %}
 
 {% macro cortex_agent__assert_staged_skills_ready(agent) %}
@@ -329,16 +109,10 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {{ return(false) }}
 {% endmacro %}
 
-{% macro cortex_agent__current_spec_hash(agent_fqn) %}
-  {# Read the spec_md5 stamped into the DEFAULT version's comment by a prior
-     deploy. Returns none when the agent/version/hash is absent. Enables
-     idempotent deploys (skip COMMIT when the rendered spec is unchanged). #}
+{% macro cortex_agent__managed_version(agent_fqn, spec_hash, skill_hash='') %}
+  {# Find the newest immutable version created from the requested content.
+     DEFAULT may intentionally point backward after a rollback. #}
   {% if not execute %}
-    {{ return(none) }}
-  {% endif %}
-  {% set aliases = cortex_agent__describe_aliases(agent_fqn) %}
-  {% set default_version = aliases.get('DEFAULT') %}
-  {% if not default_version %}
     {{ return(none) }}
   {% endif %}
   {% set results = run_query("SHOW VERSIONS IN AGENT " ~ agent_fqn) %}
@@ -348,46 +122,23 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
     {{ return(none) }}
   {% endif %}
   {% set comment_idx = col_names.index('comment') %}
+  {% set state = namespace(version=none, number=-1) %}
   {% for row in results %}
-    {% if (row[name_idx] | string) == default_version %}
-      {% set comment = row[comment_idx] | string %}
-      {% set match = modules.re.search('spec_md5=([0-9a-f]+)', comment) %}
-      {% if match %}
-        {{ return(match.group(1)) }}
+    {% set version_name = row[name_idx] | string %}
+    {% set version_match = modules.re.match('^VERSION[$]([1-9][0-9]*)$', version_name) %}
+    {% set comment = row[comment_idx] | string %}
+    {% set spec_match = modules.re.search('spec_md5=([0-9a-f]+)', comment) %}
+    {% set skill_match = modules.re.search('skill_md5=([0-9a-f]+)', comment) %}
+    {% set row_skill_hash = skill_match.group(1) if skill_match else '' %}
+    {% if version_match and spec_match and spec_match.group(1) == spec_hash and row_skill_hash == skill_hash %}
+      {% set number = version_match.group(1) | int %}
+      {% if number > state.number %}
+        {% set state.number = number %}
+        {% set state.version = version_name %}
       {% endif %}
     {% endif %}
   {% endfor %}
-  {{ return(none) }}
-{% endmacro %}
-
-{% macro cortex_agent__current_deploy_hashes(agent_fqn) %}
-  {% if not execute %}
-    {{ return({}) }}
-  {% endif %}
-  {% set aliases = dbt_cortex_agent.cortex_agent__describe_aliases(agent_fqn) %}
-  {% set default_version = aliases.get('DEFAULT') %}
-  {% if not default_version %}
-    {{ return({}) }}
-  {% endif %}
-  {% set results = run_query("SHOW VERSIONS IN AGENT " ~ agent_fqn) %}
-  {% set col_names = results.column_names | map('lower') | list %}
-  {% set name_idx = col_names.index('name') if 'name' in col_names else 1 %}
-  {% if 'comment' not in col_names %}
-    {{ return({}) }}
-  {% endif %}
-  {% set comment_idx = col_names.index('comment') %}
-  {% for row in results %}
-    {% if (row[name_idx] | string) == default_version %}
-      {% set comment = row[comment_idx] | string %}
-      {% set spec_match = modules.re.search('spec_md5=([0-9a-f]+)', comment) %}
-      {% set skill_match = modules.re.search('skill_md5=([0-9a-f]+)', comment) %}
-      {{ return({
-        'spec_md5': spec_match.group(1) if spec_match else none,
-        'skill_md5': skill_match.group(1) if skill_match else ''
-      }) }}
-    {% endif %}
-  {% endfor %}
-  {{ return({}) }}
+  {{ return(state.version) }}
 {% endmacro %}
 
 {% macro cortex_agent__skills_hash(agent) %}
@@ -435,21 +186,22 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {% set spec_hash = local_md5(spec_json) %}
   {% set existed = dbt_cortex_agent.cortex_agent__agent_exists(agent_fqn) %}
 
-  {# Idempotency: skip minting a new version when the rendered spec matches the
-     currently deployed DEFAULT version, unless force_agent_recreate is set.
+  {# Idempotency: skip minting a new version when a managed immutable version
+     matches the requested content, regardless of the serving DEFAULT.
      Skill content hash participates in the skip check because skills live on
      the stage, outside the spec JSON. MCP attach state is still not represented
      (MCP is DDL, not spec), so to (re)attach MCP on an unchanged spec+skill,
      use force_agent_recreate=true. #}
   {% if existed and not var('force_agent_recreate', false) %}
-    {% set current_hashes = dbt_cortex_agent.cortex_agent__current_deploy_hashes(agent_fqn) %}
-    {% if current_hashes.get('spec_md5') == spec_hash and current_hashes.get('skill_md5', '') == skill_hash %}
+    {% set managed_version = dbt_cortex_agent.cortex_agent__managed_version(agent_fqn, spec_hash, skill_hash) %}
+    {% if managed_version %}
       {% set aliases = dbt_cortex_agent.cortex_agent__describe_aliases(agent_fqn) %}
-      {% set default_version = aliases.get('DEFAULT') %}
       {% set alias_key = deploy_alias | upper %}
-      {% if reconcile_alias and default_version and aliases.get(alias_key) != default_version %}
-        {% do run_query("ALTER AGENT " ~ agent_fqn ~ " MODIFY VERSION " ~ default_version ~ " SET ALIAS = " ~ deploy_alias) %}
-        {% do log("Reconciled alias " ~ deploy_alias ~ " -> " ~ default_version ~ " on unchanged " ~ agent_fqn, info=True) %}
+      {% set expected_alias_version = aliases.get(alias_key, '') %}
+      {% if reconcile_alias and expected_alias_version != managed_version %}
+        {% do dbt_cortex_agent.cortex_agent__route_alias_for_fqn(agent_fqn, managed_version, deploy_alias, expected_alias_version) %}
+        {% do log('CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled', info=True) %}
+        {% do log("Reconciled alias " ~ deploy_alias ~ " -> " ~ managed_version ~ " on unchanged " ~ agent_fqn, info=True) %}
       {% endif %}
       {% do log("No spec/skill change for " ~ agent_fqn ~ " (spec_md5=" ~ spec_hash ~ ", skill_md5=" ~ skill_hash ~ "); skipping COMMIT. Set var('force_agent_recreate', true) to force a new version.", info=True) %}
       {{ return(agent_fqn) }}
@@ -457,33 +209,40 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
   {% endif %}
 
   {% if not existed %}
-    {% do run_query("CREATE AGENT IF NOT EXISTS " ~ agent_fqn ~ " COMMENT = 'Managed by dbt cortex_agent materialization'") %}
-    {% do log("Created agent shell " ~ agent_fqn, info=True) %}
+    {% do run_query("CREATE AGENT " ~ agent_fqn ~ " COMMENT = 'Managed by dbt cortex_agent materialization' FROM SPECIFICATION $$" ~ spec_json ~ "$$") %}
+    {% set aliases = dbt_cortex_agent.cortex_agent__describe_aliases(agent_fqn) %}
+    {% set new_version = aliases.get('DEFAULT') %}
+    {% if not new_version %}
+      {{ exceptions.raise_compiler_error("Created Agent has no DEFAULT immutable version: " ~ agent_fqn) }}
+    {% endif %}
+  {% else %}
+    {% if not dbt_cortex_agent.cortex_agent__live_draft_exists(agent_fqn) %}
+      {% do run_query("ALTER AGENT " ~ agent_fqn ~ " ADD LIVE VERSION FROM LAST") %}
+    {% endif %}
+    {% do run_query("ALTER AGENT " ~ agent_fqn ~ " MODIFY LIVE VERSION SET SPECIFICATION = $$" ~ spec_json ~ "$$") %}
+    {% set version_comment = target.name ~ ' | inv=' ~ invocation_id ~ ' | spec_md5=' ~ spec_hash ~ ' | skill_md5=' ~ skill_hash %}
+    {% set commit_result = run_query("ALTER AGENT " ~ agent_fqn ~ " COMMIT COMMENT = $$" ~ version_comment ~ "$$") %}
+    {% set commit_msg = commit_result.rows[0][0] | string if commit_result.rows else '' %}
+    {% set version_match = modules.re.search('VERSION\\$\\d+', commit_msg) %}
+    {% if not version_match %}
+      {{ exceptions.raise_compiler_error("Could not parse committed version from COMMIT result: " ~ commit_msg) }}
+    {% endif %}
+    {% set new_version = version_match.group(0) %}
   {% endif %}
-
-  {% set has_draft = dbt_cortex_agent.cortex_agent__live_draft_exists(agent_fqn) %}
-  {% if not has_draft %}
-    {% do run_query("ALTER AGENT " ~ agent_fqn ~ " ADD LIVE VERSION FROM LAST") %}
-  {% endif %}
-
-  {% do run_query("ALTER AGENT " ~ agent_fqn ~ " MODIFY LIVE VERSION SET SPECIFICATION = $$" ~ spec_json ~ "$$") %}
-  {% set commit_result = run_query("ALTER AGENT " ~ agent_fqn ~ " COMMIT") %}
-  {# COMMIT returns "Version VERSION$N successfully committed." MODIFY VERSION
-     requires the explicit VERSION$N selector; the keyword LAST is NOT valid
-     there (verified: raises 001003). Capture the committed version name. #}
-  {% set commit_msg = commit_result.rows[0][0] | string if commit_result.rows else '' %}
-  {% set version_match = modules.re.search('VERSION\\$\\d+', commit_msg) %}
-  {% if not version_match %}
-    {{ exceptions.raise_compiler_error("Could not parse committed version from COMMIT result: " ~ commit_msg) }}
-  {% endif %}
-  {% set new_version = version_match.group(0) %}
-  {% do run_query("ALTER AGENT " ~ agent_fqn ~ " MODIFY VERSION " ~ new_version ~ " SET ALIAS = " ~ deploy_alias) %}
+  {% do log('CORTEX_AGENT_DEPLOY_PHASE=version_committed', info=True) %}
 
   {% set version_comment = target.name ~ ' | inv=' ~ invocation_id ~ ' | spec_md5=' ~ spec_hash ~ ' | skill_md5=' ~ skill_hash %}
   {% do run_query("ALTER AGENT " ~ agent_fqn ~ " MODIFY VERSION " ~ new_version ~ " SET COMMENT = $$" ~ version_comment ~ "$$") %}
+  {% do log('CORTEX_AGENT_DEPLOY_PHASE=metadata_reconciled', info=True) %}
+  {% set current_aliases = dbt_cortex_agent.cortex_agent__describe_aliases(agent_fqn) %}
+  {% set expected_alias_version = current_aliases.get(deploy_alias | upper, '') %}
+  {% do dbt_cortex_agent.cortex_agent__route_alias_for_fqn(agent_fqn, new_version, deploy_alias, expected_alias_version) %}
+  {% do log('CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled', info=True) %}
 
-  {# Recreate LIVE draft so bare REST /agents/<name>:run resolves after deploy. #}
-  {% do run_query("ALTER AGENT " ~ agent_fqn ~ " ADD LIVE VERSION FROM LAST") %}
+  {% if not dbt_cortex_agent.cortex_agent__live_draft_exists(agent_fqn) %}
+    {% do run_query("ALTER AGENT " ~ agent_fqn ~ " ADD LIVE VERSION FROM LAST") %}
+  {% endif %}
+  {% do log('CORTEX_AGENT_DEPLOY_PHASE=live_reconciled', info=True) %}
 
   {# MCP connectors reference a pre-existing EXTERNAL MCP SERVER object and are
      attached out-of-band from the spec. Gated behind mcp_deploy_enabled because
@@ -501,32 +260,4 @@ ALTER AGENT {{ agent_fqn }} ADD LIVE VERSION FROM LAST;
 
   {% do log("Deployed " ~ agent_fqn ~ " (" ~ new_version ~ ", alias=" ~ deploy_alias ~ ", first_deploy=" ~ (not existed) ~ ")", info=True) %}
   {{ return(agent_fqn) }}
-{% endmacro %}
-{% macro cortex_agent__legacy_build(dry_run=true, alias=None) %}
-  {# One-command orchestrator: deploy every enabled cortex_agent model/exposure. Each
-     deploy is idempotent and sandbox-guarded, so this is safe to re-run. Pass
-     dry_run=false to apply. #}
-  {% set deployed = [] %}
-  {% for node in graph.nodes.values() %}
-    {% if node.resource_type == 'model' and node.config.get('materialized') == 'cortex_agent' %}
-      {% set ca = node.config.get('meta', {}).get('cortex_agent', {}) %}
-      {% if ca.get('enabled', true) %}
-        {% do cortex_agent__deploy(node.name, dry_run, alias) %}
-        {% do deployed.append(node.name) %}
-      {% endif %}
-    {% endif %}
-  {% endfor %}
-  {% for exposure in graph.exposures.values() %}
-    {% set ca = exposure.meta.get('cortex_agent', {}) %}
-    {% if ca.get('enabled') %}
-      {% do cortex_agent__deploy(exposure.name, dry_run, alias) %}
-      {% do deployed.append(exposure.name) %}
-    {% endif %}
-  {% endfor %}
-  {% if deployed | length == 0 %}
-    {% do log("cortex_agent__build found no enabled cortex_agent models/exposures", info=True) %}
-  {% else %}
-    {% do log("cortex_agent__build " ~ ('previewed' if dry_run else 'deployed') ~ ": " ~ (deployed | join(', ')), info=True) %}
-  {% endif %}
-  {{ return(deployed) }}
 {% endmacro %}

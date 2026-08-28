@@ -1,7 +1,8 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
+
+# Evidence: TC-024-02
 
 
 def test_execution_plan_macro_is_offline_and_reuses_authoritative_helpers():
@@ -115,9 +116,7 @@ def test_obsolete_evaluation_supported_declarations_are_removed():
 
 def test_declared_tool_wins_if_a_capability_reuses_its_name():
     source = (ROOT / "macros/cortex_agents/eval_contract.sql").read_text(encoding="utf-8")
-    validation = source.split("{% macro cortex_eval__validate", 1)[1].split(
-        "{% endmacro %}", 1
-    )[0]
+    validation = source.split("{% macro cortex_eval__validate", 1)[1].split("{% endmacro %}", 1)[0]
     supported_branch = validation.index("expected_tool in native_supported_tool_names")
     unsupported_branch = validation.index("unsupported_native_tool_claims.get(expected_tool)")
     assert supported_branch < unsupported_branch

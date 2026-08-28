@@ -14,7 +14,9 @@ def shared_parser() -> argparse.ArgumentParser:
     parser.add_argument("--project-dir", help="dbt project directory (default: current directory)")
     parser.add_argument("--manifest", help="manifest path relative to the project directory")
     parser.add_argument("--target", help="explicit dbt target name")
-    parser.add_argument("--connection", help="explicit Snowflake connection name for runtime operations")
+    parser.add_argument(
+        "--connection", help="explicit Snowflake connection name for runtime operations"
+    )
     parser.add_argument("--database", help="expected Snowflake target database")
     parser.add_argument("--schema", help="Snowflake Agent schema for runtime operations")
     parser.add_argument("--role", help="expected Snowflake role")
@@ -32,8 +34,18 @@ def shared_parser() -> argparse.ArgumentParser:
 
 
 def add_allowlists(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--allow-target", action="append", default=[], help="allow mutation on this dbt target; repeatable")
-    parser.add_argument("--allow-database", action="append", default=[], help="allow mutation in this database; repeatable")
+    parser.add_argument(
+        "--allow-target",
+        action="append",
+        default=[],
+        help="allow mutation on this dbt target; repeatable",
+    )
+    parser.add_argument(
+        "--allow-database",
+        action="append",
+        default=[],
+        help="allow mutation in this database; repeatable",
+    )
 
 
 def fresh_manifest(
@@ -48,9 +60,7 @@ def fresh_manifest(
             config.dbt_env,
         )
         if result.returncode != 0:
-            raise RuntimeError(
-                result.stderr.strip() or result.stdout.strip() or "dbt parse failed"
-            )
+            raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "dbt parse failed")
     return load_manifest(config.manifest)
 
 
@@ -68,7 +78,10 @@ def command_needs_execution_context(args: argparse.Namespace) -> bool:
     runs a fresh `dbt parse`, which fails without them. Commands that connect or
     mutate still enforce their own explicit `--apply` and allowlist gates.
     """
-    return bool(getattr(args, "connection", None))
+    return (
+        bool(getattr(args, "connection", None))
+        and getattr(args, "agent_command", None) != "scaffold"
+    )
 
 
 def emit_json(value: Any) -> None:

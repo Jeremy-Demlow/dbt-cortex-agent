@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
 from typing import Any
 
 from ..config import Config
 from ..dbt_runner import CommandRunner, run_dbt_build
 from .gate import baseline_path, gate_candidate
-from .lifecycle import EvalPlan, build_plan, run_evaluation
+from .lifecycle import EvalPlan, build_plan, run_evaluation, validate_evaluation_apply
 from .results import load_result
+
+CONTROLLED_VERIFY_ERRORS = (
+    FileNotFoundError,
+    OSError,
+    RuntimeError,
+    ValueError,
+)
 
 
 @dataclass(frozen=True)
@@ -64,7 +71,7 @@ def verify_evaluations(
     evaluate: Callable[..., Path | None] = run_evaluation,
     render_plan: Callable[..., EvalPlan] = build_plan,
 ) -> dict[str, Any]:
-    planned = [
+    planned: list[dict[str, Any]] = [
         {
             "agent": item.plan.agent_name,
             "suite": item.plan.suite_name,
@@ -76,54 +83,118 @@ def verify_evaluations(
         for item in selections
     ]
     if not apply:
-        return {"command": "eval verify", "applied": False, "passed": None, "outcome": "planned", "suites": planned}
+        return {
+            "command": "eval verify",
+            "applied": False,
+            "passed": None,
+            "outcome": "planned",
+            "suites": planned,
+        }
+
+    validate_evaluation_apply(
+        config,
+        [item.plan for item in selections],
+        allowed_targets=allowed_targets,
+        allowed_databases=allowed_databases,
+        poll_attempts=poll_attempts,
+        poll_interval=poll_interval,
+        transient_retries=transient_retries,
+    )
 
     command_runner = runner or CommandRunner()
-    results = []
+    results: list[dict[str, Any]] = []
     quality_failed = False
-    for item, plan_payload in zip(selections, planned, strict=True):
+    for selection_index, (item, plan_payload) in enumerate(zip(selections, planned, strict=True)):
         plan = item.plan
-        build = run_dbt_build(
-            config.dbt_executable, config.project_dir, config.target,
-            [plan.eval_model], command_runner, config.dbt_env,
-        )
-        if build.returncode != 0:
-            raise RuntimeError(build.stderr.strip() or build.stdout.strip() or "eval model build failed")
-        current_plan = render_plan(
-            config,
-            agent_name=plan.agent_name,
-            suite_name=plan.suite_name,
-            parse=True,
-            runner=command_runner,
-        )
-        if current_plan.plan_signature != plan.plan_signature:
-            raise RuntimeError(
-                f"Evaluation plan changed while materializing {plan.eval_model}; retry from preview"
+        try:
+            build = run_dbt_build(
+                config.dbt_executable,
+                config.project_dir,
+                config.target,
+                [plan.eval_model],
+                command_runner,
+                config.dbt_env,
             )
-        candidate_path = evaluate(
-            config, current_plan, apply=True, poll_attempts=poll_attempts,
-            poll_interval=poll_interval, transient_retries=transient_retries,
-            allowed_targets=allowed_targets, allowed_databases=allowed_databases,
-        )
-        if candidate_path is None:
-            raise RuntimeError("Applied evaluation produced no candidate")
-        candidate = load_result(candidate_path, "candidate")
-        if item.baseline.is_file():
-            gate = gate_candidate(candidate_path, baseline=item.baseline)
-            passed = bool(gate["passed"])
-        else:
-            passed = bool(candidate.get("passed")) and candidate.get("status") == "completed"
+            if build.returncode != 0:
+                raise RuntimeError(
+                    build.stderr.strip() or build.stdout.strip() or "eval model build failed"
+                )
+            current_plan = render_plan(
+                config,
+                agent_name=plan.agent_name,
+                suite_name=plan.suite_name,
+                parse=True,
+                runner=command_runner,
+            )
+            if current_plan.suite_signature != plan.suite_signature:
+                raise RuntimeError(
+                    f"Evaluation plan changed while materializing {plan.eval_model}; "
+                    "retry from preview"
+                )
+            candidate_path = evaluate(
+                config,
+                current_plan,
+                apply=True,
+                poll_attempts=poll_attempts,
+                poll_interval=poll_interval,
+                transient_retries=transient_retries,
+                allowed_targets=allowed_targets,
+                allowed_databases=allowed_databases,
+            )
+            if candidate_path is None:
+                raise RuntimeError("Applied evaluation produced no candidate")
+            candidate = load_result(candidate_path, "candidate")
+            if item.baseline.is_file():
+                gate = gate_candidate(candidate_path, baseline=item.baseline)
+                passed = bool(gate["passed"])
+            else:
+                passed = bool(candidate.get("passed")) and candidate.get("status") == "completed"
+        except CONTROLLED_VERIFY_ERRORS as exc:
+            results.append(
+                {
+                    **plan_payload,
+                    "candidate": None,
+                    "execution": "failed",
+                    "gate": "not_run",
+                    "passed": None,
+                    "error": str(exc),
+                }
+            )
+            results.extend(
+                {
+                    **remaining_payload,
+                    "candidate": None,
+                    "execution": "not_run",
+                    "gate": "not_run",
+                    "passed": None,
+                    "error": None,
+                }
+                for remaining_payload in planned[selection_index + 1 :]
+            )
+            return {
+                "command": "eval verify",
+                "applied": True,
+                "passed": None,
+                "quality_passed": not quality_failed,
+                "outcome": "infrastructure_failed",
+                "error": str(exc),
+                "suites": results,
+            }
         quality_failed = quality_failed or not passed
-        results.append({
-            **plan_payload,
-            "candidate": str(candidate_path),
-            "execution": "completed",
-            "gate": "passed" if passed else "failed",
-            "passed": passed,
-        })
+        results.append(
+            {
+                **plan_payload,
+                "candidate": str(candidate_path),
+                "execution": "completed",
+                "gate": "passed" if passed else "failed",
+                "passed": passed,
+            }
+        )
     return {
-        "command": "eval verify", "applied": True,
+        "command": "eval verify",
+        "applied": True,
         "passed": not quality_failed,
+        "quality_passed": not quality_failed,
         "outcome": "quality_failed" if quality_failed else "passed",
         "suites": results,
     }

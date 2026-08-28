@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dbt-cortex-agent"
-version = "0.0.5"
+version = "0.0.6"
 description = "dbt-native Snowflake Cortex Agent materialization with skill and evaluation tooling"
 readme = "README.md"
 requires-python = ">=3.10,<4"
@@ -14,12 +14,22 @@ dependencies = ["PyYAML>=6.0,<7"]
 
 [project.urls]
 Homepage = "https://github.com/Jeremy-Demlow/dbt-cortex-agent"
-Documentation = "https://github.com/Jeremy-Demlow/dbt-cortex-agent/tree/v0.0.5/docs"
+Documentation = "https://github.com/Jeremy-Demlow/dbt-cortex-agent/tree/v0.0.6/docs"
 Repository = "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
 Issues = "https://github.com/Jeremy-Demlow/dbt-cortex-agent/issues"
 
 [project.optional-dependencies]
-test = ["build>=1.2", "Jinja2>=3.1,<4", "pytest>=8", "tomli>=2; python_version < '3.11'"]
+test = [
+  "build>=1.2",
+  "hypothesis>=6.100,<7",
+  "Jinja2>=3.1,<4",
+  "mypy>=1.17,<2",
+  "pytest>=8",
+  "pytest-cov>=6,<8",
+  "ruff>=0.12,<1",
+  "tomli>=2; python_version < '3.11'",
+  "types-PyYAML>=6,<7",
+]
 runtime = ["snowflake-connector-python>=3.18,<5"]
 
 [project.scripts]
@@ -33,4 +43,34 @@ dbt_cortex_agent = ["starters/orders/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--ignore=tests/test_req_013_contract.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "C90"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 12
+
+[tool.mypy]
+python_version = "3.10"
+files = [
+  "src/dbt_cortex_agent/domain.py",
+  "src/dbt_cortex_agent/scaffold.py",
+  "src/dbt_cortex_agent/lifecycle.py",
+  "src/dbt_cortex_agent/invoke.py",
+  "src/dbt_cortex_agent/deployment.py",
+  "src/dbt_cortex_agent/execution_context.py",
+  "src/dbt_cortex_agent/cli.py",
+  "src/dbt_cortex_agent/commands/agent.py",
+  "src/dbt_cortex_agent/commands/eval.py",
+  "src/dbt_cortex_agent/eval/verify.py",
+  "src/dbt_cortex_agent/eval/results.py",
+  "src/dbt_cortex_agent/eval/lifecycle.py",
+]
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = true
+ignore_missing_imports = true

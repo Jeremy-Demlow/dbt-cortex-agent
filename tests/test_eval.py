@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import builtins
 import hashlib
 import importlib
 import json
 import subprocess
-import builtins
 from argparse import Namespace
 
 import pytest
 
+# Evidence: TC-022-07 TC-022-08 TC-022-10 TC-023-10 TC-023-11 TC-025-09
 from dbt_cortex_agent.artifacts import ARTIFACT_SCHEMA_VERSION
 from dbt_cortex_agent.config import resolve_config
 from dbt_cortex_agent.eval.baseline import (
@@ -19,15 +20,20 @@ from dbt_cortex_agent.eval.compare import compare_results
 from dbt_cortex_agent.eval.dataset import validate_eval_meta, validate_table
 from dbt_cortex_agent.eval.lifecycle import (
     TERMINAL_SUCCESS,
+    _default_connect,
+    _fetch_rows,
     build_plan,
     flatten_status_details,
-    _fetch_rows,
     is_retryable,
     poll,
     run_evaluation,
-    _default_connect,
 )
-from dbt_cortex_agent.eval.results import build_candidate, compute_summary, load_result
+from dbt_cortex_agent.eval.results import (
+    build_candidate,
+    compute_summary,
+    load_result,
+    write_candidate,
+)
 
 
 def test_eval_package_does_not_advertise_lifecycle_api():
@@ -89,11 +95,15 @@ def _manifest(*, duplicate=False, agent_object=True):
         "exposures": {
             "exposure.consumer.orders": {
                 "name": "orders_assistant",
-                "config": {"meta": {"cortex_agent": {
-                    "enabled": True,
-                    "snowflake_name": "ORDERS_ASSISTANT",
-                    "naming": {"sandbox_eval": "ORDERS_ASSISTANT_SANDBOX_EVAL"},
-                }}},
+                "config": {
+                    "meta": {
+                        "cortex_agent": {
+                            "enabled": True,
+                            "snowflake_name": "ORDERS_ASSISTANT",
+                            "naming": {"sandbox_eval": "ORDERS_ASSISTANT_SANDBOX_EVAL"},
+                        }
+                    }
+                },
             }
         },
         "nodes": nodes,
@@ -106,9 +116,17 @@ def _config(tmp_path, manifest):
     (target / "manifest.json").write_text(json.dumps(manifest))
     return resolve_config(
         Namespace(
-            project_dir=str(tmp_path), manifest=None, target="sandbox", connection="conn",
-            database="DB", schema="AGENT_SCHEMA", role="ROLE", warehouse="WH",
-            artifact_dir="artifacts", dbt_executable=None, snow_executable=None,
+            project_dir=str(tmp_path),
+            manifest=None,
+            target="sandbox",
+            connection="conn",
+            database="DB",
+            schema="AGENT_SCHEMA",
+            role="ROLE",
+            warehouse="WH",
+            artifact_dir="artifacts",
+            dbt_executable=None,
+            snow_executable=None,
         ),
         env={},
     )
@@ -117,35 +135,52 @@ def _config(tmp_path, manifest):
 def _plan_payload(*, refs=None, tolerances=None, result_database="DB"):
     token = "__DBT_CORTEX_AGENT_DATASET_NAME__"
     identity = {
-        "agent_name": "orders_assistant", "suite_name": "core",
+        "agent_name": "orders_assistant",
+        "suite_name": "core",
         "eval_model": "eval_orders",
         "agent_fqn": "DB.AGENT_SCHEMA.ORDERS_ASSISTANT",
-        "dataset_fqn": "DB.EVAL.EVAL_ORDERS", "stage_fqn": "DB.AGENT_SCHEMA.EVAL_CONFIG_STAGE",
-        "target_name": "sandbox", "target_role": "EVAL_ROLE",
-        "target_database": "DB", "target_schema": "AGENT_SCHEMA",
+        "dataset_fqn": "DB.EVAL.EVAL_ORDERS",
+        "stage_fqn": "DB.AGENT_SCHEMA.EVAL_CONFIG_STAGE",
+        "target_name": "sandbox",
+        "target_role": "EVAL_ROLE",
+        "target_database": "DB",
+        "target_schema": "AGENT_SCHEMA",
         "target_warehouse": "WH",
-        "result_database": result_database, "result_schema": "EVAL_RESULTS",
+        "result_database": result_database,
+        "result_schema": "EVAL_RESULTS",
     }
     native = {
-        "dataset": {"dataset_type": "CORTEX AGENT", "table_name": identity["dataset_fqn"], "dataset_name": token,
-                    "column_mapping": {"query_text": "INPUT_QUERY", "ground_truth": "OUTPUT"}},
-        "evaluation": {"agent_params": {"agent_name": identity["agent_fqn"], "agent_type": "CORTEX AGENT"},
-                       "run_params": {"label": "orders_assistant/core", "description": "Core suite"},
-                       "source_metadata": {"type": "dataset", "dataset_name": token}},
+        "dataset": {
+            "dataset_type": "CORTEX AGENT",
+            "table_name": identity["dataset_fqn"],
+            "dataset_name": token,
+            "column_mapping": {"query_text": "INPUT_QUERY", "ground_truth": "OUTPUT"},
+        },
+        "evaluation": {
+            "agent_params": {"agent_name": identity["agent_fqn"], "agent_type": "CORTEX AGENT"},
+            "run_params": {"label": "orders_assistant/core", "description": "Core suite"},
+            "source_metadata": {"type": "dataset", "dataset_name": token},
+        },
         "metrics": ["answer_correctness", "tool_selection_accuracy"],
     }
     payload = {
-        "schema_version": 2, "identity": identity, "native_eval_config": native,
-        "dataset_name_token": token, "config_filename_template": "eval_orders__RUN_NAME__.json",
+        "schema_version": 2,
+        "identity": identity,
+        "native_eval_config": native,
+        "dataset_name_token": token,
+        "config_filename_template": "eval_orders__RUN_NAME__.json",
         "metric_names": ["answer_correctness", "tool_selection_accuracy"],
         "thresholds": {"answer_correctness": 0.6, "tool_selection_accuracy": 0.8},
         "regression_tolerances": tolerances or {"tool_selection_accuracy": 0.05},
         "ordered_ground_truth_refs": refs or ["q1", "q2"],
     }
     signed = {
-        "plan_schema_version": payload["schema_version"], "identity": identity,
-        "native_eval_config": native, "metric_names": payload["metric_names"],
-        "thresholds": payload["thresholds"], "regression_tolerances": payload["regression_tolerances"],
+        "plan_schema_version": payload["schema_version"],
+        "identity": identity,
+        "native_eval_config": native,
+        "metric_names": payload["metric_names"],
+        "thresholds": payload["thresholds"],
+        "regression_tolerances": payload["regression_tolerances"],
         "ordered_ground_truth_refs": payload["ordered_ground_truth_refs"],
     }
     payload["signature_material"] = json.dumps(signed, separators=(",", ":"))
@@ -155,7 +190,9 @@ def _plan_payload(*, refs=None, tolerances=None, result_database="DB"):
 
 def test_build_plan_consumes_dbt_payload_without_reconstructing_identity(tmp_path):
     plan = build_plan(
-        _config(tmp_path, _manifest()), agent_name="orders_assistant", suite_name="core",
+        _config(tmp_path, _manifest()),
+        agent_name="orders_assistant",
+        suite_name="core",
         plan_payload=_plan_payload(),
     )
     assert plan.agent_fqn == "DB.AGENT_SCHEMA.ORDERS_ASSISTANT"
@@ -177,13 +214,16 @@ def test_build_plan_runs_fresh_parse_then_package_qualified_plan_macro(tmp_path)
             self.calls.append(list(command))
             stdout = (
                 f"CORTEX_EVAL_PLAN_JSON={json.dumps(payload, separators=(',', ':'))}\n"
-                if "run-operation" in command else ""
+                if "run-operation" in command
+                else ""
             )
             return subprocess.CompletedProcess(command, 0, stdout, "")
 
     fake = FakeRunner()
     build_plan(
-        _config(tmp_path, _manifest()), agent_name="orders_assistant", suite_name="core",
+        _config(tmp_path, _manifest()),
+        agent_name="orders_assistant",
+        suite_name="core",
         runner=fake,
     )
     assert fake.calls[0][1] == "parse"
@@ -204,7 +244,8 @@ def test_build_plan_passes_resolved_environment_to_parse_and_macro(tmp_path):
             self.envs.append(env)
             stdout = (
                 f"CORTEX_EVAL_PLAN_JSON={json.dumps(payload, separators=(',', ':'))}\n"
-                if "run-operation" in command else ""
+                if "run-operation" in command
+                else ""
             )
             return subprocess.CompletedProcess(command, 0, stdout, "")
 
@@ -213,9 +254,7 @@ def test_build_plan_passes_resolved_environment_to_parse_and_macro(tmp_path):
     config = __import__("dataclasses").replace(config, execution_context=context)
     fake = FakeRunner()
 
-    build_plan(
-        config, agent_name="orders_assistant", suite_name="core", runner=fake
-    )
+    build_plan(config, agent_name="orders_assistant", suite_name="core", runner=fake)
 
     assert fake.envs == [
         {"SNOWFLAKE_ACCOUNT": "acct"},
@@ -228,13 +267,17 @@ def test_build_plan_fails_closed_for_tampered_or_duplicate_refs(tmp_path):
     payload["identity"]["agent_fqn"] = "DB.AGENT_SCHEMA.WRONG"
     with pytest.raises(ValueError, match="signed fields"):
         build_plan(
-            _config(tmp_path, _manifest()), agent_name="orders_assistant", suite_name="core",
+            _config(tmp_path, _manifest()),
+            agent_name="orders_assistant",
+            suite_name="core",
             plan_payload=payload,
         )
     with pytest.raises(ValueError, match="non-empty and unique"):
         build_plan(
-            _config(tmp_path / "duplicate", _manifest()), agent_name="orders_assistant",
-            suite_name="core", plan_payload=_plan_payload(refs=["q1", "q1"]),
+            _config(tmp_path / "duplicate", _manifest()),
+            agent_name="orders_assistant",
+            suite_name="core",
+            plan_payload=_plan_payload(refs=["q1", "q1"]),
         )
 
 
@@ -261,11 +304,15 @@ def test_build_plan_rejects_projection_and_native_config_agent_mismatch(tmp_path
     signed = json.loads(projection["signature_material"])
     signed["identity"]["projection"] = "native_eval"
     projection["signature_material"] = json.dumps(signed, separators=(",", ":"))
-    projection["suite_signature"] = hashlib.md5(projection["signature_material"].encode()).hexdigest()
+    projection["suite_signature"] = hashlib.md5(
+        projection["signature_material"].encode()
+    ).hexdigest()
     with pytest.raises(ValueError, match="must not contain projection"):
         build_plan(
-            _config(tmp_path, _manifest()), agent_name="orders_assistant",
-            suite_name="core", plan_payload=projection,
+            _config(tmp_path, _manifest()),
+            agent_name="orders_assistant",
+            suite_name="core",
+            plan_payload=projection,
         )
 
     mismatch = _plan_payload()
@@ -276,8 +323,10 @@ def test_build_plan_rejects_projection_and_native_config_agent_mismatch(tmp_path
     mismatch["suite_signature"] = hashlib.md5(mismatch["signature_material"].encode()).hexdigest()
     with pytest.raises(ValueError, match="native config Agent must match"):
         build_plan(
-            _config(tmp_path / "mismatch", _manifest()), agent_name="orders_assistant",
-            suite_name="core", plan_payload=mismatch,
+            _config(tmp_path / "mismatch", _manifest()),
+            agent_name="orders_assistant",
+            suite_name="core",
+            plan_payload=mismatch,
         )
 
 
@@ -287,7 +336,13 @@ def test_metric_validation_fails_before_execution():
     with pytest.raises(ValueError, match="requires a prompt"):
         validate_eval_meta({"metrics": [{"name": "quality"}]})
     with pytest.raises(ValueError, match="must define all three"):
-        validate_eval_meta({"metrics": [{"name": "quality", "prompt": "score", "score_ranges": {"min_score": [1, 3]}}]})
+        validate_eval_meta(
+            {
+                "metrics": [
+                    {"name": "quality", "prompt": "score", "score_ranges": {"min_score": [1, 3]}}
+                ]
+            }
+        )
 
 
 class PollCursor:
@@ -307,9 +362,9 @@ class PollCursor:
 
 
 def test_poll_uses_exact_terminal_states_and_bounded_attempts():
-    cursor = PollCursor([
-        ("INVOCATION_COMPLETED", ""), ("COMPUTATION_IN_PROGRESS", ""), ("COMPLETED", "")
-    ])
+    cursor = PollCursor(
+        [("INVOCATION_COMPLETED", ""), ("COMPUTATION_IN_PROGRESS", ""), ("COMPLETED", "")]
+    )
     sleeps = []
     result = poll(cursor, "run", "@stage/config", attempts=5, interval=2, sleep=sleeps.append)
     assert result.status in TERMINAL_SUCCESS
@@ -318,7 +373,11 @@ def test_poll_uses_exact_terminal_states_and_bounded_attempts():
 
     timeout = poll(
         PollCursor([("CREATED", ""), ("INVOCATION_IN_PROGRESS", "")]),
-        "run", "@stage/config", attempts=2, interval=0, sleep=lambda _: None,
+        "run",
+        "@stage/config",
+        attempts=2,
+        interval=0,
+        sleep=lambda _: None,
     )
     assert timeout.status == "TIMEOUT"
     assert timeout.observed_status == "INVOCATION_IN_PROGRESS"
@@ -326,11 +385,17 @@ def test_poll_uses_exact_terminal_states_and_bounded_attempts():
 
 def test_poll_preserves_partial_status_when_attempts_exhausted():
     timeout = poll(
-        PollCursor([
-            ("INVOCATION_IN_PROGRESS", ""),
-            ("INVOCATION_PARTIALLY_COMPLETED", ""),
-        ]),
-        "run", "@stage/config", attempts=2, interval=0, sleep=lambda _: None,
+        PollCursor(
+            [
+                ("INVOCATION_IN_PROGRESS", ""),
+                ("INVOCATION_PARTIALLY_COMPLETED", ""),
+            ]
+        ),
+        "run",
+        "@stage/config",
+        attempts=2,
+        interval=0,
+        sleep=lambda _: None,
     )
 
     assert timeout.status == "TIMEOUT"
@@ -339,7 +404,10 @@ def test_poll_preserves_partial_status_when_attempts_exhausted():
 
 
 def test_status_detail_classification_handles_json_and_is_bounded():
-    assert flatten_status_details('["Invocation failed", "rate limit"]') == "Invocation failed; rate limit"
+    assert (
+        flatten_status_details('["Invocation failed", "rate limit"]')
+        == "Invocation failed; rate limit"
+    )
     assert is_retryable('["Invocation failed"]') is True
     assert is_retryable("Metric logical_consistency failed") is False
 
@@ -359,7 +427,9 @@ def test_poll_whitelists_native_diagnostic_identifiers():
             return None
 
         def fetchall(self):
-            return [("FAILED", "private failure text", "request-1", "inference-1", 399502, "secret")]
+            return [
+                ("FAILED", "private failure text", "request-1", "inference-1", 399502, "secret")
+            ]
 
     result = poll(
         DiagnosticCursor(), "run", "@stage/config", attempts=1, interval=0, sleep=lambda _: None
@@ -381,13 +451,23 @@ def test_result_fetch_retries_empty_and_unscored_rows_to_bound():
             self.calls += 1
 
         def fetchall(self):
-            return [] if self.calls == 1 else [(None,)] if self.calls == 2 else [("answer_correctness",)]
+            return (
+                []
+                if self.calls == 1
+                else [(None,)]
+                if self.calls == 2
+                else [("answer_correctness",)]
+            )
 
-    plan = type("Plan", (), {
-        "agent_fqn": "DB.S.AGENT",
-        "ordered_ground_truth_refs": ["q1"],
-        "metric_names": ["answer_correctness"],
-    })()
+    plan = type(
+        "Plan",
+        (),
+        {
+            "agent_fqn": "DB.S.AGENT",
+            "ordered_ground_truth_refs": ["q1"],
+            "metric_names": ["answer_correctness"],
+        },
+    )()
     cursor = Cursor()
     sleeps = []
 
@@ -417,11 +497,15 @@ def test_result_fetch_retries_partial_scored_rows_until_complete():
                 rows.append(("Orders?", "answer_correctness"))
             return rows
 
-    plan = type("Plan", (), {
-        "agent_fqn": "DB.S.AGENT",
-        "ordered_ground_truth_refs": ["q1", "q2"],
-        "metric_names": ["answer_correctness"],
-    })()
+    plan = type(
+        "Plan",
+        (),
+        {
+            "agent_fqn": "DB.S.AGENT",
+            "ordered_ground_truth_refs": ["q1", "q2"],
+            "metric_names": ["answer_correctness"],
+        },
+    )()
     cursor = Cursor()
     sleeps = []
 
@@ -434,16 +518,46 @@ def test_result_fetch_retries_partial_scored_rows_until_complete():
 
 def _rows():
     return [
-        {"record_id": "r1", "input_id": "i1", "ground_truth_ref": "q1", "metric_name": "answer_correctness", "eval_agg_score": 0.8, "test_type": "in_scope"},
-        {"record_id": "r2", "input_id": "i2", "ground_truth_ref": "q2", "metric_name": "answer_correctness", "eval_agg_score": 0.4, "test_type": "out_of_scope"},
-        {"record_id": "r1", "input_id": "i1", "ground_truth_ref": "q1", "metric_name": "tool_selection_accuracy", "eval_agg_score": 1.0, "test_type": "in_scope"},
-        {"record_id": "r2", "input_id": "i2", "ground_truth_ref": "q2", "metric_name": "tool_selection_accuracy", "eval_agg_score": 0.0, "test_type": "out_of_scope"},
+        {
+            "record_id": "r1",
+            "input_id": "i1",
+            "ground_truth_ref": "q1",
+            "metric_name": "answer_correctness",
+            "eval_agg_score": 0.8,
+            "test_type": "in_scope",
+        },
+        {
+            "record_id": "r2",
+            "input_id": "i2",
+            "ground_truth_ref": "q2",
+            "metric_name": "answer_correctness",
+            "eval_agg_score": 0.4,
+            "test_type": "out_of_scope",
+        },
+        {
+            "record_id": "r1",
+            "input_id": "i1",
+            "ground_truth_ref": "q1",
+            "metric_name": "tool_selection_accuracy",
+            "eval_agg_score": 1.0,
+            "test_type": "in_scope",
+        },
+        {
+            "record_id": "r2",
+            "input_id": "i2",
+            "ground_truth_ref": "q2",
+            "metric_name": "tool_selection_accuracy",
+            "eval_agg_score": 0.0,
+            "test_type": "out_of_scope",
+        },
     ]
 
 
 def test_candidate_is_boundary_aware_and_provenance_rich(tmp_path):
     plan = build_plan(
-        _config(tmp_path, _manifest()), agent_name="orders_assistant", suite_name="core",
+        _config(tmp_path, _manifest()),
+        agent_name="orders_assistant",
+        suite_name="core",
         plan_payload=_plan_payload(),
     )
     candidate = build_candidate(
@@ -467,32 +581,81 @@ def test_candidate_is_boundary_aware_and_provenance_rich(tmp_path):
     assert candidate["regression_tolerances"] == {"tool_selection_accuracy": 0.05}
 
 
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), "-Infinity"])
+def test_candidate_summary_rejects_non_finite_scores(score):
+    rows = _rows()
+    rows[0]["eval_agg_score"] = score
+
+    with pytest.raises(ValueError, match="finite number"):
+        compute_summary(rows)
+
+
+def test_candidate_write_refuses_collision(tmp_path):
+    plan = build_plan(
+        _config(tmp_path, _manifest()),
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(),
+    )
+    candidate = build_candidate(
+        plan=plan,
+        run_name="same_run",
+        rows=_rows(),
+        provenance={
+            "agent_fqn": plan.agent_fqn,
+            "plan_identity": plan.plan_identity,
+            "evaluated_version": "VERSION$7",
+            "pre_start": {"default_version": "VERSION$7", "aliases": {}},
+            "post_completion": {"default_version": "VERSION$7", "aliases": {}},
+            "default_version_changed": False,
+        },
+    )
+
+    write_candidate(candidate, tmp_path / "artifacts")
+    with pytest.raises(FileExistsError, match="already exists"):
+        write_candidate(candidate, tmp_path / "artifacts")
+
+
 def _result(*, score=0.8, passed=True, ids=None):
     plan_identity = {
-        "agent_name": "orders_assistant", "suite_name": "core",
-        "eval_model": "eval_orders", "agent_fqn": "DB.S.AGENT",
-        "dataset_fqn": "DB.EVAL.TABLE", "stage_fqn": "DB.S.STAGE",
+        "agent_name": "orders_assistant",
+        "suite_name": "core",
+        "eval_model": "eval_orders",
+        "agent_fqn": "DB.S.AGENT",
+        "dataset_fqn": "DB.EVAL.TABLE",
+        "stage_fqn": "DB.S.STAGE",
     }
     return {
-        "schema_version": ARTIFACT_SCHEMA_VERSION, "artifact_type": "candidate",
-        "agent": "orders_assistant", "suite": "core", "eval_model": "eval_orders",
-        "run_name": "run", "timestamp": "20260804_000000",
+        "schema_version": ARTIFACT_SCHEMA_VERSION,
+        "artifact_type": "candidate",
+        "agent": "orders_assistant",
+        "suite": "core",
+        "eval_model": "eval_orders",
+        "run_name": "run",
+        "timestamp": "20260804_000000",
         "run_metadata": {
             "agent_fqn": "DB.S.AGENT",
             "plan_identity": plan_identity,
-            "evaluated_version": "VERSION$1", "git_sha": "abc",
+            "evaluated_version": "VERSION$1",
+            "git_sha": "abc",
             "pre_start": {"default_version": "VERSION$1", "aliases": {}},
             "post_completion": {"default_version": "VERSION$1", "aliases": {}},
             "default_version_changed": False,
         },
-        "plan_schema_version": 2, "suite_signature": "abc123",
+        "plan_schema_version": 2,
+        "suite_signature": "abc123",
         "plan_identity": plan_identity,
-        "agent_fqn": "DB.S.AGENT", "dataset_fqn": "DB.EVAL.TABLE", "stage_fqn": "DB.S.STAGE",
-        "metric_names": ["answer_correctness"], "status": "completed",
+        "agent_fqn": "DB.S.AGENT",
+        "dataset_fqn": "DB.EVAL.TABLE",
+        "stage_fqn": "DB.S.STAGE",
+        "metric_names": ["answer_correctness"],
+        "status": "completed",
         "summary": {"answer_correctness": {"avg": score, "n": 2}},
         "thresholds": {"answer_correctness": 0.6},
         "regression_tolerances": {"answer_correctness": 0.05},
-        "passed": passed, "total_records": 2, "ordered_ground_truth_refs": ids or ["q1", "q2"],
+        "passed": passed,
+        "total_records": 2,
+        "ordered_ground_truth_refs": ids or ["q1", "q2"],
         "results": [{"secret": "detail"}],  # pragma: allowlist secret
     }
 
@@ -508,8 +671,16 @@ def test_compare_enforces_suite_thresholds_and_regression_tolerances():
     suite = compare_results(build_baseline(_result()), suite_candidate)
     assert suite["passed"] is False
     assert "ordered ground-truth refs changed" in suite["suite_change"]
-    threshold = compare_results(build_baseline(_result(score=0.8)), _result(score=0.5, passed=False))
+    threshold = compare_results(
+        build_baseline(_result(score=0.8)), _result(score=0.5, passed=False)
+    )
     assert threshold["threshold_failures"]
+
+
+@pytest.mark.parametrize("tolerance", [float("nan"), float("inf"), "-Infinity", -0.1])
+def test_compare_rejects_invalid_default_tolerance(tolerance):
+    with pytest.raises(ValueError, match="tolerance"):
+        compare_results(build_baseline(_result()), _result(), tolerance)
 
 
 def test_baseline_acceptance_never_accepts_failed_and_requires_force(tmp_path):
@@ -548,7 +719,10 @@ def test_preview_never_connects(tmp_path):
         config, agent_name="orders_assistant", suite_name="core", plan_payload=_plan_payload()
     )
 
-    assert run_evaluation(config, plan, apply=False, connect=lambda _: pytest.fail("connected")) is None
+    assert (
+        run_evaluation(config, plan, apply=False, connect=lambda _: pytest.fail("connected"))
+        is None
+    )
 
 
 class LifecycleCursor:
@@ -564,9 +738,15 @@ class LifecycleCursor:
         self.rows = []
         if normalized.startswith("DESCRIBE TABLE"):
             self.rows = [("INPUT_QUERY",), ("OUTPUT",)]
-        elif normalized.startswith("SELECT COUNT(*) FROM DB.EVAL.EVAL_ORDERS WHERE OUTPUT:GROUND_TRUTH_OUTPUT"):
-            self.rows = [(0,)]
-        elif "GROUND_TRUTH_INVOCATIONS" in normalized and normalized.startswith("SELECT COUNT(*)"):
+        elif normalized.startswith("DESCRIBE STAGE"):
+            self.rows = [("URL", "")]
+        elif (
+            normalized.startswith(
+                "SELECT COUNT(*) FROM DB.EVAL.EVAL_ORDERS WHERE OUTPUT:GROUND_TRUTH_OUTPUT"
+            )
+            or "GROUND_TRUTH_INVOCATIONS" in normalized
+            and normalized.startswith("SELECT COUNT(*)")
+        ):
             self.rows = [(0,)]
         elif normalized == "SELECT COUNT(*) FROM DB.EVAL.EVAL_ORDERS":
             self.rows = [(2,)]
@@ -575,7 +755,13 @@ class LifecycleCursor:
         elif "'START'" in normalized:
             self.starts += 1
         elif "'STATUS'" in normalized:
-            self.description = [("RUN_NAME",), ("AGENT",), ("OTHER",), ("STATUS",), ("STATUS_DETAILS",)]
+            self.description = [
+                ("RUN_NAME",),
+                ("AGENT",),
+                ("OTHER",),
+                ("STATUS",),
+                ("STATUS_DETAILS",),
+            ]
             self.rows = [
                 ("run", "agent", None, "FAILED", "Invocation failed")
                 if self.starts == 1
@@ -583,7 +769,11 @@ class LifecycleCursor:
             ]
         elif "GET_AI_EVALUATION_DATA" in normalized:
             self.description = [
-                ("RECORD_ID",), ("INPUT_ID",), ("INPUT",), ("METRIC_NAME",), ("EVAL_AGG_SCORE",)
+                ("RECORD_ID",),
+                ("INPUT_ID",),
+                ("INPUT",),
+                ("METRIC_NAME",),
+                ("EVAL_AGG_SCORE",),
             ]
             self.rows = [
                 ("r1", "i1", "Revenue?", "answer_correctness", 0.8),
@@ -689,10 +879,12 @@ class PartialLifecycleCursor(LifecycleCursor):
             ("r1", "i1", "Revenue?", "tool_selection_accuracy", 1.0),
         ]
         if self.starts > 1:
-            self.rows.extend([
-                ("r2", "i2", "Orders?", "answer_correctness", 0.9),
-                ("r2", "i2", "Orders?", "tool_selection_accuracy", 1.0),
-            ])
+            self.rows.extend(
+                [
+                    ("r2", "i2", "Orders?", "answer_correctness", 0.9),
+                    ("r2", "i2", "Orders?", "tool_selection_accuracy", 1.0),
+                ]
+            )
 
 
 class PartialLifecycleConnection(LifecycleConnection):
@@ -703,7 +895,9 @@ class PartialLifecycleConnection(LifecycleConnection):
 def test_apply_retries_once_and_persists_candidate(tmp_path):
     config = _config(tmp_path, _manifest())
     plan = build_plan(
-        config, agent_name="orders_assistant", suite_name="core",
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
         plan_payload=_plan_payload(refs=["total_revenue"]),
     )
     connection = LifecycleConnection()
@@ -903,13 +1097,18 @@ def test_compare_rejects_candidate_tolerance_widening():
 
 def test_candidate_is_indeterminate_when_default_changes(tmp_path):
     plan = build_plan(
-        _config(tmp_path, _manifest()), agent_name="orders_assistant", suite_name="core",
+        _config(tmp_path, _manifest()),
+        agent_name="orders_assistant",
+        suite_name="core",
         plan_payload=_plan_payload(),
     )
     candidate = build_candidate(
-        plan=plan, run_name="run", rows=_rows(),
+        plan=plan,
+        run_name="run",
+        rows=_rows(),
         provenance={
-            "agent_fqn": plan.agent_fqn, "evaluated_version": "VERSION$7",
+            "agent_fqn": plan.agent_fqn,
+            "evaluated_version": "VERSION$7",
             "plan_identity": plan.plan_identity,
             "pre_start": {"default_version": "VERSION$7", "aliases": {}},
             "post_completion": {"default_version": "VERSION$8", "aliases": {}},
@@ -924,7 +1123,9 @@ def test_candidate_is_indeterminate_when_default_changes(tmp_path):
 def test_apply_fails_before_upload_when_agent_missing_or_has_no_default(tmp_path):
     config = _config(tmp_path, _manifest())
     plan = build_plan(
-        config, agent_name="orders_assistant", suite_name="core",
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
         plan_payload=_plan_payload(refs=["total_revenue"]),
     )
 
@@ -938,16 +1139,25 @@ def test_apply_fails_before_upload_when_agent_missing_or_has_no_default(tmp_path
     connection.cursor_value = MissingAgentCursor()
     with pytest.raises(RuntimeError, match="requires existing Agent"):
         run_evaluation(
-            config, plan, apply=True, allowed_targets=["sandbox"], allowed_databases=["DB"],
-            connect=lambda _: connection, sleep=lambda _: None,
+            config,
+            plan,
+            apply=True,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: connection,
+            sleep=lambda _: None,
         )
-    assert not any("CREATE STAGE" in call or "'START'" in call for call in connection.cursor_value.calls)
+    assert not any(
+        "CREATE STAGE" in call or "'START'" in call for call in connection.cursor_value.calls
+    )
 
 
 def test_apply_treats_empty_describe_result_as_missing_agent(tmp_path):
     config = _config(tmp_path, _manifest())
     plan = build_plan(
-        config, agent_name="orders_assistant", suite_name="core",
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
         plan_payload=_plan_payload(refs=["total_revenue"]),
     )
 
@@ -961,16 +1171,25 @@ def test_apply_treats_empty_describe_result_as_missing_agent(tmp_path):
     connection.cursor_value = EmptyDescribeCursor()
     with pytest.raises(RuntimeError, match="requires existing Agent"):
         run_evaluation(
-            config, plan, apply=True, allowed_targets=["sandbox"], allowed_databases=["DB"],
-            connect=lambda _: connection, sleep=lambda _: None,
+            config,
+            plan,
+            apply=True,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: connection,
+            sleep=lambda _: None,
         )
-    assert not any("CREATE STAGE" in call or "'START'" in call for call in connection.cursor_value.calls)
+    assert not any(
+        "CREATE STAGE" in call or "'START'" in call for call in connection.cursor_value.calls
+    )
 
 
 def test_apply_fails_when_default_changes_before_start(tmp_path):
     config = _config(tmp_path, _manifest())
     plan = build_plan(
-        config, agent_name="orders_assistant", suite_name="core",
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
         plan_payload=_plan_payload(refs=["total_revenue"]),
     )
 
@@ -990,9 +1209,15 @@ def test_apply_fails_when_default_changes_before_start(tmp_path):
     connection.cursor_value = VersionChangeCursor()
     with pytest.raises(RuntimeError, match="changed before evaluation START"):
         run_evaluation(
-            config, plan, apply=True, run_name="drift", poll_attempts=1,
-            allowed_targets=["sandbox"], allowed_databases=["DB"],
-            connect=lambda _: connection, sleep=lambda _: None,
+            config,
+            plan,
+            apply=True,
+            run_name="drift",
+            poll_attempts=1,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: connection,
+            sleep=lambda _: None,
         )
     assert not any("'START'" in call for call in connection.cursor_value.calls)
 
@@ -1009,19 +1234,28 @@ def test_table_validation_rejects_duplicate_refs_and_inputs():
                 self.rows = [("INPUT_QUERY",), ("OUTPUT",)]
             elif normalized.startswith("SELECT COUNT(*)"):
                 self.rows = [(2,)]
-            elif normalized.startswith("SELECT INPUT_QUERY, OUTPUT:CUSTOM_CRITERIA:GROUND_TRUTH_REF"):
+            elif normalized.startswith(
+                "SELECT INPUT_QUERY, OUTPUT:CUSTOM_CRITERIA:GROUND_TRUTH_REF"
+            ):
                 self.rows = self.identity_rows
 
-        def fetchall(self): return self.rows
-        def fetchone(self): return self.rows[0]
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.rows[0]
 
     with pytest.raises(ValueError, match="duplicate ground_truth_ref"):
         validate_table(
-            Cursor([("one", "q1"), ("two", "q1")]), "DB.S.T",
-            ["logical_consistency"], ["q1", "q2"],
+            Cursor([("one", "q1"), ("two", "q1")]),
+            "DB.S.T",
+            ["logical_consistency"],
+            ["q1", "q2"],
         )
     with pytest.raises(ValueError, match="duplicate INPUT_QUERY"):
         validate_table(
-            Cursor([("same", "q1"), ("same", "q2")]), "DB.S.T",
-            ["logical_consistency"], ["q1", "q2"],
+            Cursor([("same", "q1"), ("same", "q2")]),
+            "DB.S.T",
+            ["logical_consistency"],
+            ["q1", "q2"],
         )

@@ -3,7 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import PurePosixPath
 
-
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 _VERSION = re.compile(r"^VERSION\$[1-9][0-9]*$", re.IGNORECASE)
 _PATH_PART = re.compile(r"^[A-Za-z0-9_$.-]+$")

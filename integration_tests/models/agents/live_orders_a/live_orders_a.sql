@@ -14,7 +14,7 @@ models:
 
 instructions:
   orchestration: Use OrdersAnalytics for governed order questions.
-  response: Answer concisely and state units.
+  response: Answer concisely and state units. Proof revision {{ env_var('CORTEX_AGENT_LIVE_SPEC_REVISION', 'v1') }}.
 
 tools:
   - tool_spec:

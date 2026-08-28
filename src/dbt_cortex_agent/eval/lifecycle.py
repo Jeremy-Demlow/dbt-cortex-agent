@@ -1,22 +1,23 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from ..config import Config
 from ..dbt_runner import CommandRunner, run_dbt_operation, run_dbt_parse
+from ..domain import finite_number
 from ..identifiers import fqn, identifier
 from ..manifest import assert_resource_databases_allowed
 from ..skills import assert_apply_safety
 from .dataset import annotate_rows, validate_table
 from .results import build_candidate, write_candidate, write_diagnostic
-
 
 TERMINAL_SUCCESS = {"COMPLETED", "SUCCEEDED", "DONE"}
 TERMINAL_FAILURE = {"FAILED", "ERROR", "CANCELLED", "INVOCATION_FAILED", "INVOCATION_ERROR"}
@@ -81,7 +82,7 @@ def _numeric_policy(raw: Any, label: str) -> dict[str, float]:
     if not isinstance(raw, dict):
         raise ValueError(f"Evaluation plan {label} must be an object")
     try:
-        values = {str(name): float(value) for name, value in raw.items()}
+        values = {str(name): finite_number(value, f"{label}.{name}") for name, value in raw.items()}
     except (TypeError, ValueError) as exc:
         raise ValueError(f"Evaluation plan {label} values must be numeric") from exc
     if any(value < 0 for value in values.values()):
@@ -89,16 +90,27 @@ def _numeric_policy(raw: Any, label: str) -> dict[str, float]:
     return values
 
 
-def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str) -> EvalPlan:
+def _plan_from_payload(  # noqa: C901
+    payload: dict[str, Any], agent_name: str, suite_name: str
+) -> EvalPlan:
     if payload.get("schema_version") != PLAN_SCHEMA_VERSION:
         raise ValueError(f"Evaluation plan schema_version must be {PLAN_SCHEMA_VERSION}")
     identity = payload.get("identity")
     if not isinstance(identity, dict):
         raise ValueError("Evaluation plan identity must be an object")
     required_identity = {
-        "agent_name", "suite_name", "eval_model", "agent_fqn",
-        "dataset_fqn", "stage_fqn", "target_name", "target_role", "target_database",
-        "target_schema", "result_database", "result_schema",
+        "agent_name",
+        "suite_name",
+        "eval_model",
+        "agent_fqn",
+        "dataset_fqn",
+        "stage_fqn",
+        "target_name",
+        "target_role",
+        "target_database",
+        "target_schema",
+        "result_database",
+        "result_schema",
     }
     missing_identity = sorted(required_identity - identity.keys())
     if missing_identity:
@@ -133,11 +145,15 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
     config_template = payload.get("native_eval_config")
     refs = payload.get("ordered_ground_truth_refs")
     metric_names = payload.get("metric_names")
-    if not isinstance(config_template, dict) or not isinstance(refs, list) or not isinstance(metric_names, list):
-        raise ValueError("Evaluation plan config, metric_names, and ordered refs have invalid types")
-    config_agent = (
-        config_template.get("evaluation", {}).get("agent_params", {}).get("agent_name")
-    )
+    if (
+        not isinstance(config_template, dict)
+        or not isinstance(refs, list)
+        or not isinstance(metric_names, list)
+    ):
+        raise ValueError(
+            "Evaluation plan config, metric_names, and ordered refs have invalid types"
+        )
+    config_agent = config_template.get("evaluation", {}).get("agent_params", {}).get("agent_name")
     if config_agent != identity.get("agent_fqn"):
         raise ValueError("Evaluation plan native config Agent must match signed agent_fqn")
     refs = [str(value) for value in refs]
@@ -166,13 +182,17 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
         target_role=identifier(str(identity["target_role"]), "target role"),
         target_database=identifier(str(identity["target_database"]), "target database"),
         target_schema=identifier(str(identity["target_schema"]), "target schema"),
-        target_warehouse=(str(identity["target_warehouse"]) if identity.get("target_warehouse") else None),
+        target_warehouse=(
+            str(identity["target_warehouse"]) if identity.get("target_warehouse") else None
+        ),
         native_eval_config=config_template,
         dataset_name_token=token,
         config_filename_template=filename_template,
         metric_names=metric_names,
         thresholds=_numeric_policy(payload.get("thresholds"), "thresholds"),
-        regression_tolerances=_numeric_policy(payload.get("regression_tolerances"), "regression_tolerances"),
+        regression_tolerances=_numeric_policy(
+            payload.get("regression_tolerances"), "regression_tolerances"
+        ),
         ordered_ground_truth_refs=refs,
         suite_signature=expected_signature,
         plan_identity=dict(identity),
@@ -180,7 +200,11 @@ def _plan_from_payload(payload: dict[str, Any], agent_name: str, suite_name: str
 
 
 def _extract_plan(stdout: str, agent_name: str, suite_name: str) -> EvalPlan:
-    payloads = [line.split(_PLAN_PREFIX, 1)[1].strip() for line in stdout.splitlines() if _PLAN_PREFIX in line]
+    payloads = [
+        line.split(_PLAN_PREFIX, 1)[1].strip()
+        for line in stdout.splitlines()
+        if _PLAN_PREFIX in line
+    ]
     if len(payloads) != 1:
         raise ValueError(f"Expected exactly one dbt evaluation plan payload, found {len(payloads)}")
     try:
@@ -224,7 +248,11 @@ def build_plan(
         config.dbt_env,
     )
     if rendered.returncode != 0:
-        raise RuntimeError(rendered.stderr.strip() or rendered.stdout.strip() or "dbt evaluation plan render failed")
+        raise RuntimeError(
+            rendered.stderr.strip()
+            or rendered.stdout.strip()
+            or "dbt evaluation plan render failed"
+        )
     return _extract_plan(rendered.stdout, agent_name, suite_name)
 
 
@@ -288,7 +316,11 @@ def poll(
             row = rows[0]
             status = str(row[columns.index("STATUS")] if "STATUS" in columns else row[3]).upper()
             details = flatten_status_details(
-                row[columns.index("STATUS_DETAILS")] if "STATUS_DETAILS" in columns else row[4] if len(row) > 4 else ""
+                row[columns.index("STATUS_DETAILS")]
+                if "STATUS_DETAILS" in columns
+                else row[4]
+                if len(row) > 4
+                else ""
             )
             request_ids = _status_identifiers(row, columns, "REQUEST_ID")
             inference_ids = _status_identifiers(row, columns, "INFERENCE_ID")
@@ -323,9 +355,7 @@ def _status_value(row: tuple[Any, ...], columns: list[str], name: str) -> str | 
     return str(value)
 
 
-def _status_identifiers(
-    row: tuple[Any, ...], columns: list[str], name: str
-) -> tuple[str, ...]:
+def _status_identifiers(row: tuple[Any, ...], columns: list[str], name: str) -> tuple[str, ...]:
     value = _status_value(row, columns, name)
     return (value,) if value else ()
 
@@ -369,7 +399,12 @@ def _failure_diagnostic(plan: EvalPlan, run_name: str, status: PollResult) -> di
 def _upload_config(cursor, plan: EvalPlan, filename: str, content: str) -> str:
     if not _PATH_COMPONENT.fullmatch(filename):
         raise ValueError(f"Invalid evaluation config filename: {filename!r}")
-    cursor.execute(f"CREATE STAGE IF NOT EXISTS {plan.stage_fqn}")
+    try:
+        cursor.execute(f"DESCRIBE STAGE {plan.stage_fqn}")
+    except Exception as exc:
+        raise RuntimeError(
+            f"Evaluation stage must be provisioned before apply: {plan.stage_fqn}"
+        ) from exc
     cursor.execute(
         f"COPY INTO @{plan.stage_fqn}/{filename} FROM (SELECT %s) "
         "FILE_FORMAT=(TYPE=CSV FIELD_DELIMITER=NONE RECORD_DELIMITER=NONE COMPRESSION=NONE) "
@@ -389,22 +424,24 @@ def _results_complete(rows: list[dict[str, Any]], plan: EvalPlan) -> bool:
         if not input_query or not metric_name:
             continue
         metrics_by_input.setdefault(str(input_query), set()).add(str(metric_name).lower())
-    return (
-        len(metrics_by_input) == expected_inputs
-        and all(metrics == expected_metrics for metrics in metrics_by_input.values())
+    return len(metrics_by_input) == expected_inputs and all(
+        metrics == expected_metrics for metrics in metrics_by_input.values()
     )
 
 
-def _fetch_rows(cursor, plan: EvalPlan, run_name: str, retries: int, sleep: Callable[[float], None]) -> list[dict[str, Any]]:
+def _fetch_rows(
+    cursor, plan: EvalPlan, run_name: str, retries: int, sleep: Callable[[float], None]
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     database, schema, agent = plan.agent_fqn.split(".")
     for attempt in range(retries + 1):
         cursor.execute(
-            "SELECT * FROM TABLE(SNOWFLAKE.LOCAL.GET_AI_EVALUATION_DATA(%s,%s,%s,'CORTEX AGENT',%s))",
+            "SELECT * FROM TABLE("
+            "SNOWFLAKE.LOCAL.GET_AI_EVALUATION_DATA(%s,%s,%s,'CORTEX AGENT',%s))",
             (database, schema, agent, run_name),
         )
         columns = [str(item[0]).lower() for item in cursor.description]
-        rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        rows = [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
         if _results_complete(rows, plan):
             return rows
         if attempt < retries:
@@ -447,9 +484,46 @@ def _default_connect(connection: str):
         import snowflake.connector
     except ImportError as exc:
         raise RuntimeError(
-            "Evaluation execution requires the 'runtime' extra: pip install 'dbt-cortex-agent[runtime]'"
+            "Evaluation execution requires the 'runtime' extra: "
+            "pip install 'dbt-cortex-agent[runtime]'"
         ) from exc
     return snowflake.connector.connect(connection_name=connection)
+
+
+def validate_evaluation_apply(
+    config: Config,
+    plans: list[EvalPlan] | tuple[EvalPlan, ...],
+    *,
+    allowed_targets: list[str],
+    allowed_databases: list[str],
+    poll_attempts: int,
+    poll_interval: float,
+    transient_retries: int,
+) -> None:
+    if not config.connection_explicit or not config.connection or not config.warehouse:
+        raise ValueError("Evaluation apply requires explicit --connection and --warehouse")
+    assert_apply_safety(config, allowed_targets, allowed_databases)
+    if poll_attempts < 1:
+        raise ValueError("Poll attempts must be positive")
+    finite_interval = finite_number(poll_interval, "poll interval")
+    if finite_interval < 0:
+        raise ValueError("Poll interval must be non-negative")
+    if transient_retries < 0:
+        raise ValueError("Transient retries must be non-negative")
+    for plan in plans:
+        resource_databases = {
+            plan.agent_fqn.split(".", 1)[0],
+            plan.table_fqn.split(".", 1)[0],
+            plan.stage_fqn.split(".", 1)[0],
+            plan.result_database,
+            plan.target_database,
+        }
+        assert_resource_databases_allowed(resource_databases, allowed_databases)
+        if config.target and config.target != plan.target_name:
+            raise ValueError(
+                f"Configured target {config.target!r} does not match dbt plan target "
+                f"{plan.target_name!r}"
+            )
 
 
 def run_evaluation(
@@ -468,32 +542,29 @@ def run_evaluation(
 ) -> Path | None:
     if not apply:
         return None
-    if not config.connection_explicit or not config.connection or not config.warehouse:
-        raise ValueError("Evaluation apply requires explicit --connection and --warehouse")
-    assert_apply_safety(config, allowed_targets or [], allowed_databases or [])
-    resource_databases = {
-        plan.agent_fqn.split(".", 1)[0],
-        plan.table_fqn.split(".", 1)[0],
-        plan.stage_fqn.split(".", 1)[0],
-        plan.result_database,
-        plan.target_database,
-    }
-    assert_resource_databases_allowed(resource_databases, allowed_databases or [])
-    if transient_retries < 0:
-        raise ValueError("Transient retries must be non-negative")
-    if config.target and config.target != plan.target_name:
-        raise ValueError(
-            f"Configured target {config.target!r} does not match dbt plan target {plan.target_name!r}"
-        )
+    validate_evaluation_apply(
+        config,
+        [plan],
+        allowed_targets=allowed_targets or [],
+        allowed_databases=allowed_databases or [],
+        poll_attempts=poll_attempts,
+        poll_interval=poll_interval,
+        transient_retries=transient_retries,
+    )
     base_run = run_name or (
         f"{plan.agent_name}_{plan.suite_name}_"
         f"{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
     )
+    if not config.connection:
+        raise ValueError("Applied evaluation requires an explicit --connection")
+    warehouse = plan.target_warehouse or config.warehouse
+    if not warehouse:
+        raise ValueError("Applied evaluation requires a resolved warehouse")
     conn = connect(config.connection)
     cursor = conn.cursor()
     try:
         cursor.execute(f"USE ROLE {plan.target_role}")
-        cursor.execute(f"USE WAREHOUSE {identifier(plan.target_warehouse or config.warehouse, 'warehouse')}")
+        cursor.execute(f"USE WAREHOUSE {identifier(warehouse, 'warehouse')}")
         cursor.execute(f"USE DATABASE {plan.result_database}")
         cursor.execute(f"USE SCHEMA {plan.result_schema}")
         initial_provenance = _assert_agent_exists_with_default(cursor, plan)
@@ -506,7 +577,9 @@ def run_evaluation(
             final_run = base_run if retry == 0 else f"{base_run}_r{retry}"
             dataset_name = f"{final_run}_dataset"
             filename = plan.config_filename_template.replace("__RUN_NAME__", final_run)
-            stage_path = _upload_config(cursor, plan, filename, render_eval_config(plan, dataset_name))
+            stage_path = _upload_config(
+                cursor, plan, filename, render_eval_config(plan, dataset_name)
+            )
             pre_start = _assert_agent_exists_with_default(cursor, plan)
             if pre_start["default_version"] != initial_provenance["default_version"]:
                 raise RuntimeError(
@@ -517,7 +590,12 @@ def run_evaluation(
                 (final_run, stage_path),
             )
             status = poll(
-                cursor, final_run, stage_path, attempts=poll_attempts, interval=poll_interval, sleep=sleep
+                cursor,
+                final_run,
+                stage_path,
+                attempts=poll_attempts,
+                interval=poll_interval,
+                sleep=sleep,
             )
             expected_records = len(plan.ordered_ground_truth_refs)
             if status.succeeded or status.observed_status in PARTIAL_COMPLETION:
@@ -558,9 +636,7 @@ def run_evaluation(
                 pre_start["default_version"] != post_completion["default_version"]
             ),
         }
-        candidate = build_candidate(
-            plan=plan, run_name=final_run, rows=rows, provenance=provenance
-        )
+        candidate = build_candidate(plan=plan, run_name=final_run, rows=rows, provenance=provenance)
         return write_candidate(candidate, config.artifact_dir)
     finally:
         cursor.close()

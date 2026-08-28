@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from importlib.resources import files
-import json
 from pathlib import Path
 from typing import Any
 
 from . import __version__
 from .config import Config, load_yaml_mapping
 from .dbt_runner import CommandRunner, run_dbt_deps
-
 
 DEFAULT_REVISION = f"v{__version__}"
 STARTER_ORDERS = "orders"
@@ -63,7 +62,7 @@ def _semantic_view_package_matches(item: object) -> bool:
     return isinstance(item, dict) and item.get("package") == SEMANTIC_VIEW_PACKAGE["package"]
 
 
-def build_preview(
+def build_preview(  # noqa: C901
     config: Config,
     package_source: str | None = None,
     revision: str = DEFAULT_REVISION,
@@ -144,9 +143,7 @@ def build_preview(
 
 def _insert_before_next_top_level(text: str, key: str, addition: str) -> str:
     lines = text.splitlines(keepends=True)
-    start = next(
-        (index for index, line in enumerate(lines) if line.startswith(f"{key}:")), None
-    )
+    start = next((index for index, line in enumerate(lines) if line.startswith(f"{key}:")), None)
     if start is None:
         separator = "" if not text or text.endswith("\n") else "\n"
         return f"{text}{separator}{key}:\n{addition}"
@@ -161,9 +158,7 @@ def _insert_before_next_top_level(text: str, key: str, addition: str) -> str:
 
 
 def _append_package_text(text: str, package_source: str, revision: str) -> str:
-    addition = (
-        f"  - git: {json.dumps(package_source)}\n    revision: {json.dumps(revision)}\n"
-    )
+    addition = f"  - git: {json.dumps(package_source)}\n    revision: {json.dumps(revision)}\n"
     return _insert_before_next_top_level(text, "packages", addition)
 
 
@@ -202,13 +197,11 @@ def _validate_parent_directories(project_dir: Path, destinations: list[Path]) ->
         parent = destination.parent
         while parent != project_dir:
             if parent.exists() and not parent.is_dir():
-                raise FileExistsError(
-                    f"Orders starter collision at {parent}; expected a directory"
-                )
+                raise FileExistsError(f"Orders starter collision at {parent}; expected a directory")
             parent = parent.parent
 
 
-def initialize(
+def initialize(  # noqa: C901
     config: Config,
     *,
     apply: bool = False,
@@ -261,7 +254,9 @@ def initialize(
         )
         writes[packages_path] = _append_semantic_view_package_text(current)
         if not any(action.path == packages_path for action in actions):
-            actions.append(InitAction(packages_path, "append" if packages_path.exists() else "create"))
+            actions.append(
+                InitAction(packages_path, "append" if packages_path.exists() else "create")
+            )
 
     existing_vars = original_project.get("vars", {}) or {}
     desired_vars = project.get("vars", {})
@@ -286,7 +281,9 @@ def initialize(
                 actions.append(InitAction(destination, "create"))
 
         dbtignore_path = config.project_dir / ".dbtignore"
-        current_ignore = dbtignore_path.read_text(encoding="utf-8") if dbtignore_path.exists() else ""
+        current_ignore = (
+            dbtignore_path.read_text(encoding="utf-8") if dbtignore_path.exists() else ""
+        )
         updated_ignore = _append_line(current_ignore, DBTIGNORE_STARTER_ENTRY)
         if updated_ignore == current_ignore:
             actions.append(InitAction(dbtignore_path, "unchanged"))

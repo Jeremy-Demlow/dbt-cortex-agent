@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import json
 import subprocess
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
-
 
 RunCallable = Callable[..., subprocess.CompletedProcess[str]]
 

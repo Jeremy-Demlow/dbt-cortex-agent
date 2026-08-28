@@ -31,15 +31,31 @@ def _manifest():
                 "alias": "ORDERS_ASSISTANT",
                 "database": "db",
                 "schema": "agents",
-                "config": {"materialized": "cortex_agent", "meta": {"cortex_agent": {
-                    "skills": [{"name": "triage", "source": {"type": "stage", "path": "@DB.AGENTS.SKILLS/agents/orders_assistant/triage"}}]
-                }}},
+                "config": {
+                    "materialized": "cortex_agent",
+                    "meta": {
+                        "cortex_agent": {
+                            "skills": [
+                                {
+                                    "name": "triage",
+                                    "source": {
+                                        "type": "stage",
+                                        "path": "@DB.AGENTS.SKILLS/agents/orders_assistant/triage",
+                                    },
+                                }
+                            ]
+                        }
+                    },
+                },
             },
             "model.consumer.eval_orders": {
-                "unique_id": "model.consumer.eval_orders", "name": "eval_orders",
-                "database": "db", "schema": "eval", "alias": "eval_orders_table",
+                "unique_id": "model.consumer.eval_orders",
+                "name": "eval_orders",
+                "database": "db",
+                "schema": "eval",
+                "alias": "eval_orders_table",
                 "config": {"meta": {"cortex_eval": {"enabled": True}}},
-            }
+            },
         },
     }
 
@@ -56,7 +72,9 @@ def test_load_manifest_v12_and_enumerate_metadata(tmp_path):
     assert skill.local_dir == tmp_path / "models/agents/orders_assistant/skills/triage"
 
 
-@pytest.mark.parametrize("manifest", [{}, {"metadata": {}}, {"metadata": {"dbt_schema_version": "v11.json"}}])
+@pytest.mark.parametrize(
+    "manifest", [{}, {"metadata": {}}, {"metadata": {"dbt_schema_version": "v11.json"}}]
+)
 def test_manifest_validation_fails_closed(manifest):
     with pytest.raises(ValueError):
         validate_manifest(manifest)
@@ -161,15 +179,21 @@ def test_eval_discovery_requires_nonempty_enabled_mapping():
         {
             "model.consumer.absent": {"name": "absent", "database": "DB", "schema": "EVAL"},
             "model.consumer.empty": {
-                "name": "empty", "database": "DB", "schema": "EVAL",
+                "name": "empty",
+                "database": "DB",
+                "schema": "EVAL",
                 "meta": {"cortex_eval": {}},
             },
             "model.consumer.disabled": {
-                "name": "disabled", "database": "DB", "schema": "EVAL",
+                "name": "disabled",
+                "database": "DB",
+                "schema": "EVAL",
                 "meta": {"cortex_eval": {"enabled": False}},
             },
             "model.consumer.invalid": {
-                "name": "invalid", "database": "DB", "schema": "EVAL",
+                "name": "invalid",
+                "database": "DB",
+                "schema": "EVAL",
                 "meta": {"cortex_eval": "yes"},
             },
         }
@@ -222,8 +246,9 @@ def test_multi_database_manifest_identity_is_selection_scoped():
     assert assert_config_database(manifest, "DB", ["orders_assistant"]) == "DB"
     with pytest.raises(ValueError, match="selected Agent databases"):
         assert_config_database(manifest, "DB")
-    assert assert_resource_databases_allowed(
-        {"DB", "FINANCE"}, ["finance", "db"]
-    ) == ("DB", "FINANCE")
+    assert assert_resource_databases_allowed({"DB", "FINANCE"}, ["finance", "db"]) == (
+        "DB",
+        "FINANCE",
+    )
     with pytest.raises(ValueError, match="MARKETING"):
         assert_resource_databases_allowed({"DB", "MARKETING"}, ["DB"])

@@ -24,11 +24,10 @@
       identifier=this.identifier
   ) %}
   {% set metadata = config.get('meta', {}) %}
-  {% set agent_role = metadata.get('agent_role') %}
   {% set agent_comment = metadata.get('agent_comment', 'Managed by dbt-cortex-agent') %}
   {% set agent_display_name = metadata.get('agent_display_name', this.identifier) %}
   {% set deploy_alias = metadata.get('deploy_alias', target.name) %}
-  {% set safe_alias = dbt_cortex_agent.cortex_agent__unquoted_identifier(deploy_alias, 'deploy alias') %}
+  {% set safe_alias = dbt_cortex_agent.cortex_agent__routing_alias(deploy_alias, 'deploy alias') %}
   {% set safe_agent_fqn = dbt_cortex_agent.cortex_agent__unquoted_fqn(
       target_relation.database ~ '.' ~ target_relation.schema ~ '.' ~ target_relation.identifier,
       'cortex_agent model relation'
@@ -46,19 +45,6 @@
 
   {{ run_hooks(pre_hooks, inside_transaction=False) }}
 
-  {% if agent_role %}
-    {% set safe_agent_role = dbt_cortex_agent.cortex_agent__unquoted_identifier(agent_role, 'agent role') %}
-    {% call statement('capture_cortex_agent_role', fetch_result=True) %}
-      SELECT CURRENT_ROLE()
-    {% endcall %}
-    {% set original_role = load_result('capture_cortex_agent_role')['data'][0][0] %}
-    {% call statement('set_cortex_agent_role') %}
-      USE ROLE {{ safe_agent_role }}
-    {% endcall %}
-  {% endif %}
-
-  {{ run_hooks(pre_hooks, inside_transaction=True) }}
-
   {% do dbt_cortex_agent.cortex_agent__assert_staged_skills_ready(spec) %}
   {% set skill_hash = dbt_cortex_agent.cortex_agent__skills_hash(spec) %}
   {% do dbt_cortex_agent.cortex_agent__apply_deploy(safe_agent_fqn, spec_json, safe_alias, [], skill_hash, true) %}
@@ -70,16 +56,7 @@
     ALTER AGENT {{ safe_agent_fqn }} SET PROFILE = $$ {{ profile_json }} $$
   {% endcall %}
 
-  {{ run_hooks(post_hooks, inside_transaction=True) }}
-  {% do adapter.commit() %}
   {{ run_hooks(post_hooks, inside_transaction=False) }}
-
-  {% if agent_role %}
-    {% set safe_original_role = dbt_cortex_agent.cortex_agent__unquoted_identifier(original_role, 'original role') %}
-    {% call statement('restore_cortex_agent_role') %}
-      USE ROLE {{ safe_original_role }}
-    {% endcall %}
-  {% endif %}
 
   {{ return({'relations': []}) }}
 {% endmaterialization %}

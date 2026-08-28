@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/release_preflight.py"
 SPEC = importlib.util.spec_from_file_location("release_preflight", SCRIPT)
@@ -20,7 +19,13 @@ def _git(root: Path, *args: str) -> None:
     subprocess.run(["git", "-C", str(root), *args], check=True, capture_output=True, text=True)
 
 
-def _release_repo(tmp_path: Path, *, python_version: str = "0.3.1", dbt_version: str = "0.3.1", marker: str = "2026-08-07") -> Path:
+def _release_repo(
+    tmp_path: Path,
+    *,
+    python_version: str = "0.3.1",
+    dbt_version: str = "0.3.1",
+    marker: str = "2026-08-07",
+) -> Path:
     (tmp_path / "pyproject.toml").write_text(
         f'[project]\nname = "dbt-cortex-agent"\nversion = "{python_version}"\n', encoding="utf-8"
     )

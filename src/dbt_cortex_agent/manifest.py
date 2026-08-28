@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .domain import SnowflakeObjectName
 from .identifiers import fqn, identifier, stage_path
-
 
 SUPPORTED_MANIFEST_SCHEMA_VERSIONS = {"v12"}
 
@@ -114,7 +114,9 @@ def _relation_fqn(node: dict[str, Any]) -> str:
     schema = str(node.get("schema") or "")
     relation = str(node.get("alias") or node.get("name") or "")
     if not all((database, schema, relation)):
-        raise ValueError(f"Eval model is missing database, schema, or name: {node.get('unique_id')}")
+        raise ValueError(
+            f"Eval model is missing database, schema, or name: {node.get('unique_id')}"
+        )
     return fqn(f"{database}.{schema}.{relation}", "eval model")
 
 
@@ -172,9 +174,7 @@ def cortex_agents(manifest: dict[str, Any]) -> list[dict[str, Any]]:
             raise ValueError("Enabled cortex_agent model is missing a name")
         database = identifier(str(node.get("database") or ""), "cortex_agent model database")
         schema = identifier(str(node.get("schema") or ""), "cortex_agent model schema")
-        physical_name = identifier(
-            str(node.get("alias") or name), f"physical Agent for {name}"
-        )
+        physical_name = identifier(str(node.get("alias") or name), f"physical Agent for {name}")
         normalized_meta = {
             **agent_meta,
             "compiled_spec": _model_agent_spec(node),
@@ -205,8 +205,7 @@ def select_agents(
     duplicates = sorted(name for name, values in by_name.items() if len(values) > 1)
     if duplicates:
         raise ValueError(
-            "Enabled cortex_agent model names must be unique: "
-            f"{', '.join(duplicates)}"
+            f"Enabled cortex_agent model names must be unique: {', '.join(duplicates)}"
         )
     physical: dict[str, list[str]] = {}
     for agent in agents:
@@ -247,7 +246,9 @@ def skill_declarations(
                 continue
             stage_path = source.get("path")
             if not stage_path or not skill.get("name"):
-                raise ValueError(f"Agent {agent['name']!r} has an incomplete stage skill declaration")
+                raise ValueError(
+                    f"Agent {agent['name']!r} has an incomplete stage skill declaration"
+                )
             declarations.append(
                 SkillDeclaration(
                     agent_name=agent["name"],
@@ -282,4 +283,9 @@ def physical_agent_name(agent: dict[str, Any], target: str | None) -> str:
 
 
 def physical_agent_fqn(agent: dict[str, Any]) -> str:
-    return fqn(str(agent.get("physical_fqn") or ""), f"physical Agent for {agent.get('name')}")
+    return str(
+        SnowflakeObjectName.parse(
+            str(agent.get("physical_fqn") or ""),
+            f"physical Agent for {agent.get('name')}",
+        )
+    )

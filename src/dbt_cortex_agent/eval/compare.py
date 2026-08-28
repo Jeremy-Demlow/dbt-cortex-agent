@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..domain import finite_number
 from .results import threshold_failures, validate_result
 
 
 def metric_averages(result: dict[str, Any]) -> dict[str, float]:
     return {
-        name: float(stats["avg"])
+        name: finite_number(stats["avg"], f"average for {name}")
         for name, stats in (result.get("summary") or {}).items()
         if isinstance(stats, dict) and stats.get("avg") is not None
     }
@@ -32,10 +33,13 @@ def compare_results(
 ) -> dict[str, Any]:
     validate_result(baseline, "baseline")
     validate_result(candidate, "candidate")
+    default_tolerance = finite_number(default_tolerance, "default tolerance")
+    if default_tolerance < 0:
+        raise ValueError("default tolerance must be non-negative")
     reason = suite_change(baseline, candidate)
     before, after = metric_averages(baseline), metric_averages(candidate)
     tolerances = {
-        name: float(value)
+        name: finite_number(value, f"regression tolerance for {name}")
         for name, value in (baseline.get("regression_tolerances") or {}).items()
     }
     gated = set(baseline.get("thresholds") or {}) | set(tolerances)
@@ -54,10 +58,16 @@ def compare_results(
             status = "improved"
         if status == "regressed":
             regressions.append(metric)
-        rows.append({
-            "metric": metric, "baseline": old, "candidate": new, "delta": delta,
-            "tolerance": tolerance, "status": status,
-        })
+        rows.append(
+            {
+                "metric": metric,
+                "baseline": old,
+                "candidate": new,
+                "delta": delta,
+                "tolerance": tolerance,
+                "status": status,
+            }
+        )
     failures = threshold_failures(candidate.get("summary") or {}, candidate.get("thresholds") or {})
     return {
         "passed": reason is None and not regressions and not failures,

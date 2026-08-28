@@ -84,7 +84,8 @@ def build_upload_plan(
         prior = stage_sources.get(collision_key)
         if prior is not None and prior[1] != local_dir:
             raise ValueError(
-                f"Skill stage path collision for {declaration.stage_path}: {prior[1]} and {local_dir}"
+                f"Skill stage path collision for {declaration.stage_path}: "
+                f"{prior[1]} and {local_dir}"
             )
         if prior is None:
             stage_sources[collision_key] = (declaration.stage_path, local_dir)

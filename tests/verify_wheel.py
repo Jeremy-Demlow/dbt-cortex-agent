@@ -1,7 +1,8 @@
-from pathlib import Path
 import sys
+from pathlib import Path
 from zipfile import ZipFile
 
+# Evidence: TC-021-06 TC-023-01 TC-024-09 TC-028-08
 
 EXPECTED_PACKAGE_FILES = {
     "dbt_cortex_agent/__init__.py",
@@ -17,6 +18,7 @@ EXPECTED_PACKAGE_FILES = {
     "dbt_cortex_agent/config.py",
     "dbt_cortex_agent/dbt_runner.py",
     "dbt_cortex_agent/deployment.py",
+    "dbt_cortex_agent/domain.py",
     "dbt_cortex_agent/doctor.py",
     "dbt_cortex_agent/execution_context.py",
     "dbt_cortex_agent/eval/__init__.py",
@@ -30,7 +32,9 @@ EXPECTED_PACKAGE_FILES = {
     "dbt_cortex_agent/identifiers.py",
     "dbt_cortex_agent/init.py",
     "dbt_cortex_agent/invoke.py",
+    "dbt_cortex_agent/lifecycle.py",
     "dbt_cortex_agent/manifest.py",
+    "dbt_cortex_agent/scaffold.py",
     "dbt_cortex_agent/skills.py",
     "dbt_cortex_agent/snow.py",
     "dbt_cortex_agent/starters/orders/models/agents/orders_assistant/agent.yml",

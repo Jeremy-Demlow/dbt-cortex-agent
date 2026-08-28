@@ -29,18 +29,34 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
     )
     commands = parser.add_subparsers(dest="skill_command", required=True)
     for name in ("plan", "upload"):
-        help_text = "build a non-mutating upload plan" if name == "plan" else "preview or apply skill upload [MUTATION with --apply]"
+        help_text = (
+            "build a non-mutating upload plan"
+            if name == "plan"
+            else "preview or apply skill upload [MUTATION with --apply]"
+        )
         command = commands.add_parser(name, parents=[shared], help=help_text)
-        command.add_argument("--agent", action="append", dest="agents", help="logical Agent name; repeatable")
+        command.add_argument(
+            "--agent", action="append", dest="agents", help="logical Agent name; repeatable"
+        )
         if name == "upload":
-            command.add_argument("--apply", action="store_true", help="[MUTATION] upload files; default is preview")
+            command.add_argument(
+                "--apply", action="store_true", help="[MUTATION] upload files; default is preview"
+            )
             add_allowlists(command)
         command.set_defaults(handler=handle)
-    smoke = commands.add_parser("smoke", parents=[shared], help="preview or run live skill smoke [RUNTIME with --apply]")
-    smoke.add_argument("--agent", action="append", dest="agents", help="logical Agent name; repeatable")
-    smoke.add_argument("--agent-object", help="physical Agent override for exactly one selected Agent")
+    smoke = commands.add_parser(
+        "smoke", parents=[shared], help="preview or run live skill smoke [RUNTIME with --apply]"
+    )
+    smoke.add_argument(
+        "--agent", action="append", dest="agents", help="logical Agent name; repeatable"
+    )
+    smoke.add_argument(
+        "--agent-object", help="physical Agent override for exactly one selected Agent"
+    )
     smoke.add_argument("--endpoint", help="HTTPS Snowflake Agent endpoint override")
-    smoke.add_argument("--apply", action="store_true", help="[RUNTIME] invoke Agents; default is preview")
+    smoke.add_argument(
+        "--apply", action="store_true", help="[RUNTIME] invoke Agents; default is preview"
+    )
     add_allowlists(smoke)
     smoke.set_defaults(handler=handle)
 
@@ -71,7 +87,11 @@ def handle(args: argparse.Namespace, config: Config) -> int:
                 {item.stage_fqn.split(".", 1)[0] for item in plan}, args.allow_database
             )
             upload_skills(plan, config)
-        payload = {"command": f"skill {args.skill_command}", "applied": applied, "uploads": _plan_payload(plan)}
+        payload = {
+            "command": f"skill {args.skill_command}",
+            "applied": applied,
+            "uploads": _plan_payload(plan),
+        }
         if args.json:
             emit_json(payload)
         else:
@@ -119,7 +139,14 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             endpoint=args.endpoint,
         )
     if args.json:
-        emit_json({"command": "skill smoke", "applied": bool(args.apply), "planned": planned, "verified": verified})
+        emit_json(
+            {
+                "command": "skill smoke",
+                "applied": bool(args.apply),
+                "planned": planned,
+                "verified": verified,
+            }
+        )
     elif args.apply:
         for skill_name in verified:
             print(f"PASS {skill_name}: server_skill selected")

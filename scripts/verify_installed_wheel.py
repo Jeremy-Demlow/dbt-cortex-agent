@@ -8,14 +8,14 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Sequence
+from typing import Any
 
 import yaml
 from jinja2 import Environment, StrictUndefined
-
 
 AGENT = "orders_assistant"
 SUITE = "core"
@@ -55,7 +55,9 @@ def run_checked(
     if any(argument in FORBIDDEN_ARGUMENTS for argument in command):
         raise ValueError(f"unsafe verifier command: {' '.join(command)}")
     if "--apply" in command and not (
-        len(command) > 1 and Path(command[0]).name.startswith("dbt-cortex-agent") and command[1] == "init"
+        len(command) > 1
+        and Path(command[0]).name.startswith("dbt-cortex-agent")
+        and command[1] == "init"
     ):
         raise ValueError(f"unsafe verifier command: {' '.join(command)}")
     result = subprocess.run(
@@ -74,9 +76,7 @@ def run_expected_failure(
     env: dict[str, str],
     expected: str,
 ) -> None:
-    if "--apply" in command or any(
-        argument in FORBIDDEN_ARGUMENTS for argument in command
-    ):
+    if "--apply" in command or any(argument in FORBIDDEN_ARGUMENTS for argument in command):
         raise ValueError(f"unsafe verifier command: {' '.join(command)}")
     result = subprocess.run(
         list(command), cwd=cwd, env=env, text=True, capture_output=True, check=False
@@ -178,17 +178,19 @@ def compiled_agent_evidence(project_dir: Path) -> tuple[dict[str, Any], str]:
     raw_code = node.get("raw_code")
     if not isinstance(raw_code, str):
         raise AssertionError(f"parsed {AGENT} model has no raw_code")
-    rendered = Environment(
-        extensions=["jinja2.ext.do"], undefined=StrictUndefined
-    ).from_string(raw_code).render(
-        config=lambda **_kwargs: "",
-        ref=lambda *_args, **_kwargs: "",
-        env_var=lambda _name, default=None: default,
-        target=SimpleNamespace(
-            database=DATABASE,
-            warehouse="OFFLINE_WAREHOUSE",
-            name=TARGET,
-        ),
+    rendered = (
+        Environment(extensions=["jinja2.ext.do"], undefined=StrictUndefined)
+        .from_string(raw_code)
+        .render(
+            config=lambda **_kwargs: "",
+            ref=lambda *_args, **_kwargs: "",
+            env_var=lambda _name, default=None: default,
+            target=SimpleNamespace(
+                database=DATABASE,
+                warehouse="OFFLINE_WAREHOUSE",
+                name=TARGET,
+            ),
+        )
     )
     spec = yaml.safe_load(rendered)
     if not isinstance(spec, dict):
@@ -208,12 +210,12 @@ def compiled_agent_evidence(project_dir: Path) -> tuple[dict[str, Any], str]:
     )
 
 
-def validate_project_evidence(evidence: ProjectEvidence, *, include_eval: bool) -> str:
+def validate_project_evidence(  # noqa: C901
+    evidence: ProjectEvidence, *, include_eval: bool
+) -> str:
     if not evidence.doctor.get("passed"):
         raise AssertionError(f"{evidence.name}: doctor failed")
-    diagnostics = {
-        item["name"]: item for item in evidence.doctor.get("diagnostics", [])
-    }
+    diagnostics = {item["name"]: item for item in evidence.doctor.get("diagnostics", [])}
     expected_evals = "orders_assistant_core" if include_eval else "none"
     if diagnostics.get("enabled evals", {}).get("detail") != expected_evals:
         raise AssertionError(f"{evidence.name}: expected enabled evals {expected_evals!r}")
@@ -239,7 +241,10 @@ def validate_project_evidence(evidence: ProjectEvidence, *, include_eval: bool) 
     if include_eval:
         if evidence.eval_plan is None:
             raise AssertionError(f"{evidence.name}: missing optional eval plan")
-        if evidence.eval_plan.get("applied") is not False or evidence.eval_plan.get("passed") is not None:
+        if (
+            evidence.eval_plan.get("applied") is not False
+            or evidence.eval_plan.get("passed") is not None
+        ):
             raise AssertionError(f"{evidence.name}: eval preview produced a candidate")
         suites = evidence.eval_plan.get("suites") or []
         if len(suites) != 1 or suites[0].get("agent_fqn") != fqn:
@@ -291,11 +296,17 @@ def _copy_dbt_package(source: Path, destination: Path) -> None:
 
 def _venv_paths(venv: Path) -> tuple[Path, Path, Path]:
     scripts = venv / ("Scripts" if os.name == "nt" else "bin")
-    return scripts / ("python.exe" if os.name == "nt" else "python"), scripts / "dbt", scripts / "dbt-cortex-agent"
+    return (
+        scripts / ("python.exe" if os.name == "nt" else "python"),
+        scripts / "dbt",
+        scripts / "dbt-cortex-agent",
+    )
 
 
 def _write_fake_snow(path: Path) -> None:
-    path.write_text("#!/usr/bin/env python3\nprint('Snowflake CLI verifier stub 0')\n", encoding="utf-8")
+    path.write_text(
+        "#!/usr/bin/env python3\nprint('Snowflake CLI verifier stub 0')\n", encoding="utf-8"
+    )
     path.chmod(0o755)
 
 
@@ -320,7 +331,15 @@ def exercise_project(
         env=env,
     )
     run_checked(
-        [str(dbt), "parse", "--project-dir", str(project_dir), "--profiles-dir", str(project_dir), "--no-partial-parse"],
+        [
+            str(dbt),
+            "parse",
+            "--project-dir",
+            str(project_dir),
+            "--profiles-dir",
+            str(project_dir),
+            "--no-partial-parse",
+        ],
         cwd=project_dir,
         env=env,
     )
@@ -339,11 +358,17 @@ def exercise_project(
     deploy = _cli_json(
         cli,
         [
-            "agent", "deploy", *common,
-            "--dbt-executable", str(dbt),
-            "--agent", AGENT,
-            "--allow-target", TARGET,
-            "--allow-database", DATABASE,
+            "agent",
+            "deploy",
+            *common,
+            "--dbt-executable",
+            str(dbt),
+            "--agent",
+            AGENT,
+            "--allow-target",
+            TARGET,
+            "--allow-database",
+            DATABASE,
         ],
         cwd=project_dir,
         env=env,
@@ -505,7 +530,9 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Verify an installed wheel against two isolated dbt consumers.")
+    parser = argparse.ArgumentParser(
+        description="Verify an installed wheel against two isolated dbt consumers."
+    )
     parser.add_argument("--wheel", type=Path, required=True)
     parser.add_argument("--dbt-package-dir", type=Path, required=True)
     parser.add_argument("--dbt-core", default="~=1.11.0")

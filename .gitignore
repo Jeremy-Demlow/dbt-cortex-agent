@@ -11,6 +11,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+.coverage
 build/
 dist/
 .venv/
@@ -36,15 +37,25 @@ connections.toml
 *.pem
 *.key
 
-# Local governance and execution evidence. These files are maintained in the
-# working copy but are not part of the public product repository.
+# Local execution evidence. Product requirements and their test matrix are
+# tracked; generated or account-specific evidence remains local.
 requirements/
 !requirements/
 requirements/*
 !requirements/REQ-019_resource_scoped_multi_database_context.md
+!requirements/REQ-021_python_design_and_maintainability.md
+!requirements/REQ-022_package_native_workflow_safety.md
+!requirements/REQ-023_macro_api_and_reconciliation.md
+!requirements/REQ-024_agent_scaffold_and_developer_journey.md
+!requirements/REQ-025_agent_version_promotion_and_rollback.md
+!requirements/REQ-026_guarded_agent_retirement.md
+!requirements/REQ-027_agent_runtime_protocol_and_output.md
+!requirements/REQ-028_executable_developer_ci_guide.md
+!requirements/README.md
+!requirements/user_stories.md
 evidence/
 .plans/
 .snowflake/
-tests/test_cases.md
+!tests/test_cases.md
 tests/regression.md
 tests/test_req_013_contract.py

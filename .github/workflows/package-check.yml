@@ -28,6 +28,11 @@ jobs:
         run: python -m pip install --disable-pip-version-check -e '.[test]'
       - name: Run policy, documentation, and CI contract tests
         run: pytest -q tests/test_docs.py tests/test_ci.py
+      - name: Lint and type-check maintained Python boundaries
+        run: |
+          ruff format --check src/dbt_cortex_agent tests scripts
+          ruff check src/dbt_cortex_agent tests scripts
+          mypy
       - name: Compile Python sources and tests
         run: python -m compileall -q src tests
       - name: Check patch hygiene
@@ -58,7 +63,20 @@ jobs:
       - name: Install package test surface
         run: python -m pip install --disable-pip-version-check -e '.[test]'
       - name: Run full Python suite
-        run: pytest -q
+        run: pytest -q --cov=dbt_cortex_agent --cov-branch --cov-report=term-missing --cov-fail-under=75
+
+  mutation-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install package mutation surface
+        run: python -m pip install --disable-pip-version-check -e '.[test]'
+      - name: Run safety-critical mutation gate
+        run: python scripts/run_mutation_gate.py
 
   dbt-compatibility:
     runs-on: ubuntu-latest
@@ -147,7 +165,7 @@ jobs:
         working-directory: ${{ runner.temp }}
         run: |
           "$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" --help
-          test "$("$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" --version)" = "0.0.5"
+          test "$("$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" --version)" = "0.0.6"
           mkdir preview-project
           printf "name: preview_project\nversion: 1.0.0\nconfig-version: 2\n" > preview-project/dbt_project.yml
           "$RUNNER_TEMP/wheel-smoke/bin/dbt-cortex-agent" init \
