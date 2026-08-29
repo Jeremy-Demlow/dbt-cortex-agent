@@ -434,13 +434,10 @@ def run(  # noqa: C901
     venv = config.artifact_dir / "venv"
     python = venv / "bin/python"
     env = os.environ.copy()
-    dbt_executable = shutil.which("dbt", path=env.get("PATH"))
-    if not dbt_executable:
-        raise FileNotFoundError("dbt executable not found before isolated proof environment setup")
+    dbt_executable = env.get("DBT_EXECUTABLE") or shutil.which("dbt", path=env.get("PATH"))
     env.update(
         {
             "PATH": f"{python.parent}{os.pathsep}{env.get('PATH', '')}",
-            "DBT_EXECUTABLE": dbt_executable,
             "DBT_TARGET": config.target,
             "SNOWFLAKE_DATABASE": config.database_a,
             "SNOWFLAKE_ROLE": config.role,
@@ -450,6 +447,8 @@ def run(  # noqa: C901
             "CORTEX_AGENT_LIVE_DATABASE_EVAL": config.eval_database,
         }
     )
+    if dbt_executable:
+        env["DBT_EXECUTABLE"] = dbt_executable
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     if cleanup_only:
         _cleanup(config, env, apply)
