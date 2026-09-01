@@ -1,10 +1,19 @@
 # dbt_cortex_agent
 
 `dbt_cortex_agent` 0.0.6 is a Snowflake-only dbt package and Python companion for
-defining, versioning, and evaluating Cortex Agents from dbt models. A
-`materialized='cortex_agent'` model body is the native Agent YAML specification.
-dbt owns the complete Agent lifecycle; Python is limited to local skill files,
-runtime smoke, and evaluation coordination.
+defining, versioning, evaluating, and operating Cortex Agents from dbt models.
+A `materialized='cortex_agent'` model body is the native Agent YAML
+specification.
+
+> **dbt is the system of record. The manifest is the contract. Layout is
+> convention.**
+
+dbt owns Agent intent, dependency state, physical identity, and every mutating
+`CREATE AGENT`, `ALTER AGENT`, and `DROP AGENT` statement. The direct
+`dbt-cortex-agent` CLI is the reusable operator interface: it generates a fresh
+manifest, plans bounded operations, uploads local skill files, delegates Agent
+DDL to dbt, invokes the runtime API, coordinates evaluation, and retains
+evidence. It does not implement a second Agent specification or DDL authority.
 
 ## Install one immutable version on two surfaces
 
@@ -60,21 +69,40 @@ validates every destination before writing, keeps identical files unchanged,
 and fails closed if any generated file already has different content. It has no
 force mode and is not a generic project or Agent wizard.
 
-## Five-minute non-mutating quickstart
+## Five-minute first success
 
-From a consumer dbt project, preview a generic Agent before local writes:
+From an existing consumer dbt project, preview the files for a generic Agent.
+This first command writes nothing:
 
 ```bash
 dbt-cortex-agent agent scaffold --project-dir . --agent orders_assistant --json
-dbt-cortex-agent doctor --project-dir . --target sandbox --json
-dbt-cortex-agent manifest validate --project-dir . --target sandbox --json
-dbt compile --select orders_assistant
 ```
 
-These commands do not mutate Snowflake. `dbt compile` renders and validates the
-full Agent body without invoking its materialization. Follow the
-[quickstart](docs/getting-started/quickstart.md) to create the metadata and
-bootstrap explicit allowlists.
+After reviewing the plan, create the local files explicitly:
+
+```bash
+dbt-cortex-agent agent scaffold --project-dir . --agent orders_assistant --apply --json
+```
+
+The remaining checks are non-mutating. They install dependencies, generate a
+fresh manifest, validate the selected Agent, compile its complete specification,
+and preview deployment without connecting to Snowflake:
+
+```bash
+dbt deps
+dbt-cortex-agent doctor --project-dir . --target sandbox --json
+dbt-cortex-agent manifest validate --project-dir . --target sandbox --agent orders_assistant --json
+dbt compile --project-dir . --target sandbox --select orders_assistant
+dbt-cortex-agent agent deploy --project-dir . --target sandbox \
+  --agent orders_assistant \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --json
+```
+
+Only `agent scaffold --apply` changes local files. None of these commands mutate
+Snowflake. `dbt compile` renders the full Agent body without invoking its
+materialization, and `agent deploy` without `--apply` reports the resolved
+physical identity, skills, and dbt selection. Follow the
+[quickstart](docs/getting-started/quickstart.md) for the complete explanation.
 
 For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
@@ -102,6 +130,11 @@ configured alias. The package preflights and uploads selected skills before it
 invokes the dbt dependency closure. dbt remains the sole Agent DDL authority.
 No Makefile or copied adopter Python script is required.
 
+Repository wrappers can still provide reviewed defaults, fleet selection,
+approval checks, or report retention. They must delegate to the same package
+commands rather than reimplementing deployment, runtime, or evaluation. If a
+behavior must work for every adopter, it belongs in this package.
+
 A target-resolved manifest may contain Agents in multiple approved databases.
 The package carries each selected Agent's complete `database.schema.object`
 identity through skill and runtime operations and validates every Agent, stage,
@@ -122,7 +155,7 @@ has a separately reviewed role, warehouse, and approval boundary.
 Read [lifecycle](docs/guides/lifecycle.md) and [Snowflake setup](docs/getting-started/snowflake-setup.md)
 before crossing this boundary.
 
-## CLI or dbt macros
+## Supported interfaces
 
 | Need | Shipped CLI | Public dbt macro |
 |---|---|---|
@@ -130,17 +163,39 @@ before crossing this boundary.
 | Scaffold an Agent | `agent scaffold` | — |
 | Validate resolved metadata | `manifest validate` | — |
 | Render the full Agent spec | — | `dbt compile --select <agent_model>` |
-| Deploy/version an Agent | `agent deploy` | `dbt build --select <agent_model>` |
+| Deploy/version an Agent | `agent deploy` | `dbt build --select <agent_model>` (advanced primitive) |
 | Preview/invoke any Agent | `agent smoke` | — |
-| Inspect/promote/rollback versions | `agent versions`, `agent promote`, `agent rollback` | lifecycle macros |
-| Retire an Agent | `agent drop` | `cortex_agent__drop` |
+| Inspect/promote/rollback versions | `agent versions`, `agent promote`, `agent rollback` | delegated lifecycle macros |
+| Retire an Agent | `agent drop` | delegated `cortex_agent__drop` macro |
 | Plan/upload/smoke skills | `skill plan/upload/smoke` | deploy validates staged skills |
 | Render/run optional evaluation | `eval run`, `eval verify` | `cortex_eval__execution_plan`, `cortex_eval__run` |
 | Compare/gate/accept artifacts | `eval compare/gate/accept-baseline` | threshold macros only |
 
-Use dbt for Agent render and deployment. Use Python when local file upload,
-stable process exits/JSON, connector clients, or durable evaluation artifacts
-are required. Python owns no Agent lifecycle operation and provisions no stage.
+Use the direct CLI for the complete reusable lifecycle. It delegates all Agent
+mutation to the installed dbt package while adding fresh-manifest resolution,
+preflight checks, stable exits/JSON, connector clients, and durable evidence.
+Direct `dbt compile` remains the normal specification preview. Direct `dbt
+build` and lifecycle macros are lower-level interfaces for operators who
+deliberately own their surrounding sequencing. Python provisions no stage and
+contains no mutating Agent DDL.
+
+## Explicit effect boundaries
+
+Every effectful operation is preview-first. Cross one boundary at a time:
+
+| Boundary | Example | Explicit approval |
+|---|---|---|
+| Local file write | `agent scaffold` | `--apply` |
+| Snowflake mutation | `agent deploy`, `agent promote`, `agent rollback` | connection, complete allowlists, `--apply` |
+| Runtime invocation | `agent smoke`, `skill smoke` | connection, complete allowlists, `--apply` |
+| Paid evaluation | `eval verify`, `eval run` | connection, warehouse, complete allowlists, `--apply` |
+| Baseline policy change | `eval accept-baseline` | reviewed candidate and `--apply` |
+| Destructive retirement | `agent drop` | exact physical FQN confirmation, complete allowlists, `--apply` |
+
+Snowflake Agent DDL is non-transactional. Applied commands record completed
+durable phases and verify postconditions; they do not claim that a later failure
+rolled back an earlier version commit or route change. Inspect returned state,
+correct the underlying problem, and retry the same desired operation.
 
 ## Lifecycle and evaluation
 
@@ -164,11 +219,9 @@ and applies intrinsic thresholds or an established baseline. Preview is free;
 
 ## Documentation
 
-- Start: [installation](docs/getting-started/installation.md), [quickstart](docs/getting-started/quickstart.md), [Snowflake setup](docs/getting-started/snowflake-setup.md)
-- Configure: [configuration model](docs/guides/configuration-model.md), [Agent metadata](docs/reference/agent-metadata.md), [eval metadata](docs/reference/eval-metadata.md), [variables](docs/reference/variables.md)
-- Operate: [lifecycle](docs/guides/lifecycle.md), [skills](docs/guides/skills.md), [evaluations](docs/guides/evaluations.md), [CI](docs/guides/ci.md), [releasing](docs/guides/releasing.md)
-- Reference: [CLI](docs/reference/cli.md), [macros](docs/reference/macros.md), [compatibility](docs/reference/compatibility.md), [architecture](docs/concepts/end-to-end-flow.md), [troubleshooting](docs/troubleshooting.md)
-- Change: [changelog](CHANGELOG.md)
+Start with the [documentation index](docs/README.md). It provides the canonical
+reading order for installation, first use, the complete developer lifecycle,
+architecture, exact references, CI/CD, troubleshooting, and releasing.
 
 ## Limitations and policies
 

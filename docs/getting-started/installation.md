@@ -98,5 +98,6 @@ explicit `--starter orders` option is
 the only curated exception: it adds the fixed package-owned Orders tutorial to
 the existing project after collision-safe preview.
 
-Continue with the [quickstart](quickstart.md). Review [compatibility](../reference/compatibility.md)
-and [upgrade guidance](../../UPGRADING.md) before changing an existing installation.
+Continue with the [quickstart](quickstart.md). Review
+[compatibility](../reference/compatibility.md) and the
+[changelog](../../CHANGELOG.md) before changing an existing installation.

@@ -1,18 +1,23 @@
 # Build your first Agent
 
-## Guided Cortex Code path
+## Scaffold with the shipped CLI
 
-The project-local
+Preview the smallest generic Agent without writing files:
+
+```bash
+dbt-cortex-agent agent scaffold --project-dir . \
+  --agent orders_assistant --json
+```
+
+After reviewing the proposed paths, add `--apply`. A Semantic View is optional;
+use `--semantic-view-model sem_orders` only when that governed model already
+exists. Use `--with-eval` only when representative questions and SQL-computed
+ground truth are ready.
+
+The repository-local
 [`dbt-cortex-agent-project` skill](../../.cortex/skills/dbt-cortex-agent-project/SKILL.md)
-guides this workflow for a new or existing dbt project. It begins with read-only
-discovery and objective/levers/data/proof, supports an existing semantic view,
-the fixed Orders starter, or migration of an existing Agent, and can add eval
-authoring when ground truth exists. It uses stable 0.0.6 commands, shows manual
-command parity, and requires distinct approvals for local writes, Snowflake
-mutation/runtime, paid evaluation, and baseline movement.
-
-The skill is checked into this repository for project use. It is script-free and
-is not published or installed globally by the package.
+can guide maintainers through the same workflow, but it is not published or
+required by the package. Direct CLI commands are the adopter interface.
 
 ## 1. Create a governed dependency
 

@@ -58,12 +58,18 @@ schema, and alias are the physical Agent identity. `config.meta.cortex_agent`
 contains operational metadata that is not part of the deployed specification:
 access hints, local skill mapping, and native-evaluation classifications.
 
-Build the Agent with:
+Preview the Agent with dbt, then use the package-native deployment workflow:
 
 ```bash
 dbt compile --select orders_assistant  # non-mutating preview
-dbt build --select orders_assistant    # immutable deploy
+dbt-cortex-agent agent deploy --project-dir . --target sandbox \
+  --agent orders_assistant \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --json
 ```
+
+Direct `dbt build --select orders_assistant` is the lower-level immutable deploy
+primitive. It is appropriate only when the operator separately owns skill
+upload, execution context, allowlist, and evidence sequencing.
 
 When `meta.agent_role` is set, the materialization switches to that role for
 Agent lifecycle statements and post-hooks, then restores the original role on
@@ -98,12 +104,6 @@ models:
 The optional table evaluates the same physical Agent and never creates another
 Agent. It exposes `INPUT_QUERY` and an `OUTPUT` VARIANT containing ground truth,
 expected invocations, and stable criteria.
-
-## Legacy exposures
-
-Enabled `exposures[].config.meta.cortex_agent` declarations remain readable for
-migration compatibility. New projects should use full-body models. Model Agents
-cannot be deployed through the legacy Python `agent render/deploy` commands.
 
 ## dbt variables
 

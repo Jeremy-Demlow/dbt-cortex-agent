@@ -113,37 +113,6 @@ Baseline acceptance is preview-only until `--apply`; `--force` also requires
 `--apply`. A candidate cannot widen accepted baseline tolerances. A baseline move
 is a reviewed policy decision, never an automatic response to a failed gate.
 
-### Migrate known legacy accepted evidence
-
-Use the current dbt-rendered execution plan to migrate a known pre-schema or
-schema-v1 accepted baseline without paying for a new evaluation:
-
-```bash
-dbt-cortex-agent eval migrate-baseline legacy.json \
-  --project-dir . --target sandbox \
-  --agent orders_assistant --suite core \
-  --baseline-dir target/dbt_cortex_agent/baselines --json
-```
-
-The default is preview and writes nothing. Review the target, current metric
-contract, thresholds, regression tolerances, ordered refs, suite signature, and
-preserved `run_metadata.legacy_migration` provenance. Apply only to the requested
-baseline directory:
-
-```bash
-dbt-cortex-agent eval migrate-baseline legacy.json \
-  --project-dir . --target sandbox \
-  --agent orders_assistant --suite core \
-  --baseline-dir target/dbt_cortex_agent/baselines --apply
-```
-
-An existing target fails closed. `--force` is valid only with `--apply` and must
-be an explicit reviewed overwrite decision. Migration accepts only a passing
-legacy baseline whose Agent, suite, and complete summary metric set match the
-current plan; it never copies legacy policy into schema v2 and never connects to
-Snowflake. A historical physical Agent identity ending in `_EVAL` is incompatible
-with the single-Agent plan and is rejected rather than silently migrated.
-
 ## dbt macro path
 
 Use public macros when the complete workflow should remain in dbt:

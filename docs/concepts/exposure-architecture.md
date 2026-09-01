@@ -13,7 +13,7 @@ View and Search dependencies without placing those calls in the rendered YAML.
 |---|---|
 | dbt representation | Full-body Agent model |
 | Preview | `dbt compile --select <agent_model>` |
-| Deployment | Approved `dbt build --select <agent_model>` |
+| Deployment | `agent deploy` delegates an approved dependency-aware build to dbt |
 | Versions/aliases | Materialization adapts LIVE to immutable `VERSION$N` and alias state |
 | Lineage | Model `ref()` dependencies |
 | Return value | No fake dbt relation |
@@ -24,9 +24,9 @@ enforces target/database allowlists and staged-skill readiness, hashes the final
 specification plus skill state, skips unchanged versions, and reconciles LIVE,
 the immutable version, alias, profile, and comment when change is required.
 
-Legacy `exposures[].config.meta.cortex_agent` declarations remain readable for
-migration compatibility. They are not the recommended authoring system and the
-removed Python render/deploy lifecycle commands cannot deploy them.
+Legacy exposure-based declarations are historical architecture, not a supported
+public authoring or deployment contract. Current discovery selects full-body
+models materialized as `cortex_agent`.
 
 ## Manifest contract
 

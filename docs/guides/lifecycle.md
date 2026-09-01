@@ -16,30 +16,36 @@ dbt compile --project-dir . --profiles-dir . --target sandbox \
 Compile renders and validates the full native Agent YAML without invoking the
 custom materialization or connecting to Snowflake.
 
-## Upload skills, then build
+## Use package-native deployment
 
-Preview and upload declared skills separately:
+Preview the complete operation first:
 
 ```bash
-dbt-cortex-agent skill plan --project-dir . --target sandbox \
-  --agent orders_assistant --json
-dbt-cortex-agent skill upload --project-dir . --target sandbox \
+dbt-cortex-agent agent deploy --project-dir . --target sandbox \
+  --agent orders_assistant \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --json
+```
+
+After review, provide the approved execution context and apply:
+
+```bash
+dbt-cortex-agent agent deploy --project-dir . --target sandbox \
   --agent orders_assistant --connection sandbox --database ANALYTICS_DEV \
-  --allow-target sandbox --allow-database ANALYTICS_DEV --apply
+  --role AGENT_DEPLOYER --warehouse AGENT_WH \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --apply --json
 ```
 
-After review, execute the Agent model and its dependencies:
-
-```bash
-dbt build --project-dir . --profiles-dir . --target sandbox \
-  --select +orders_assistant
-```
-
-Build requires a profile that resolves the approved database, schema, role, and
-warehouse. The project must configure non-empty
+The package runs a fresh parse, resolves the physical Agent and dependency
+closure, preflights and uploads declared skills, and invokes dbt build. The
+project must configure non-empty
 `cortex_agent_allowed_targets` and `cortex_agent_allowed_databases`, and the
 selected target/database must match them. Stage-backed skills must already have
-their `SKILL.md` files on the configured stage.
+valid local `SKILL.md` files and an existing configured stage.
+
+Direct `skill plan`, `skill upload`, and `dbt build --select +orders_assistant`
+remain lower-level primitives for operators who deliberately own their own
+sequencing. They are not required for the normal adopter path, and a wrapper
+must not recreate package deployment behavior.
 
 ## Materialization sequence
 

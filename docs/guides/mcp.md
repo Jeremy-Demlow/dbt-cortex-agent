@@ -1,6 +1,12 @@
 # MCP connectors
 
-Declare a pre-existing external MCP server:
+The current full-body `cortex_agent` materialization does not provision or
+attach MCP servers. Treat MCP as separately managed Agent infrastructure until
+a package-owned, executable attachment path is released.
+
+An adopter may retain intended MCP configuration in reviewed project metadata
+or native specification fields supported by its Snowflake environment, for
+example:
 
 ```yaml
 capabilities:
@@ -10,14 +16,15 @@ capabilities:
       server: "{{ target.database }}.AGENTS.TICKETING_MCP_SERVER"
 ```
 
-MCP is attached with separate `ALTER AGENT ... ADD MCP_SERVER` DDL after Agent
-version deployment. It is not part of the specification JSON.
+Do not assume that `agent deploy` applies this mapping. Release `0.0.6` passes no
+MCP attachment statements into the active materialization. Any manual attachment
+must use a separately reviewed Snowflake operation and independent evidence.
 
-- `mcp_deploy_enabled` defaults to false.
 - The package does not provision the external MCP server, OAuth, integrations, or
   network policy.
-- MCP may remain attached to the single deployed Agent, but built-in evaluation does not
-  invoke it. Built-in Agent Evaluation therefore does not prove MCP behavior; use a
-  separate smoke or integration test.
-- MCP attachment state is outside the spec/skill hash and may require an intentional
-  forced deployment when reattachment is needed.
+- Built-in Agent Evaluation does not prove MCP behavior; use a separate runtime
+  or integration test.
+- MCP state is outside the managed specification and skill content identity, so
+  inspect it independently before and after an Agent release.
+- Do not place credentials or OAuth secrets in dbt metadata, Agent models, or
+  retained artifacts.

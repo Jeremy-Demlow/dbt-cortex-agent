@@ -1,98 +1,131 @@
-# Agent metadata reference
+# Agent model and metadata reference
 
-Agent metadata lives at `exposures[].config.meta.cortex_agent`.
+An Agent is a dbt model with `materialized='cortex_agent'`. The model relation
+defines its physical Snowflake identity, the compiled model body is the native
+Agent specification, and `config.meta` carries lifecycle metadata that is not
+part of that specification.
 
-## Required core fields
+The package discovers Agents from a fresh `target/manifest.json`. Directory
+layout is a convention and legacy dbt exposures are not a public Agent contract.
 
-| Field | Type | Contract |
-|---|---|---|
-| `enabled` | boolean | Must be true for discovery |
-| `snowflake_name` | string | Base Agent name |
-| `tools` | list | At least one implemented tool |
+## Minimal model
 
-## Naming, access, model, and instructions
+```jinja
+{{
+  config(
+    materialized='cortex_agent',
+    database=target.database,
+    schema=var('cortex_agent_schema', 'AGENTS'),
+    alias='ORDERS_ASSISTANT',
+    meta={
+      'agent_display_name': 'Orders Assistant',
+      'agent_comment': 'Managed by dbt-cortex-agent',
+      'deploy_alias': target.name,
+      'cortex_agent': {'enabled': true}
+    }
+  )
+}}
+
+models:
+  orchestration: claude-sonnet-4-6
+
+orchestration:
+  budget:
+    seconds: 60
+    tokens: 16000
+
+instructions:
+  response: |
+    Answer only from configured capabilities and state material assumptions.
+```
+
+Every compiled body must be a YAML mapping and explicitly define
+`models.orchestration`. The materialization preserves the remaining native
+Agent fields rather than translating them through a package-specific schema.
+
+## Identity and discovery
+
+| Contract | Source |
+|---|---|
+| Logical Agent name | dbt model `name` |
+| Physical database | compiled model `database` |
+| Physical schema | compiled model `schema` |
+| Physical object name | compiled model `alias`, falling back to model name |
+| Physical FQN | `database.schema.alias` resolved from the manifest |
+| Enabled discovery | `meta.cortex_agent.enabled`, default true for a `cortex_agent` model |
+| Dependency graph | no-output `ref()` calls in the model |
+| Native specification | compiled model body |
+
+Logical Agent names and physical FQNs must each be unique in one target-resolved
+manifest. Python consumes compiled manifest values and does not infer identity
+from `models/agents/...` paths.
+
+## Lifecycle metadata
+
+These top-level `config.meta` keys control the materialization and are not added
+to the Agent specification:
+
+| Field | Type | Default | Behavior |
+|---|---|---|---|
+| `agent_display_name` | string | physical object name | Sets the Agent profile display name. |
+| `agent_comment` | string | `Managed by dbt-cortex-agent` | Sets the Snowflake object comment. |
+| `deploy_alias` | string | current dbt target | Alias reconciled to the managed content version. |
+| `agent_role` | string | current role | Optional role used by configured lifecycle hooks and deployments that opt into role switching. |
+
+`meta.cortex_agent` carries package coordination metadata:
 
 | Field | Type | Behavior |
 |---|---|---|
-| `naming.<target>` | string | Explicit target-specific Agent name |
-| `access.usage_roles` | list | Used by Agent-object grant macro |
-| `access.monitor_roles` | list | Roles that inspect or evaluate Agent observability |
-| `model.orchestration` | string | Orchestration model; package default applies when absent |
-| `orchestration.budget.seconds/tokens` | number | Rendered budget |
-| `instructions.orchestration` | string | Orchestration instructions |
-| `instructions.response` | string | Response instructions |
-| `sample_questions` | list of strings | Rendered as question objects |
+| `enabled` | boolean | Set false to exclude the model from package discovery. |
+| `skills` | list | Optional local-to-stage declarations; compiled native `skills` are used when this list is absent. |
+| `evaluation` | mapping | Optional evaluation capability classifications used by package validation. |
 
-`description`, `profile`, and `versioning.strategy` are currently documentary
-metadata; they are not rendered into the Agent specification.
+The native Agent body remains authoritative for models, orchestration,
+instructions, sample questions, tools, tool resources, skills, and arbitrary
+supported or experimental specification mappings.
 
-## Complete public field inventory
+## Dependencies and tools
 
-| Field path | Type | Required | Default / behavior |
-|---|---|---:|---|
-| `enabled` | boolean | Yes | Must be `true` for discovery |
-| `snowflake_name` | string | Yes | Base name when no target mapping exists |
-| `naming.<target>` | string | No | Falls back to environment suffix rules |
-| `description` | string | No | Documentary only |
-| `access.usage_roles[]` | string | No | Used only by `cortex_agent__grant_usage` |
-| `access.monitor_roles[]` | string | No | Grants `MONITOR ON AGENT` through `cortex_agent__grant_usage` |
-| `versioning.strategy` | string | No | Documentary only |
-| `versioning.<target>.deploy_alias` | string | No | Alias applied after commit |
-| `versioning.<target>.promotion_alias` | string | No | Documentary promotion intent |
-| `profile.display_name` | string | No | Documentary only |
-| `profile.color` | string | No | Documentary only |
-| `model.orchestration` | string | No | `cortex_agent_default_model` |
-| `orchestration.budget.seconds` | number | No | Rendered when supplied |
-| `orchestration.budget.tokens` | number | No | Rendered when supplied |
-| `instructions.orchestration` | string | No | Empty string |
-| `instructions.response` | string | No | Empty string |
-| `sample_questions[]` | string | No | Empty list |
-| `tools[]` | object | Yes | At least one tool |
-| `tools[].name` | string | Yes | Rendered tool name |
-| `tools[].type` | string | Yes | Supported types listed below |
-| `tools[].description` | string | No | Empty string |
-| `tools[].warehouse` | string | No | `target.warehouse` |
-| `tools[].query_timeout` | number | No | `300` |
-| `tools[].semantic_view_model` | string | Analyst only | Manifest-resolved semantic view |
-| `tools[].search_service` | string | Search only | Pre-existing service FQN |
-| `tools[].access.usage_roles[]` | string | Search only | Roles granted `USAGE` on the exact Search service by the Agent grant lifecycle |
-| `tools[].identifier` | string | Generic only | Pre-existing procedure FQN |
-| `capabilities.web_search.enabled` | boolean | No | Disabled when absent |
-| `capabilities.web_search.max_results` | number | No | Resource omitted when absent |
-| `capabilities.web_search.usage_policy` | string | No | Documentary only |
-| `capabilities.data_to_chart.enabled` | boolean | No | Disabled when absent |
-| `capabilities.data_to_chart.description` | string | No | Default chart description |
-| `capabilities.code_execution.enabled` | boolean | No | Also gated by `code_execution_enabled` |
-| `capabilities.code_execution.usage_policy` | string | No | Documentary only |
-| `capabilities.code_execution.artifact_repositories` | any | No | Rendered into code-execution resources when supplied |
-| `capabilities.code_execution.external_access_integrations` | any | No | Rendered into code-execution resources when supplied |
-| `capabilities.skills[]` | object | No | Rendered in the full Agent specification |
-| `capabilities.skills[].name` | string | Yes per skill | Rendered name |
-| `capabilities.skills[].description` | string | No | Documentary; `SKILL.md` is authoritative |
-| `capabilities.skills[].source.type` | string | Yes per skill | Stage readiness supports `stage` |
-| `capabilities.skills[].source.path` | string | Yes per skill | Rendered unchanged |
-| `capabilities.mcp_connectors[]` | object | No | Attached through separate Agent DDL |
-| `capabilities.mcp_connectors[].name` | string | No | Documentary only |
-| `capabilities.mcp_connectors[].enabled` | boolean | No | Disabled when absent |
-| `capabilities.mcp_connectors[].server` | string | Yes when enabled | External MCP server FQN |
-| `capabilities.mcp_connectors[].usage_policy` | string | No | Documentary only |
+Use no-output `ref()` calls to put governed dependencies in the dbt graph:
 
-## Tools
+```jinja
+{% do ref('sem_orders') %}
+{% do ref('orders_policy_search') %}
+```
 
-Common fields are listed in the complete inventory above.
+Then author native tool and resource mappings in the body:
 
-| Type | Required field | Resource rendering |
-|---|---|---|
-| `cortex_analyst_text_to_sql` | `semantic_view_model` | Manifest-resolved semantic-view FQN plus warehouse |
-| `cortex_search` | `search_service` | Pre-existing three-part service FQN; optional `access.usage_roles` declares least-privilege query access |
-| `generic` | `identifier` | Pre-existing procedure identifier |
+```yaml
+tools:
+  - tool_spec:
+      type: cortex_analyst_text_to_sql
+      name: OrdersAnalytics
+      description: Answers governed order questions.
 
-Unknown tool types fail validation. Analyst model names must resolve uniquely to a
-dbt model materialized as `semantic_view`.
+tool_resources:
+  OrdersAnalytics:
+    semantic_view: "{{ target.database }}.SEMANTIC.SEM_ORDERS"
+    execution_environment:
+      type: warehouse
+      warehouse: "{{ target.warehouse }}"
+      query_timeout: 60
+```
 
-Usage-policy and descriptive capability fields may be retained as governance
-metadata without being rendered. `evaluation_supported` is not a public metadata
-field and never filters the rendered/deployed Agent specification. Built-in evaluation
-coverage is validated separately from deployment: Analyst, Cortex Search, `web_search`,
-and declared generic custom tool names may be expected; skills, MCP, code execution,
-and other capability tools require separate proof.
+The package does not require a Semantic View. Cortex Search, native tools,
+skills, and experimental mappings are optional additions governed by the native
+Agent specification and their own infrastructure prerequisites.
+
+## Render and deploy
+
+```bash
+dbt compile --project-dir . --target sandbox --select orders_assistant
+dbt-cortex-agent agent deploy --project-dir . --target sandbox \
+  --agent orders_assistant \
+  --allow-target sandbox --allow-database ANALYTICS_DEV --json
+```
+
+Compile is the non-mutating specification preview. Package-native deploy is the
+recommended complete workflow; its applied path uploads declared skills and
+delegates dependency-aware Agent mutation to dbt. See the
+[configuration model](../guides/configuration-model.md) and
+[lifecycle guide](../guides/lifecycle.md).

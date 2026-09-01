@@ -102,7 +102,7 @@ Private-preview experimental keys remain user-authored YAML, not CLI options.
 Inspect immutable versions, aliases, DEFAULT, LAST, and LIVE through a dbt macro.
 Requires an explicit connection because it reads Snowflake state.
 
-### `dbt-cortex-agent agent promote` and `agent rollback` — MUTATION with `--apply`
+### `dbt-cortex-agent agent promote` and `dbt-cortex-agent agent rollback` — MUTATION with `--apply`
 
 Preview an immutable `VERSION$N`, alias, and optional `--set-default`; apply
 delegates routing to dbt and verifies postconditions. Rollback preserves newer
@@ -175,14 +175,6 @@ Preview or write a baseline. Options: shared options, `--baseline-dir`, `--apply
 and `--force`; `--force` requires `--apply`.
 The default target is
 `<artifact-dir>/baselines/<agent>/<suite>.json`.
-
-### `dbt-cortex-agent eval migrate-baseline LEGACY` — MUTATION with `--apply`
-
-Preview or migrate a known legacy accepted artifact to baseline schema v2 using
-a fresh dbt-rendered execution plan. Required options: `--agent`, `--suite`, and
-`--baseline-dir`; shared plan options, `--apply`, and `--force` are supported.
-Preview writes nothing. Existing targets require both `--apply` and `--force`.
-No connector, live Snowflake operation, or paid evaluation is used.
 
 ### `dbt-cortex-agent eval gate CANDIDATE`
 
