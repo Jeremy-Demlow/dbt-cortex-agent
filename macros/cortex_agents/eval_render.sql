@@ -198,6 +198,7 @@
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
   {% set invocation_slug = invocation_id | replace('-', '') %}
   {% set eval_run_name = run_name or (eval_meta.get('agent') ~ '_' ~ eval_meta.get('name') ~ '_eval_' ~ invocation_slug[:12]) %}
+  {% set eval_run_name = cortex_eval__assert_run_name(eval_run_name) %}
   {% set eval_stage = stage_fqn or cortex_eval__default_stage_fqn() %}
   {% set config_yaml = cortex_eval__render_config(model_name, eval_run_name, dataset_name, execute_checks) %}
   {% set filename = cortex_eval__config_filename(model_name) %}

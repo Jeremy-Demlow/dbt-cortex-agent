@@ -3,6 +3,19 @@
 This project had no public beta or stable release before `0.0.1`. Earlier Git
 history records design experiments, not supported package versions.
 
+## 0.0.7 — 2026-09-03
+
+- Fix the public dbt evaluation macro path by removing unreachable legacy
+  branches and undefined macro calls, and validate evaluation run names before
+  SQL interpolation.
+- Preserve normalized Agent smoke evidence when an expected-tool assertion
+  fails, while retaining the controlled runtime exit contract.
+- Reject an existing raw-event destination before invoking the Agent.
+- Stop classifying unexpected programming defects as controlled durable
+  operation failures.
+- Clarify multi-database safety: connection context and manifest-derived
+  resource authorization are independent controls.
+
 ## 0.0.6 — 2026-08-28
 
 - Add generic preview-first Agent scaffolding with optional Analyst and evaluation

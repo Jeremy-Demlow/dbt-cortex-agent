@@ -1167,6 +1167,9 @@ def test_apply_treats_empty_describe_result_as_missing_agent(tmp_path):
             if "DESCRIBE AGENT" in " ".join(sql.split()).upper():
                 self.rows = []
 
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
     connection = LifecycleConnection()
     connection.cursor_value = EmptyDescribeCursor()
     with pytest.raises(RuntimeError, match="requires existing Agent"):

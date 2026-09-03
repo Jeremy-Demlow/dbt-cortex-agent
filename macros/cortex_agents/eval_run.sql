@@ -6,8 +6,16 @@
 {% endmacro %}
 
 {% macro cortex_eval__results_fqn(run_name) %}
-  {% set safe = modules.re.sub('[^0-9A-Za-z_]', '_', run_name) | upper %}
+  {% set safe = cortex_eval__assert_run_name(run_name) | upper %}
   {{ return(target.database ~ '.' ~ cortex_eval__schema() ~ '.EVAL_RESULTS_' ~ safe) }}
+{% endmacro %}
+
+{% macro cortex_eval__assert_run_name(run_name) %}
+  {% set value = run_name | string %}
+  {% if not modules.re.match('^[0-9A-Za-z_]+$', value) %}
+    {{ exceptions.raise_compiler_error('Evaluation run_name must contain only letters, digits, and underscores') }}
+  {% endif %}
+  {{ return(value) }}
 {% endmacro %}
 
 {% macro cortex_eval__status(run_name, config_url) %}
@@ -15,7 +23,8 @@
   {% if not execute %}
     {{ return('') }}
   {% endif %}
-  {% set results = run_query("CALL EXECUTE_AI_EVALUATION('STATUS', OBJECT_CONSTRUCT('run_name', '" ~ run_name ~ "'), '" ~ config_url ~ "')") %}
+  {% set safe_run_name = cortex_eval__assert_run_name(run_name) %}
+  {% set results = run_query("CALL EXECUTE_AI_EVALUATION('STATUS', OBJECT_CONSTRUCT('run_name', '" ~ safe_run_name ~ "'), '" ~ config_url ~ "')") %}
   {% if results.rows | length == 0 %}
     {{ return('') }}
   {% endif %}
@@ -52,36 +61,33 @@
 
 {% macro cortex_eval__results(model_name, run_name) %}
   {# Materialize the run's metric rows into a real EVAL table, stamped with a
-     run_metadata VARIANT (evaluated DEFAULT version, alias map, spec hash,
+     run_metadata VARIANT (evaluated DEFAULT version, alias map,
      dataset FQN, account, git sha, invocation) for auditability. #}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
   {% set resource = cortex_agent__get_agent(eval_meta.get('agent')) %}
   {% set agent = cortex_agent__agent_meta(resource) %}
   {% set agent_fqn = cortex_agent__resource_agent_fqn(resource, agent) %}
+  {% set safe_run_name = cortex_eval__assert_run_name(run_name) %}
   {% set parts = agent_fqn.split('.') %}
   {% set aliases = cortex_agent__describe_aliases(agent_fqn) %}
   {% set evaluated_version = aliases.get('DEFAULT', '') %}
-  {% set spec_hash = cortex_agent__current_spec_hash(agent_fqn) or '' %}
   {% set dataset_fqn = cortex_eval__dataset_fqn(model_name) %}
   {% set git_sha = env_var('GITHUB_SHA', env_var('DBT_GIT_SHA', '')) %}
-  {% set results_fqn = cortex_eval__results_fqn(run_name) %}
+  {% set results_fqn = cortex_eval__results_fqn(safe_run_name) %}
 
   {# Fail-closed: this primitive creates a table, so guard it directly. #}
   {% if execute %}
     {% do cortex_agent__assert_deploy_target('cortex_eval__results') %}
   {% endif %}
 
-  {# Escape single quotes in interpolated string literals to keep the CTAS safe. #}
-  {% set q_run_name = run_name | replace("'", "''") %}
   {% set q_git_sha = git_sha | replace("'", "''") %}
 
   {% set metadata_sql %}
     OBJECT_CONSTRUCT(
-      'run_name', '{{ q_run_name }}',
+      'run_name', '{{ safe_run_name }}',
       'agent_fqn', '{{ agent_fqn }}',
       'evaluated_version', '{{ evaluated_version }}',
       'aliases', PARSE_JSON('{{ tojson(aliases) }}'),
-      'spec_md5', '{{ spec_hash }}',
       'dataset_fqn', '{{ dataset_fqn }}',
       'account', CURRENT_ACCOUNT(),
       'git_sha', '{{ q_git_sha }}',
@@ -94,13 +100,13 @@
     CREATE OR REPLACE TABLE {{ results_fqn }} AS
     SELECT d.*, {{ metadata_sql }} AS run_metadata
     FROM TABLE(SNOWFLAKE.LOCAL.GET_AI_EVALUATION_DATA(
-      '{{ parts[0] }}', '{{ parts[1] }}', '{{ parts[2] }}', 'CORTEX AGENT', '{{ run_name }}'
+      '{{ parts[0] }}', '{{ parts[1] }}', '{{ parts[2] }}', 'CORTEX AGENT', '{{ safe_run_name }}'
     )) d
   {% endset %}
 
   {% if execute %}
     {% do run_query(create_sql) %}
-    {% do log("Wrote eval results table " ~ results_fqn ~ " (evaluated " ~ evaluated_version ~ ", spec_md5=" ~ spec_hash ~ ")", info=True) %}
+    {% do log("Wrote eval results table " ~ results_fqn ~ " (evaluated " ~ evaluated_version ~ ")", info=True) %}
   {% endif %}
   {{ return(results_fqn) }}
 {% endmacro %}
@@ -165,6 +171,7 @@
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
   {% set invocation_slug = invocation_id | replace('-', '') %}
   {% set eval_run_name = run_name or (eval_meta.get('agent') ~ '_' ~ eval_meta.get('name') ~ '_eval_' ~ invocation_slug[:12]) %}
+  {% set eval_run_name = cortex_eval__assert_run_name(eval_run_name) %}
   {% set config_url = '@' ~ cortex_eval__default_stage_fqn() ~ '/' ~ cortex_eval__config_filename(model_name) %}
 
   {% if dry_run %}

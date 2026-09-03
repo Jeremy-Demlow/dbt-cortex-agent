@@ -2,8 +2,8 @@
 
 Requirements are the product contract. A requirement is complete only when its acceptance criteria
 have reproducible verification evidence. Historical version-specific requirements remain indexed as
-provenance. The current rebuild target is `0.0.6`; REQ-021 through REQ-028 are active and must have
-reproducible evidence before release.
+provenance. The current release target is `0.0.7`; REQ-021 through REQ-028 remain
+the qualified `0.0.6` foundation, extended by the current corrective release.
 
 | Requirement | Scope | Status |
 |---|---|---|
@@ -34,6 +34,8 @@ reproducible evidence before release.
 | [REQ-026](REQ-026_guarded_agent_retirement.md) | Explicit, guarded Agent retirement | Complete (v0.0.6) |
 | [REQ-027](REQ-027_agent_runtime_protocol_and_output.md) | Agent streaming protocol and compact output | Complete (v0.0.6) |
 | [REQ-028](REQ-028_executable_developer_ci_guide.md) | Executable developer and CI/CD guide | Complete (v0.0.6) |
+| [REQ-029](REQ-029_macro_eval_execution_safety.md) | Executable and injection-safe dbt evaluation macros | Complete (v0.0.7) |
+| [REQ-030](REQ-030_runtime_failure_evidence.md) | Runtime assertion evidence and honest exception classification | Complete (v0.0.7) |
 
 See [user stories](user_stories.md), [test cases](../tests/test_cases.md), and
 [regression coverage](../tests/regression.md) for the linked behavioral evidence.

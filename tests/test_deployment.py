@@ -4,7 +4,7 @@ import subprocess
 
 import pytest
 
-# Evidence: TC-022-01 TC-022-05 TC-023-08
+# Evidence: TC-022-01 TC-022-05 TC-023-08 TC-030-03 TC-030-04
 from dbt_cortex_agent.config import resolve_config
 from dbt_cortex_agent.dbt_runner import CommandRunner
 from dbt_cortex_agent.deployment import (
@@ -89,6 +89,17 @@ def test_deploy_plan_requires_complete_resource_allowlist(tmp_path):
 
     with pytest.raises(ValueError, match="DB_B"):
         validate_deploy_plan(plan, _config(tmp_path), ["sandbox"], ["DB_A", "DATA_DB"])
+
+
+def test_connection_database_does_not_narrow_multi_database_resource_scope(tmp_path):
+    plan = build_deploy_plan(_manifest(), _config(tmp_path), ["agent_a", "agent_b"])
+
+    validate_deploy_plan(
+        plan,
+        _config(tmp_path),
+        ["sandbox"],
+        ["DB_A", "DB_B", "DATA_DB"],
+    )
 
 
 def test_deploy_plan_requires_dependency_database_allowlist(tmp_path):
@@ -178,3 +189,16 @@ def test_dbt_failure_preserves_markers_from_stdout_and_stderr(tmp_path):
         LifecyclePhase.METADATA_RECONCILED,
         LifecyclePhase.VERIFIED,
     ]
+
+
+def test_skill_upload_programming_error_is_not_reported_as_durable_failure(
+    monkeypatch, tmp_path
+) -> None:
+    plan = build_deploy_plan(_manifest(), _config(tmp_path), ["agent_a"])
+    monkeypatch.setattr(
+        "dbt_cortex_agent.deployment.upload_skills",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("programming defect")),
+    )
+
+    with pytest.raises(AssertionError, match="programming defect"):
+        apply_deploy_plan(plan, _config(tmp_path))

@@ -51,11 +51,13 @@ requirements/*
 !requirements/REQ-026_guarded_agent_retirement.md
 !requirements/REQ-027_agent_runtime_protocol_and_output.md
 !requirements/REQ-028_executable_developer_ci_guide.md
+!requirements/REQ-029_macro_eval_execution_safety.md
+!requirements/REQ-030_runtime_failure_evidence.md
 !requirements/README.md
 !requirements/user_stories.md
 evidence/
 .plans/
 .snowflake/
 !tests/test_cases.md
-tests/regression.md
+!tests/regression.md
 tests/test_req_013_contract.py

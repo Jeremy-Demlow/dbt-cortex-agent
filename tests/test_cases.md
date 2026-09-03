@@ -101,7 +101,7 @@
 
 ## REQ-028: Executable developer and CI/CD guide
 
-1. `TC-028-01`: Verify architecture and matching `0.0.6` install coordinates.
+1. `TC-028-01`: Verify architecture and matching `0.0.7` install coordinates.
 2. `TC-028-02`: Verify generic-first creation and optional capability examples.
 3. `TC-028-03`: Parse validation, deploy, smoke, and recovery command sequence.
 4. `TC-028-04`: Parse evaluation, gate, and baseline command sequence and approval labels.
@@ -111,6 +111,19 @@
 8. `TC-028-08`: Run core guide journeys in an installed-consumer fixture.
 9. `TC-028-09`: Cross-check README, references, skills, adopter docs, and release identity.
 10. `TC-028-10`: Validate claim-to-requirement-to-proof evidence map and sanitization.
+
+## REQ-029: Macro evaluation execution safety
+
+1. `TC-029-01`: Verify every package-qualified Cortex macro call resolves to a definition.
+2. `TC-029-02`: Reject evaluation run names outside letters, digits, and underscores before SQL interpolation.
+3. `TC-029-03`: Remove unreachable legacy Agent branches and undefined specification helpers.
+
+## REQ-030: Runtime failure evidence
+
+1. `TC-030-01`: Preserve normalized response evidence and exit `2` on expected-tool mismatch.
+2. `TC-030-02`: Reject an existing raw-event destination before Agent invocation.
+3. `TC-030-03`: Propagate programming defects instead of reporting controlled partial failure.
+4. `TC-030-04`: Authorize all manifest-resolved resource databases independently of connection-default database context.
 
 ## REQ-016: Agent monitor access contract
 

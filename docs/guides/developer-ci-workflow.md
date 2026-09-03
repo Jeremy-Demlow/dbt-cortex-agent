@@ -32,13 +32,13 @@ source of Agent state.
 ## Install one release
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.6'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.7'
 ```
 
 ```yaml
 packages:
   - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git
-    revision: v0.0.6
+    revision: v0.0.7
 ```
 
 The Python package coordinates files, dbt, runtime calls, and evidence. The dbt
@@ -190,6 +190,11 @@ A named Snow CLI connection determines how and who authenticates. The dbt
 target determines where dbt intends to build. Repeatable allowlists determine
 where this invocation is permitted to operate. Snowflake RBAC determines what
 the principal can actually do. These controls are complementary.
+
+`--database` sets the connection/default execution context. It does not assert
+that every selected Agent and dependency lives in that database. Package-native
+deployment carries each manifest-resolved resource database through planning and
+requires every one to appear in the repeatable `--allow-database` values.
 
 The supported connection bridge accepts `SNOWFLAKE_JWT` with account, user, and
 a file-based private key, and `WORKLOAD_IDENTITY` when supplied by the execution

@@ -5,11 +5,12 @@ import json
 
 import pytest
 
-# Evidence: TC-026-01 TC-026-02 TC-026-03 TC-026-05 TC-026-06 TC-026-09
+# Evidence: TC-026-01 TC-026-02 TC-026-03 TC-026-05 TC-026-06 TC-026-09 TC-030-01 TC-030-02
 from dbt_cortex_agent.commands.agent import (
     _handle_deploy,
     _handle_drop,
     _handle_route,
+    _handle_smoke,
     _handle_versions,
 )
 from dbt_cortex_agent.config import Config
@@ -175,3 +176,57 @@ def test_deploy_failure_preserves_completed_phase_evidence(monkeypatch, capsys, 
         "skills_uploaded",
         "verified",
     ]
+
+
+def test_smoke_expected_tool_failure_preserves_response_and_exit_two(
+    monkeypatch, capsys, config
+) -> None:
+    response = {
+        "answer": "I answered without the expected tool.",
+        "tool_uses": [{"name": "OtherTool"}],
+        "metadata": {},
+    }
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.invoke_agent", lambda *args, **kwargs: response
+    )
+
+    args = _args(
+        "smoke",
+        agent="finance_assistant",
+        question="Use FinanceTool",
+        expect_tool="FinanceTool",
+        agent_object=None,
+        agent_version=None,
+        endpoint=None,
+        raw_events=None,
+        apply=True,
+    )
+    assert _handle_smoke(args, config, MANIFEST) == 2
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["passed"] is False
+    assert payload["response"] == response
+
+
+def test_smoke_existing_raw_artifact_fails_before_invocation(monkeypatch, config) -> None:
+    target = config.artifact_dir / "raw-events" / "smoke.ndjson"
+    target.parent.mkdir(parents=True)
+    target.write_text("existing", encoding="utf-8")
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.invoke_agent",
+        lambda *args, **kwargs: pytest.fail("Agent invoked before raw-event collision check"),
+    )
+
+    args = _args(
+        "smoke",
+        agent="finance_assistant",
+        question="Use FinanceTool",
+        expect_tool=None,
+        agent_object=None,
+        agent_version=None,
+        endpoint=None,
+        raw_events="smoke.ndjson",
+        apply=True,
+    )
+    with pytest.raises(FileExistsError, match="already exists"):
+        _handle_smoke(args, config, MANIFEST)

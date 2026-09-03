@@ -87,104 +87,33 @@
 {% macro cortex_eval__native_supported_tool_names(agent_name) %}
   {% set resource = cortex_agent__get_agent(agent_name) %}
   {% set agent = cortex_agent__agent_meta(resource) %}
-  {% if cortex_agent__is_model(resource) %}
-    {{ return(agent.get('evaluation', {}).get('native_tools', [])) }}
-  {% endif %}
-  {% set supported = [] %}
-  {% for tool in agent.get('tools', []) %}
-    {% if tool.get('type') in ['cortex_analyst_text_to_sql', 'cortex_search', 'generic'] %}
-      {% do supported.append(tool.get('name')) %}
-    {% endif %}
-  {% endfor %}
-  {% if agent.get('capabilities', {}).get('web_search', {}).get('enabled') %}
-    {% do supported.append('web_search') %}
-  {% endif %}
-  {{ return(supported) }}
+  {{ return(agent.get('evaluation', {}).get('native_tools', [])) }}
 {% endmacro %}
 
 {% macro cortex_eval__unsupported_native_tool_claims(agent_name) %}
   {% set resource = cortex_agent__get_agent(agent_name) %}
   {% set agent = cortex_agent__agent_meta(resource) %}
-  {% if cortex_agent__is_model(resource) %}
-    {{ return(agent.get('evaluation', {}).get('unsupported_tools', {})) }}
-  {% endif %}
-  {% set capabilities = agent.get('capabilities', {}) %}
-  {% set unsupported = {} %}
-  {% for skill in capabilities.get('skills', []) %}
-    {% do unsupported.update({skill.get('name'): 'skill'}) %}
-  {% endfor %}
-  {% for connector in capabilities.get('mcp_connectors', []) %}
-    {% if connector.get('enabled') %}
-      {% do unsupported.update({connector.get('name'): 'MCP connector'}) %}
-    {% endif %}
-  {% endfor %}
-  {% if capabilities.get('code_execution', {}).get('enabled') %}
-    {% do unsupported.update({'code_execution': 'code execution'}) %}
-  {% endif %}
-  {% if capabilities.get('data_to_chart', {}).get('enabled') %}
-    {% do unsupported.update({'data_to_chart': 'data-to-chart capability'}) %}
-  {% endif %}
-  {{ return(unsupported) }}
+  {{ return(agent.get('evaluation', {}).get('unsupported_tools', {})) }}
 {% endmacro %}
 
 {% macro cortex_eval__capability_evidence(agent_name, invoked_tools=[], evaluation_completed=false) %}
   {% set resource = cortex_agent__get_agent(agent_name) %}
   {% set agent = cortex_agent__agent_meta(resource) %}
-  {% if cortex_agent__is_model(resource) %}
-    {% set evidence = [] %}
-    {% for tool_name in agent.get('evaluation', {}).get('native_tools', []) %}
-      {% do evidence.append({
-        'capability': 'tool',
-        'name': tool_name,
-        'classification': 'invoked' if tool_name in invoked_tools else ('completed_with_attachment' if evaluation_completed else 'attached')
-      }) %}
-    {% endfor %}
-    {% for capability_name, capability_type in agent.get('evaluation', {}).get('unsupported_tools', {}).items() %}
-      {% do evidence.append({
-        'capability': capability_type,
-        'name': capability_name,
-        'classification': 'invoked' if capability_name in invoked_tools else 'indeterminate'
-      }) %}
-    {% endfor %}
-    {{ return(evidence) }}
-  {% endif %}
-  {% set capabilities = agent.get('capabilities', {}) %}
-  {% set spec = cortex_agent__build_spec(agent_name) %}
   {% set evidence = [] %}
-  {% set rendered_names = [] %}
-  {% for tool in spec.get('tools', []) %}
-    {% set name = tool.get('tool_spec', {}).get('name') %}
-    {% do rendered_names.append(name) %}
+  {% for tool_name in agent.get('evaluation', {}).get('native_tools', []) %}
     {% do evidence.append({
       'capability': 'tool',
-      'name': name,
-      'classification': 'invoked' if name in invoked_tools else ('completed_with_attachment' if evaluation_completed else 'attached')
+      'name': tool_name,
+      'classification': 'invoked' if tool_name in invoked_tools else ('completed_with_attachment' if evaluation_completed else 'attached')
     }) %}
   {% endfor %}
-  {% for skill in spec.get('skills', []) %}
-    {% set name = skill.get('name') %}
-    {% set classification = 'invoked' if name in invoked_tools else ('completed_with_attachment' if evaluation_completed else 'attached') %}
-    {% do evidence.append({'capability': 'skill', 'name': name, 'classification': classification}) %}
+  {% for capability_name, capability_type in agent.get('evaluation', {}).get('unsupported_tools', {}).items() %}
+    {% do evidence.append({
+      'capability': capability_type,
+      'name': capability_name,
+      'classification': 'invoked' if capability_name in invoked_tools else 'indeterminate'
+    }) %}
   {% endfor %}
-  {% if spec.get('skills', []) | length == 0 %}
-    {% do evidence.append({'capability': 'skills', 'name': 'skills', 'classification': 'absent'}) %}
-  {% endif %}
-  {% set code_classification = 'invoked' if 'code_execution' in invoked_tools else (('completed_with_attachment' if evaluation_completed else 'attached') if 'code_execution' in rendered_names else 'absent') %}
-  {% do evidence.append({'capability': 'code_execution', 'name': 'code_execution', 'classification': code_classification}) %}
-  {% set enabled_mcp = [] %}
-  {% for connector in capabilities.get('mcp_connectors', []) %}
-    {% if connector.get('enabled') %}
-      {% do enabled_mcp.append(connector) %}
-    {% endif %}
-  {% endfor %}
-  {% if enabled_mcp | length == 0 %}
-    {% do evidence.append({'capability': 'mcp', 'name': 'mcp', 'classification': 'absent'}) %}
-  {% else %}
-    {% for connector in enabled_mcp %}
-      {% set name = connector.get('name') %}
-      {% do evidence.append({'capability': 'mcp', 'name': name, 'classification': 'invoked' if name in invoked_tools else 'indeterminate'}) %}
-    {% endfor %}
-  {% endif %}
   {{ return(evidence) }}
 {% endmacro %}
 

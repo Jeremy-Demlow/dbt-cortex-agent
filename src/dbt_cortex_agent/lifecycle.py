@@ -6,7 +6,12 @@ from typing import Any
 
 from .config import Config
 from .dbt_runner import CommandRunner, run_dbt_operation
-from .domain import AgentVersionSelector, SnowflakeObjectName, VersionKind
+from .domain import (
+    AgentVersionSelector,
+    SnowflakeObjectName,
+    VersionKind,
+    is_controlled_operation_error,
+)
 from .identifiers import identifier
 
 VERSION_STATE_PREFIX = "CORTEX_AGENT_VERSION_STATE="
@@ -119,6 +124,8 @@ def apply_route_plan(config: Config, plan: RoutePlan, *, runner=None) -> dict[st
         )
         alias_result = _marked_json(alias_stdout, ROUTE_RESULT_PREFIX)
     except Exception as exc:
+        if not is_controlled_operation_error(exc):
+            raise
         observed_state = None
         inspection_error = None
         try:
@@ -160,6 +167,8 @@ def apply_route_plan(config: Config, plan: RoutePlan, *, runner=None) -> dict[st
         )
         default_result = _marked_json(default_stdout, DEFAULT_ROUTE_RESULT_PREFIX)
     except Exception as exc:
+        if not is_controlled_operation_error(exc):
+            raise
         observed_state = None
         inspection_error = None
         try:

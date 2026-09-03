@@ -41,7 +41,7 @@ Use this sequence rather than skipping directly to deploy or evaluation:
 | Package macro undefined in model SQL | Call package helpers as `dbt_cortex_agent.<macro>`. |
 | Macro call in property YAML fails | Property YAML supports `target`, `var`, and `env_var`, not custom macros. |
 | Mutation target rejected | Align CLI `--target`/`--allow-target` with `cortex_agent_deploy_target` and `cortex_agent_allowed_targets`. |
-| Database allowlist rejected | Pass `--database` matching dbt's target and include it in CLI/dbt allowed databases. |
+| Database allowlist rejected | Add every manifest-resolved Agent, dependency, stage, evaluation, and result database to the reviewed repeatable `--allow-database` values. `--database` selects connection context; it does not replace resource authorization. |
 | Apply says connection is not explicit | Pass `--connection`; `SNOWFLAKE_CONNECTION_NAME` alone does not authorize apply. |
 | Missing staged `SKILL.md` | Run `skill plan`, upload the declared directory to the exact stage path, then deploy. |
 | Wrong skill directory | Mirror the declared stage suffix under the private/shared layout; do not add name-keyed remapping. |

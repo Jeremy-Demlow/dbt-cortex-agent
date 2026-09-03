@@ -1,8 +1,9 @@
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Evidence: TC-024-02
+# Evidence: TC-024-02 TC-029-01 TC-029-02 TC-029-03
 
 
 def test_execution_plan_macro_is_offline_and_reuses_authoritative_helpers():
@@ -60,7 +61,7 @@ def test_eval_metadata_contract_rejects_projection_and_validates_full_spec_tools
     assert "undeclared or unsupported native tool" in source
 
 
-def test_capability_evidence_uses_only_req_013_classifications():
+def test_capability_evidence_uses_only_reachable_req_013_classifications():
     source = (ROOT / "macros/cortex_agents/eval_contract.sql").read_text(encoding="utf-8")
     body = source.split("{% macro cortex_eval__capability_evidence", 1)[1].split(
         "{% endmacro %}", 1
@@ -69,7 +70,6 @@ def test_capability_evidence_uses_only_req_013_classifications():
         "attached",
         "invoked",
         "completed_with_attachment",
-        "absent",
         "indeterminate",
     }
     for classification in classifications:
@@ -79,23 +79,18 @@ def test_capability_evidence_uses_only_req_013_classifications():
     assert "CORTEX_AGENT_CAPABILITY_EVIDENCE=" in source
 
 
-def test_native_expected_tool_classes_are_explicit_and_do_not_filter_deploy_spec():
+def test_native_expected_tool_classes_come_from_model_metadata_and_do_not_filter_deploy_spec():
     source = (ROOT / "macros/cortex_agents/eval_contract.sql").read_text(encoding="utf-8")
     supported = source.split("{% macro cortex_eval__native_supported_tool_names", 1)[1].split(
         "{% endmacro %}", 1
     )[0]
-    for tool_type in (
-        "cortex_analyst_text_to_sql",
-        "cortex_search",
-        "generic",
-        "web_search",
-    ):
-        assert tool_type in supported
+    assert "evaluation" in supported
+    assert "native_tools" in supported
     unsupported = source.split("{% macro cortex_eval__unsupported_native_tool_claims", 1)[1].split(
         "{% endmacro %}", 1
     )[0]
-    for capability in ("skills", "mcp_connectors", "code_execution"):
-        assert capability in unsupported
+    assert "evaluation" in unsupported
+    assert "unsupported_tools" in unsupported
 
     render_source = (ROOT / "macros/cortex_agents/agent_render.sql").read_text(encoding="utf-8")
     assert "evaluation_supported" not in render_source
@@ -120,3 +115,27 @@ def test_declared_tool_wins_if_a_capability_reuses_its_name():
     supported_branch = validation.index("expected_tool in native_supported_tool_names")
     unsupported_branch = validation.index("unsupported_native_tool_claims.get(expected_tool)")
     assert supported_branch < unsupported_branch
+
+
+def test_eval_macro_dependencies_are_defined_and_legacy_builder_is_absent():
+    sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((ROOT / "macros").rglob("*.sql"))
+    )
+
+    definitions = set(re.findall(r"{% macro ([a-zA-Z0-9_]+)", sources))
+    calls = set(re.findall(r"\b(cortex_(?:agent|eval)__[a-zA-Z0-9_]+)\(", sources))
+    assert calls - definitions == set()
+    assert "cortex_agent__build_spec" not in sources
+    assert "cortex_agent__current_spec_hash" not in sources
+
+
+def test_eval_run_name_is_validated_before_sql_interpolation():
+    run = (ROOT / "macros/cortex_agents/eval_run.sql").read_text(encoding="utf-8")
+    render = (ROOT / "macros/cortex_agents/eval_render.sql").read_text(encoding="utf-8")
+
+    assert "macro cortex_eval__assert_run_name" in run
+    assert "^[0-9A-Za-z_]+$" in run
+    assert "Evaluation run_name must contain only" in run
+    assert "cortex_eval__assert_run_name(eval_run_name)" in run
+    assert "cortex_eval__assert_run_name(eval_run_name)" in render

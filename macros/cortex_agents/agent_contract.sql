@@ -22,10 +22,6 @@
   {{ return(resource.config.get('meta', {}).get('cortex_agent', {})) }}
 {% endmacro %}
 
-{% macro cortex_agent__is_model(resource) %}
-  {{ return(resource.resource_type == 'model' and resource.config.get('materialized') == 'cortex_agent') }}
-{% endmacro %}
-
 {% macro cortex_agent__get_model_node(model_name) %}
   {% set matches = [] %}
   {% for node in graph.nodes.values() %}

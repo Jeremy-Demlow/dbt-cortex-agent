@@ -178,4 +178,17 @@
 - As an Agent owner, one preview shows the exact physical Agents, skills, dependencies, and databases before mutation.
 - As an evaluation owner, one command materializes the dataset, runs the paid evaluation, consumes the exact candidate, and applies intrinsic or accepted-baseline policy.
 - As an automation author, quality failures and infrastructure failures have distinct stable exits and structured evidence.
+
+## REQ-029
+
+- As a dbt operator, every documented evaluation macro path resolves only shipped macro helpers.
+- As a security reviewer, an unsafe run name cannot be concatenated into evaluation SQL.
+- As a maintainer, unreachable legacy Agent branches do not conceal undefined behavior.
+
+## REQ-030
+
+- As an Agent operator, a failed expected-tool assertion preserves the normalized response that explains the failure.
+- As a cost owner, an existing raw-evidence filename fails before another runtime call is made.
+- As a developer, programming defects remain visible rather than being mislabeled as recoverable operational failures.
+- As a multi-database operator, connection context does not silently narrow manifest-derived resource authorization.
 - As a platform owner, infrastructure tooling and fleet authorization remain adopter policy rather than package dependencies.

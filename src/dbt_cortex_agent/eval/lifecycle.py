@@ -12,7 +12,7 @@ from typing import Any
 
 from ..config import Config
 from ..dbt_runner import CommandRunner, run_dbt_operation, run_dbt_parse
-from ..domain import finite_number
+from ..domain import finite_number, is_controlled_operation_error
 from ..identifiers import fqn, identifier
 from ..manifest import assert_resource_databases_allowed
 from ..skills import assert_apply_safety
@@ -402,6 +402,8 @@ def _upload_config(cursor, plan: EvalPlan, filename: str, content: str) -> str:
     try:
         cursor.execute(f"DESCRIBE STAGE {plan.stage_fqn}")
     except Exception as exc:
+        if not is_controlled_operation_error(exc):
+            raise
         raise RuntimeError(
             f"Evaluation stage must be provisioned before apply: {plan.stage_fqn}"
         ) from exc
@@ -473,6 +475,8 @@ def _assert_agent_exists_with_default(cursor, plan: EvalPlan) -> dict[str, Any]:
     try:
         provenance = _agent_provenance(cursor, plan)
     except Exception as exc:
+        if not is_controlled_operation_error(exc):
+            raise
         raise RuntimeError(
             f"Evaluation requires existing Agent {plan.agent_fqn} with a resolvable DEFAULT version"
         ) from exc

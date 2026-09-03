@@ -207,6 +207,8 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
             )
         if args.raw_events:
             raw_event_path = contained_path(config.artifact_dir, "raw-events", args.raw_events)
+            if raw_event_path.exists():
+                raise FileExistsError(f"Raw Agent event artifact already exists: {raw_event_path}")
         response = invoke_agent(
             selected["database"],
             selected["schema"],
@@ -220,10 +222,6 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
         passed = expected_tool is None or any(
             item.get("name") == expected_tool for item in response.get("tool_uses", [])
         )
-        if not passed:
-            raise RuntimeError(
-                f"Agent smoke failed: expected tool {expected_tool!r} was not selected"
-            )
     payload = {
         "command": "agent smoke",
         "applied": bool(args.apply),
@@ -240,11 +238,12 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
     if args.json:
         emit_json(payload)
     elif args.apply:
-        print(f"PASS {logical_agent} via {agent_object}")
+        status = "PASS" if passed else "FAIL"
+        print(f"{status} {logical_agent} via {agent_object}")
         print(compact_agent_output(response or {}))
     else:
         print(f"[DRY RUN] would smoke {logical_agent} via {agent_object}: {question}")
-    return 0
+    return 2 if args.apply and passed is False else 0
 
 
 def _emit(args: argparse.Namespace, payload: dict) -> None:

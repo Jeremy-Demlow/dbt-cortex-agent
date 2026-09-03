@@ -7,6 +7,14 @@ from typing import Any
 
 from .identifiers import fqn, identifier, version
 
+CONTROLLED_OPERATION_ERRORS = (OSError, RuntimeError, ValueError)
+
+
+def is_controlled_operation_error(exc: Exception) -> bool:
+    return isinstance(exc, CONTROLLED_OPERATION_ERRORS) or exc.__class__.__module__.startswith(
+        "snowflake.connector"
+    )
+
 
 @dataclass(frozen=True, order=True)
 class SnowflakeObjectName:

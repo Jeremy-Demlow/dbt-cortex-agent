@@ -17,7 +17,7 @@ AGENT = {
     "physical_fqn": "DB.AGENTS.FINANCE_ASSISTANT",
 }
 
-# Evidence: TC-023-06 TC-025-01 TC-025-02 TC-025-03 TC-025-04 TC-025-05 TC-025-11 TC-025-12
+# Evidence: TC-023-06 TC-025-01 TC-025-02 TC-025-03 TC-025-04 TC-025-05 TC-025-11 TC-025-12 TC-030-03
 
 
 class Runner:
@@ -188,6 +188,16 @@ def test_route_reports_observed_state_when_alias_phase_fails(config) -> None:
     assert result["after"] == observed_state
     assert result["phases"][0]["phase"] == "alias"
     assert result["phases"][0]["status"] == "failed"
+
+
+def test_route_programming_error_is_not_reported_as_partial_failure(config) -> None:
+    class BrokenRunner:
+        def run(self, command, **kwargs):
+            raise AssertionError("programming defect")
+
+    plan = build_route_plan("promote", AGENT, "VERSION$2", "production", True)
+    with pytest.raises(AssertionError, match="programming defect"):
+        apply_route_plan(config, plan, runner=BrokenRunner())
 
 
 @pytest.fixture

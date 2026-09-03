@@ -5,7 +5,12 @@ from typing import Any
 
 from .config import Config
 from .dbt_runner import CommandRunner, run_dbt_build
-from .domain import DurablePhaseError, LifecyclePhase, OperationOutcome
+from .domain import (
+    DurablePhaseError,
+    LifecyclePhase,
+    OperationOutcome,
+    is_controlled_operation_error,
+)
 from .identifiers import identifier
 from .manifest import assert_resource_databases_allowed, select_agents
 from .skills import build_upload_plan, upload_skills
@@ -117,6 +122,8 @@ def apply_deploy_plan(
     try:
         upload_skills(list(plan.skill_uploads), config, command_runner)
     except Exception as exc:
+        if not is_controlled_operation_error(exc):
+            raise
         raise DurablePhaseError(
             f"Agent skill upload failed: {exc}",
             outcome.fail(LifecyclePhase.SKILLS_UPLOADED, str(exc)),

@@ -1,4 +1,4 @@
-# CLI reference (v0.0.6)
+# CLI reference (v0.0.7)
 
 `dbt-cortex-agent` is the single console entry. Manifest-dependent commands run
 a fresh `dbt parse` unless `--no-parse` is supplied for a controlled fixture.
@@ -25,7 +25,7 @@ are preview/dry-run by default and require `--apply`.
 | `--manifest` | Manifest path relative to project; default `target/manifest.json`. |
 | `--target` | Explicit dbt target. |
 | `--connection` | Explicit Snowflake connection; required as a flag for applied remote operations. |
-| `--database` | Expected Snowflake target database. |
+| `--database` | Snowflake connection/default execution database; resolved resource databases are authorized independently by repeatable `--allow-database`. |
 | `--schema` | Agent schema for runtime operations. |
 | `--role` | Expected Snowflake execution role. |
 | `--warehouse` | Warehouse for paid evaluation. |
@@ -45,7 +45,7 @@ Precedence is CLI option, then environment variable, then built-in default.
 ### `dbt-cortex-agent init` — MUTATION with `--apply`
 
 Preview or append missing package/project-var entries. Options: shared options,
-`--package-source`, `--revision` (default `v0.0.6`), `--agent-schema`,
+`--package-source`, `--revision` (default `v0.0.7`), `--agent-schema`,
 `--eval-schema`, both repeatable allowlists, `--apply`, and `--run-dbt-deps`.
 Output is messages or JSON with `applied`, `changed_files`, and `messages`.
 By default, the command configures an existing dbt project only; it does not scaffold a dbt
