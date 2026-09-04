@@ -106,6 +106,17 @@ def read_version_state(config: Config, agent_name: str, *, runner=None) -> dict[
     return _marked_json(stdout, VERSION_STATE_PREFIX)
 
 
+def _inspect_state(
+    config: Config, agent_name: str, runner
+) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        return read_version_state(config, agent_name, runner=runner), None
+    except Exception as exc:
+        if not is_controlled_operation_error(exc):
+            raise
+        return None, str(exc)
+
+
 def apply_route_plan(config: Config, plan: RoutePlan, *, runner=None) -> dict[str, Any]:
     planned_state = read_version_state(config, plan.agent, runner=runner)
     expected_alias_version = planned_state.get("aliases", {}).get(plan.alias, "")
@@ -126,12 +137,7 @@ def apply_route_plan(config: Config, plan: RoutePlan, *, runner=None) -> dict[st
     except Exception as exc:
         if not is_controlled_operation_error(exc):
             raise
-        observed_state = None
-        inspection_error = None
-        try:
-            observed_state = read_version_state(config, plan.agent, runner=runner)
-        except Exception as inspect_exc:
-            inspection_error = str(inspect_exc)
+        observed_state, inspection_error = _inspect_state(config, plan.agent, runner)
         return {
             "agent_fqn": str(plan.agent_fqn),
             "to_version": plan.to_version,
@@ -169,12 +175,7 @@ def apply_route_plan(config: Config, plan: RoutePlan, *, runner=None) -> dict[st
     except Exception as exc:
         if not is_controlled_operation_error(exc):
             raise
-        observed_state = None
-        inspection_error = None
-        try:
-            observed_state = read_version_state(config, plan.agent, runner=runner)
-        except Exception as inspect_exc:
-            inspection_error = str(inspect_exc)
+        observed_state, inspection_error = _inspect_state(config, plan.agent, runner)
         phases.append(
             {
                 "phase": "default",
