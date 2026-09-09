@@ -111,11 +111,11 @@ def test_missing_connection_fails_without_leaking_parameters(tmp_path):
         ({"authenticator": "oauth"}, "unsupported authenticator"),
         ({"authenticator": "username_password_mfa"}, "unsupported authenticator"),
         (
-            {"password": "active-password"},
+            {"password": "active-password"},  # pragma: allowlist secret
             "unsupported authentication parameter",
         ),  # pragma: allowlist secret
         (
-            {"private_key": "inline-key"},
+            {"private_key": "inline-key"},  # pragma: allowlist secret
             "unsupported authentication parameter",
         ),  # pragma: allowlist secret
         (
@@ -127,7 +127,7 @@ def test_missing_connection_fails_without_leaking_parameters(tmp_path):
             "unsupported authentication parameter",
         ),  # pragma: allowlist secret
         (
-            {"oauth_client_secret": "client-secret"},
+            {"oauth_client_secret": "client-secret"},  # pragma: allowlist secret
             "unsupported authentication parameter",
         ),  # pragma: allowlist secret
     ],
