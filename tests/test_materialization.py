@@ -41,10 +41,10 @@ def test_materialization_is_the_agent_lifecycle_authority():
     assert "MODIFY LIVE VERSION SET SPECIFICATION" in lifecycle
     assert 'run_query("ALTER AGENT " ~ agent_fqn ~ " COMMIT COMMENT = $$"' in lifecycle
     assert "cortex_agent__route_alias_for_fqn" in lifecycle
-    assert "CORTEX_AGENT_DEPLOY_PHASE=version_committed" in lifecycle
-    assert "CORTEX_AGENT_DEPLOY_PHASE=metadata_reconciled" in lifecycle
-    assert "CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled" in lifecycle
-    assert "CORTEX_AGENT_DEPLOY_PHASE=live_reconciled" in lifecycle
+    assert "CORTEX_AGENT_DEPLOY_PHASE=version_committed" in lifecycle  # pragma: allowlist secret
+    assert "CORTEX_AGENT_DEPLOY_PHASE=metadata_reconciled" in lifecycle  # pragma: allowlist secret
+    assert "CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled" in lifecycle  # pragma: allowlist secret
+    assert "CORTEX_AGENT_DEPLOY_PHASE=live_reconciled" in lifecycle  # pragma: allowlist secret
 
     versioning = (ROOT / "macros/cortex_agents/agent_versioning.sql").read_text(encoding="utf-8")
     alias_phase = versioning[

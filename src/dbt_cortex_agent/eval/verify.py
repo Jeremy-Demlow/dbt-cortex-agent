@@ -7,16 +7,10 @@ from typing import Any
 
 from ..config import Config
 from ..dbt_runner import CommandRunner, run_dbt_build
+from ..domain import CONTROLLED_OPERATION_ERRORS
 from .gate import baseline_path, gate_candidate
 from .lifecycle import EvalPlan, build_plan, run_evaluation, validate_evaluation_apply
 from .results import load_result
-
-CONTROLLED_VERIFY_ERRORS = (
-    FileNotFoundError,
-    OSError,
-    RuntimeError,
-    ValueError,
-)
 
 
 @dataclass(frozen=True)
@@ -149,7 +143,7 @@ def verify_evaluations(
                 passed = bool(gate["passed"])
             else:
                 passed = bool(candidate.get("passed")) and candidate.get("status") == "completed"
-        except CONTROLLED_VERIFY_ERRORS as exc:
+        except CONTROLLED_OPERATION_ERRORS as exc:
             results.append(
                 {
                     **plan_payload,

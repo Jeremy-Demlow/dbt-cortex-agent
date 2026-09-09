@@ -175,7 +175,7 @@ def test_dbt_failure_preserves_markers_from_stdout_and_stderr(tmp_path):
         return subprocess.CompletedProcess(
             command,
             1,
-            "CORTEX_AGENT_DEPLOY_PHASE=version_committed",
+            "CORTEX_AGENT_DEPLOY_PHASE=version_committed",  # pragma: allowlist secret
             "CORTEX_AGENT_DEPLOY_PHASE=metadata_reconciled\ndbt failed",
         )
 

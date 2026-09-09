@@ -48,6 +48,21 @@
 - As a platform owner, I can identify each privilege, approval, mutation, runtime, and spend boundary.
 - As an article author, I can trace every technical claim to repeatable package evidence.
 
+## REQ-029
+
+- As an evaluator, every public evaluation macro resolves and validates SQL-bearing run names.
+
+## REQ-030
+
+- As an operator, runtime assertion failures retain useful evidence while programming defects remain visible.
+- As a multi-database operator, connection context does not narrow explicitly authorized resources.
+
+## REQ-031
+
+- As an operator, equivalent operational failures receive equivalent structured outcomes.
+- As a developer, assertion and programming defects continue to propagate with tracebacks.
+- As a maintainer, routing reconciliation uses one tested state-inspection helper.
+
 ## REQ-016
 
 - As a runtime operator, I can declare roles that receive `USAGE ON AGENT` without putting grants in the Agent specification.

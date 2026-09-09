@@ -200,7 +200,7 @@
       {% set expected_alias_version = aliases.get(alias_key, '') %}
       {% if reconcile_alias and expected_alias_version != managed_version %}
         {% do dbt_cortex_agent.cortex_agent__route_alias_for_fqn(agent_fqn, managed_version, deploy_alias, expected_alias_version) %}
-        {% do log('CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled', info=True) %}
+        {% do log('CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled', info=True) %} {# pragma: allowlist secret #}
         {% do log("Reconciled alias " ~ deploy_alias ~ " -> " ~ managed_version ~ " on unchanged " ~ agent_fqn, info=True) %}
       {% endif %}
       {% do log("No spec/skill change for " ~ agent_fqn ~ " (spec_md5=" ~ spec_hash ~ ", skill_md5=" ~ skill_hash ~ "); skipping COMMIT. Set var('force_agent_recreate', true) to force a new version.", info=True) %}
@@ -229,20 +229,20 @@
     {% endif %}
     {% set new_version = version_match.group(0) %}
   {% endif %}
-  {% do log('CORTEX_AGENT_DEPLOY_PHASE=version_committed', info=True) %}
+  {% do log('CORTEX_AGENT_DEPLOY_PHASE=version_committed', info=True) %} {# pragma: allowlist secret #}
 
   {% set version_comment = target.name ~ ' | inv=' ~ invocation_id ~ ' | spec_md5=' ~ spec_hash ~ ' | skill_md5=' ~ skill_hash %}
   {% do run_query("ALTER AGENT " ~ agent_fqn ~ " MODIFY VERSION " ~ new_version ~ " SET COMMENT = $$" ~ version_comment ~ "$$") %}
-  {% do log('CORTEX_AGENT_DEPLOY_PHASE=metadata_reconciled', info=True) %}
+  {% do log('CORTEX_AGENT_DEPLOY_PHASE=metadata_reconciled', info=True) %} {# pragma: allowlist secret #}
   {% set current_aliases = dbt_cortex_agent.cortex_agent__describe_aliases(agent_fqn) %}
   {% set expected_alias_version = current_aliases.get(deploy_alias | upper, '') %}
   {% do dbt_cortex_agent.cortex_agent__route_alias_for_fqn(agent_fqn, new_version, deploy_alias, expected_alias_version) %}
-  {% do log('CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled', info=True) %}
+  {% do log('CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled', info=True) %} {# pragma: allowlist secret #}
 
   {% if not dbt_cortex_agent.cortex_agent__live_draft_exists(agent_fqn) %}
     {% do run_query("ALTER AGENT " ~ agent_fqn ~ " ADD LIVE VERSION FROM LAST") %}
   {% endif %}
-  {% do log('CORTEX_AGENT_DEPLOY_PHASE=live_reconciled', info=True) %}
+  {% do log('CORTEX_AGENT_DEPLOY_PHASE=live_reconciled', info=True) %} {# pragma: allowlist secret #}
 
   {# MCP connectors reference a pre-existing EXTERNAL MCP SERVER object and are
      attached out-of-band from the spec. Gated behind mcp_deploy_enabled because

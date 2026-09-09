@@ -50,7 +50,7 @@ def test_active_docs_describe_v001_materialization_boundary():
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
-    assert "0.0.7" in combined
+    assert "0.0.8" in combined
     assert "dbt build --select" in combined
     assert "Python must not render, create, alter, commit, alias, grant, promote" in combined
     assert "Legacy exposure declarations remain supported" not in combined
@@ -71,7 +71,7 @@ def test_readme_documents_package_agent_commands():
 def test_changelog_starts_public_history_at_v001():
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert "## 0.0.7 — 2026-09-03" in changelog
+    assert "## 0.0.8 — 2026-09-09" in changelog
     for old in ("## 0.1.0", "## 0.2.0", "## 0.3.0", "## 0.3.1"):
         assert old not in changelog
 
@@ -151,7 +151,7 @@ def test_non_mutating_quickstart_has_no_applied_remote_command():
 
 
 def test_current_release_identity_is_consistent_across_public_docs():
-    expected = "0.0.7"
+    expected = "0.0.8"
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     installation = (ROOT / "docs/getting-started/installation.md").read_text(encoding="utf-8")
     cli_reference = (ROOT / "docs/reference/cli.md").read_text(encoding="utf-8")

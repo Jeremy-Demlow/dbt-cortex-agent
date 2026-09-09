@@ -3,6 +3,14 @@
 This project had no public beta or stable release before `0.0.1`. Earlier Git
 history records design experiments, not supported package versions.
 
+## 0.0.8 — 2026-09-09
+
+- Centralize controlled operational failure classification across deployment,
+  routing, and evaluation while preserving programming-defect propagation.
+- Reuse one routing state-inspection helper for durable partial-failure evidence.
+- Add direct classifier and governance evidence without changing Agent DDL, CLI
+  behavior, or lifecycle ordering.
+
 ## 0.0.7 — 2026-09-03
 
 - Fix the public dbt evaluation macro path by removing unreachable legacy
