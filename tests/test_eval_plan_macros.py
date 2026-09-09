@@ -119,8 +119,7 @@ def test_declared_tool_wins_if_a_capability_reuses_its_name():
 
 def test_eval_macro_dependencies_are_defined_and_legacy_builder_is_absent():
     sources = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in sorted((ROOT / "macros").rglob("*.sql"))
+        path.read_text(encoding="utf-8") for path in sorted((ROOT / "macros").rglob("*.sql"))
     )
 
     definitions = set(re.findall(r"{% macro ([a-zA-Z0-9_]+)", sources))

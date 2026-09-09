@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-# Evidence: TC-022-02 TC-022-06 TC-022-09
+# Evidence: TC-022-02 TC-022-06 TC-022-09 TC-031-04
 from dbt_cortex_agent.config import resolve_config
 from dbt_cortex_agent.dbt_runner import CommandRunner
 from dbt_cortex_agent.eval.lifecycle import PLAN_SCHEMA_VERSION, EvalPlan

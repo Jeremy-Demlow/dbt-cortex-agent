@@ -2,7 +2,7 @@
 
 Requirements are the product contract. A requirement is complete only when its acceptance criteria
 have reproducible verification evidence. Historical version-specific requirements remain indexed as
-provenance. The current release target is `0.0.7`; REQ-021 through REQ-028 remain
+provenance. The current release target is `0.0.8`; REQ-021 through REQ-028 remain
 the qualified `0.0.6` foundation, extended by the current corrective release.
 
 | Requirement | Scope | Status |
@@ -36,6 +36,7 @@ the qualified `0.0.6` foundation, extended by the current corrective release.
 | [REQ-028](REQ-028_executable_developer_ci_guide.md) | Executable developer and CI/CD guide | Complete (v0.0.6) |
 | [REQ-029](REQ-029_macro_eval_execution_safety.md) | Executable and injection-safe dbt evaluation macros | Complete (v0.0.7) |
 | [REQ-030](REQ-030_runtime_failure_evidence.md) | Runtime assertion evidence and honest exception classification | Complete (v0.0.7) |
+| [REQ-031](REQ-031_shared_controlled_failure_contract.md) | Shared controlled-operation classification and routing inspection | Complete (v0.0.8) |
 
 See [user stories](user_stories.md), [test cases](../tests/test_cases.md), and
 [regression coverage](../tests/regression.md) for the linked behavioral evidence.

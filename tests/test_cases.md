@@ -101,7 +101,7 @@
 
 ## REQ-028: Executable developer and CI/CD guide
 
-1. `TC-028-01`: Verify architecture and matching `0.0.7` install coordinates.
+1. `TC-028-01`: Verify architecture and matching `0.0.8` install coordinates.
 2. `TC-028-02`: Verify generic-first creation and optional capability examples.
 3. `TC-028-03`: Parse validation, deploy, smoke, and recovery command sequence.
 4. `TC-028-04`: Parse evaluation, gate, and baseline command sequence and approval labels.
@@ -124,6 +124,14 @@
 2. `TC-030-02`: Reject an existing raw-event destination before Agent invocation.
 3. `TC-030-03`: Propagate programming defects instead of reporting controlled partial failure.
 4. `TC-030-04`: Authorize all manifest-resolved resource databases independently of connection-default database context.
+
+## REQ-031: Shared controlled failure contract
+
+1. `TC-031-01`: Classify the bounded standard operational exception set through the shared contract.
+2. `TC-031-02`: Classify Snowflake connector exceptions without requiring the optional connector in the base package.
+3. `TC-031-03`: Reject programming defects from controlled-operation classification.
+4. `TC-031-04`: Verify evaluation uses the shared exception tuple and propagates programming defects.
+5. `TC-031-05`: Verify shared routing state inspection preserves controlled evidence and propagates programming defects.
 
 ## REQ-016: Agent monitor access contract
 

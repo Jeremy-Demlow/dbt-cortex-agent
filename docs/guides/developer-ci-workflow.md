@@ -32,13 +32,13 @@ source of Agent state.
 ## Install one release
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.7'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.8'
 ```
 
 ```yaml
 packages:
   - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git
-    revision: v0.0.7
+    revision: v0.0.8
 ```
 
 The Python package coordinates files, dbt, runtime calls, and evidence. The dbt

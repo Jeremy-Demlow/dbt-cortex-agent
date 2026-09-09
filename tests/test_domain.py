@@ -10,6 +10,7 @@ from dbt_cortex_agent.domain import (
     SnowflakeObjectName,
     VersionKind,
     finite_number,
+    is_controlled_operation_error,
 )
 
 
@@ -62,3 +63,21 @@ def test_operation_outcome_preserves_durable_phase_order() -> None:
         {"phase": "version_committed", "completed": True, "detail": "VERSION$2"},
         {"phase": "alias_reconciled", "completed": False, "detail": "alias conflict"},
     ]
+
+
+# Evidence: TC-031-01 TC-031-02 TC-031-03
+@pytest.mark.parametrize("error", [OSError("io"), RuntimeError("runtime"), ValueError("value")])
+def test_controlled_operation_error_recognizes_expected_failures(error: Exception) -> None:
+    assert is_controlled_operation_error(error)
+
+
+def test_controlled_operation_error_recognizes_snowflake_connector_failures() -> None:
+    ConnectorError = type(
+        "ConnectorError", (Exception,), {"__module__": "snowflake.connector.errors"}
+    )
+
+    assert is_controlled_operation_error(ConnectorError("connector"))
+
+
+def test_controlled_operation_error_rejects_programming_defects() -> None:
+    assert not is_controlled_operation_error(AssertionError("programming defect"))

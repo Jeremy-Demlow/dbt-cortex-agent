@@ -53,6 +53,7 @@ requirements/*
 !requirements/REQ-028_executable_developer_ci_guide.md
 !requirements/REQ-029_macro_eval_execution_safety.md
 !requirements/REQ-030_runtime_failure_evidence.md
+!requirements/REQ-031_shared_controlled_failure_contract.md
 !requirements/README.md
 !requirements/user_stories.md
 evidence/
