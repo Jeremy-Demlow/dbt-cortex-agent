@@ -5,13 +5,13 @@ from pathlib import Path
 from typing import Any
 
 from ..artifacts import ARTIFACT_SCHEMA_VERSION, contained_path
-from .results import _identity_components, validate_result
+from .results import _identity_components, eligibility_failures, validate_result
 
 
 def build_baseline(candidate: dict[str, Any]) -> dict[str, Any]:
     validate_result(candidate, "candidate")
-    if candidate.get("passed") is not True:
-        raise ValueError("Failed evaluation candidates cannot become baselines")
+    if eligibility_failures(candidate):
+        raise ValueError("Failed or non-completed evaluation candidates cannot become baselines")
     metadata = dict(candidate.get("run_metadata") or {})
     metadata.pop("git_sha", None)
     keys = (

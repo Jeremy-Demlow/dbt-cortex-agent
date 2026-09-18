@@ -16,7 +16,7 @@ capabilities:
       server: "{{ target.database }}.AGENTS.TICKETING_MCP_SERVER"
 ```
 
-Do not assume that `agent deploy` applies this mapping. Release `0.0.8` passes no
+Do not assume that `agent deploy` applies this mapping. Candidate `0.0.9` passes no
 MCP attachment statements into the active materialization. Any manual attachment
 must use a separately reviewed Snowflake operation and independent evidence.
 

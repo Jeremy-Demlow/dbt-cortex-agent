@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..domain import finite_number
-from .results import threshold_failures, validate_result
+from .results import eligibility_failures, threshold_failures, validate_result
 
 
 def metric_averages(result: dict[str, Any]) -> dict[str, float]:
@@ -69,8 +69,16 @@ def compare_results(
             }
         )
     failures = threshold_failures(candidate.get("summary") or {}, candidate.get("thresholds") or {})
+    ineligible = {
+        "baseline": eligibility_failures(baseline),
+        "candidate": eligibility_failures(candidate),
+    }
     return {
-        "passed": reason is None and not regressions and not failures,
+        "passed": reason is None
+        and not regressions
+        and not failures
+        and not any(ineligible.values()),
+        "eligibility_failures": ineligible,
         "suite_change": reason,
         "regressions": regressions,
         "threshold_failures": failures,

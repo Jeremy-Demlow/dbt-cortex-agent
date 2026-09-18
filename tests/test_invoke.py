@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import builtins
+import io
+import json
+import sys
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
+from urllib.error import HTTPError
 
 import pytest
 
@@ -9,6 +14,7 @@ import pytest
 # Evidence: TC-027-06 TC-027-07 TC-027-08 TC-027-09 TC-027-10
 from dbt_cortex_agent.invoke import (
     AgentEvent,
+    AgentInvocationError,
     compact_agent_output,
     invoke_agent,
     parse_sse,
@@ -280,10 +286,10 @@ def test_direct_invocation_passes_bounded_http_timeout(monkeypatch):
             pass
 
     class Response:
-        def __enter__(self):
+        def __iter__(self):
             return iter(["data: [DONE]"])
 
-        def __exit__(self, *args):
+        def close(self):
             pass
 
     connector = types.SimpleNamespace(connect=lambda **kwargs: Connection())
@@ -309,7 +315,8 @@ def test_direct_invocation_passes_bounded_http_timeout(monkeypatch):
         )["answer"]
         == ""
     )
-    assert observed == [12]
+    assert len(observed) == 1
+    assert 0 < observed[0] <= 12
 
 
 def test_direct_invocation_uses_versioned_rest_path(monkeypatch):
@@ -330,10 +337,10 @@ def test_direct_invocation_uses_versioned_rest_path(monkeypatch):
             pass
 
     class Response:
-        def __enter__(self):
+        def __iter__(self):
             return iter(["data: [DONE]"])
 
-        def __exit__(self, *args):
+        def close(self):
             pass
 
     connector = types.SimpleNamespace(connect=lambda **kwargs: Connection())
@@ -379,10 +386,10 @@ def test_direct_invocation_sends_explicit_runtime_role(monkeypatch):
             pass
 
     class Response:
-        def __enter__(self):
+        def __iter__(self):
             return iter(["data: [DONE]"])
 
-        def __exit__(self, *args):
+        def close(self):
             pass
 
     connector = types.SimpleNamespace(connect=lambda **kwargs: Connection())
@@ -407,3 +414,387 @@ def test_direct_invocation_sends_explicit_runtime_role(monkeypatch):
     )
 
     assert requests[0].headers["X-snowflake-role"] == "RUNTIME_ROLE"
+
+
+@pytest.fixture
+def runtime_transport(monkeypatch):  # noqa: C901
+    state = SimpleNamespace(
+        clock=100.0,
+        connect_delay=0,
+        read_delay=0,
+        closed=[],
+        connect_args=None,
+        cursor_error=None,
+        connect_error=None,
+        read_error=None,
+        close_errors={},
+        requests=[],
+        query_timeouts=[],
+        read_sizes=[],
+    )
+
+    def close(name):
+        state.closed.append(name)
+        if name in state.close_errors:
+            raise state.close_errors[name]
+
+    class Cursor:
+        def execute(self, sql, *, timeout):
+            state.query_timeouts.append(timeout)
+
+        def fetchone(self):
+            return ("org", "account")
+
+        def close(self):
+            close("cursor")
+
+    class Connection:
+        rest = SimpleNamespace(token="test-token")
+
+        def cursor(self):
+            if state.cursor_error:
+                raise state.cursor_error
+            return Cursor()
+
+        def close(self):
+            close("connection")
+
+    class Response(io.BytesIO):
+        def readline(self, size=-1):
+            state.read_sizes.append(size)
+            state.clock += state.read_delay
+            if state.read_error and self.tell() == len(self.getvalue()):
+                raise state.read_error
+            return super().readline(size)
+
+        def close(self):
+            if self.closed:
+                return
+            super().close()
+            if self is state.response:
+                close("response")
+
+    def connect(**kwargs):
+        state.connect_args = kwargs
+        state.clock += state.connect_delay
+        if state.connect_error:
+            raise state.connect_error
+        return Connection()
+
+    def open_response(request, timeout):
+        state.requests.append((request, timeout))
+        return state.response
+
+    state.response = Response(b"data: [DONE]\n")
+    state.set_stream = lambda stream: setattr(state, "response", Response(stream))
+    connector = SimpleNamespace(connect=connect)
+    snowflake = ModuleType("snowflake")
+    snowflake.connector = connector
+    monkeypatch.setitem(sys.modules, "snowflake", snowflake)
+    monkeypatch.setitem(sys.modules, "snowflake.connector", connector)
+    monkeypatch.setattr("dbt_cortex_agent.invoke.urlopen", open_response)
+    monkeypatch.setattr("dbt_cortex_agent.invoke.time.monotonic", lambda: state.clock)
+    yield state
+    state.close_errors.clear()
+    state.response.close()
+
+
+PARTIAL_STREAM = b'event: response.text.delta\ndata: {"text":"partial"}\n\n'
+
+
+@pytest.mark.parametrize(
+    "ending, message",
+    [
+        (b'event: error\ndata: {"message":"service failed"}\n\ndata: [DONE]\n', "service failed"),
+        (b"event: response\ndata: not-json\n\n", "Malformed Agent SSE JSON"),
+        (b"event: response\ndata: []\n\n", "must be a JSON object"),
+        (b"\xff\n", "utf-8"),
+        (b"", "ended before"),
+    ],
+)
+def test_runtime_partial_evidence_survives_stream_failure(
+    runtime_transport, tmp_path, ending, message
+):
+    runtime_transport.set_stream(PARTIAL_STREAM + ending)
+    target = tmp_path / "events.jsonl"
+    with pytest.raises(AgentInvocationError, match=message) as failure:
+        invoke_agent("DB", "S", "A", "question", "conn", raw_event_path=target)
+    assert failure.value.result["answer"] == "partial"
+    assert failure.value.result["errors"]
+    assert failure.value.raw_event_path == target
+    raw = [json.loads(line) for line in target.read_text().splitlines()]
+    assert raw[0] == {"event": "response.text.delta", "data": {"text": "partial"}}
+    assert runtime_transport.closed[-3:] == ["response", "cursor", "connection"]
+
+
+@pytest.mark.parametrize(
+    "limit, value, ending",
+    [
+        ("MAX_STREAM_BYTES", len(PARTIAL_STREAM) + 5, b":" + b"x" * 1000),
+        ("MAX_RAW_EVENT_BYTES", 80, PARTIAL_STREAM),
+        ("MAX_AGENT_EVENTS", 1, PARTIAL_STREAM),
+    ],
+)
+def test_runtime_limits_are_incremental_with_partial_evidence(
+    runtime_transport,
+    tmp_path,
+    monkeypatch,
+    limit,
+    value,
+    ending,
+):
+    monkeypatch.setattr(f"dbt_cortex_agent.invoke.{limit}", value)
+    runtime_transport.set_stream(PARTIAL_STREAM + ending + b"\ndata: [DONE]\n")
+    target = tmp_path / "events.jsonl"
+    with pytest.raises(AgentInvocationError, match="limit") as failure:
+        invoke_agent("DB", "S", "A", "question", "conn", raw_event_path=target)
+    assert failure.value.result["answer"] == "partial"
+    assert len(target.read_text().splitlines()) == 1
+    assert target.stat().st_size <= (value if limit == "MAX_RAW_EVENT_BYTES" else 1_000_000)
+    assert all(0 < size <= 1_000_001 for size in runtime_transport.read_sizes)
+
+
+def test_runtime_deadline_includes_setup_and_slow_stream(runtime_transport, tmp_path):
+    runtime_transport.set_stream(PARTIAL_STREAM + b": heartbeat\n" * 20)
+    runtime_transport.connect_delay = 2
+    runtime_transport.read_delay = 1
+    with pytest.raises(AgentInvocationError, match="deadline") as failure:
+        invoke_agent(
+            "DB", "S", "A", "question", "conn", timeout=10, raw_event_path=tmp_path / "events.jsonl"
+        )
+    assert runtime_transport.connect_args == {
+        "connection_name": "conn",
+        "login_timeout": 10,
+        "network_timeout": 10,
+        "socket_timeout": 10,
+    }
+    assert runtime_transport.query_timeouts == [8]
+    assert runtime_transport.requests[0][1] == 8
+    assert failure.value.result["answer"] == "partial"
+    assert failure.value.result["duration_seconds"] == 10
+    assert len(runtime_transport.read_sizes) == 8
+
+
+def test_setup_overrun_closes_connection_without_opening_http(runtime_transport):
+    runtime_transport.connect_delay = 11
+    with pytest.raises(AgentInvocationError, match="deadline"):
+        invoke_agent("DB", "S", "A", "question", "conn", timeout=10)
+    assert runtime_transport.requests == []
+    assert runtime_transport.closed[-1:] == ["connection"]
+
+
+@pytest.mark.parametrize("error_type", [AssertionError, TypeError, AttributeError])
+def test_runtime_programming_defect_propagates_despite_cleanup(runtime_transport, error_type):
+    primary = error_type("programming defect")
+    runtime_transport.set_stream(PARTIAL_STREAM)
+    runtime_transport.read_error = primary
+    runtime_transport.close_errors = {
+        name: OSError(name) for name in ("response", "cursor", "connection")
+    }
+    with pytest.raises(error_type) as failure:
+        invoke_agent("DB", "S", "A", "question", "conn")
+    assert failure.value is primary
+    assert [str(error) for error in primary.cleanup_errors] == ["response", "cursor", "connection"]
+    assert runtime_transport.closed[-3:] == ["response", "cursor", "connection"]
+
+
+@pytest.mark.parametrize("phase", ["connect", "cursor", "read", "close"])
+def test_runtime_acquisition_and_independent_cleanup(runtime_transport, phase, tmp_path):
+    connector_error = type(
+        "OperationalError", (Exception,), {"__module__": "snowflake.connector.errors"}
+    )
+    primary = connector_error("primary")
+    if phase == "connect":
+        runtime_transport.connect_error = primary
+    elif phase == "cursor":
+        runtime_transport.cursor_error = primary
+    elif phase == "read":
+        runtime_transport.set_stream(PARTIAL_STREAM)
+        runtime_transport.read_error = primary
+    runtime_transport.close_errors = {
+        name: OSError(f"close {name}") for name in ("response", "cursor", "connection")
+    }
+    with pytest.raises(AgentInvocationError) as failure:
+        invoke_agent("DB", "S", "A", "question", "conn", raw_event_path=tmp_path / "events.jsonl")
+    if phase != "close":
+        assert failure.value.__cause__ is primary
+        assert str(failure.value) == "primary"
+    else:
+        assert str(failure.value) == "close response"
+    expected = {
+        "connect": [],
+        "cursor": ["connection"],
+        "read": ["response", "cursor", "connection"],
+        "close": ["response", "cursor", "connection"],
+    }[phase]
+    assert runtime_transport.closed == expected
+    if phase == "read":
+        assert failure.value.result["answer"] == "partial"
+        assert failure.value.result["metadata"]["cleanup_errors"] == [
+            "close response",
+            "close cursor",
+            "close connection",
+        ]
+
+
+def test_raw_write_failure_cannot_mask_stream_failure(runtime_transport, monkeypatch, tmp_path):
+    runtime_transport.set_stream(PARTIAL_STREAM)
+    monkeypatch.setattr(
+        "dbt_cortex_agent.invoke.write_raw_events",
+        lambda *_args: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    with pytest.raises(AgentInvocationError, match="ended before") as failure:
+        invoke_agent("DB", "S", "A", "question", "conn", raw_event_path=tmp_path / "events.jsonl")
+    assert failure.value.result["answer"] == "partial"
+    assert "disk full" in failure.value.result["errors"]
+    assert failure.value.raw_event_path is None
+
+
+@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
+def test_invalid_runtime_budget_fails_before_acquisition(runtime_transport, timeout):
+    with pytest.raises(ValueError):
+        invoke_agent("DB", "S", "A", "question", "conn", timeout=timeout)
+    assert runtime_transport.connect_args is None
+
+
+def test_runtime_without_raw_opt_in_still_retains_normalized_failure(
+    runtime_transport, monkeypatch
+):
+    runtime_transport.set_stream(PARTIAL_STREAM)
+    monkeypatch.setattr(
+        "dbt_cortex_agent.invoke.write_raw_events",
+        lambda *_args: pytest.fail("raw artifact written without opt-in"),
+    )
+    with pytest.raises(AgentInvocationError) as failure:
+        invoke_agent("DB", "S", "A", "question", "conn")
+    assert failure.value.result["answer"] == "partial"
+    assert failure.value.raw_event_path is None
+
+
+def test_runtime_direct_collision_fails_before_connection(runtime_transport, tmp_path):
+    target = tmp_path / "events.jsonl"
+    target.write_text("existing evidence")
+    with pytest.raises(FileExistsError):
+        invoke_agent("DB", "S", "A", "question", "conn", raw_event_path=target)
+    assert runtime_transport.connect_args is None
+    assert target.read_text() == "existing evidence"
+
+
+def test_unframed_stream_is_bounded_before_json_decode(runtime_transport, tmp_path, monkeypatch):
+    monkeypatch.setattr("dbt_cortex_agent.invoke.MAX_STREAM_BYTES", 32)
+    runtime_transport.set_stream(b'data: {"text":"' + b"x" * 5000)
+    target = tmp_path / "events.jsonl"
+    with pytest.raises(AgentInvocationError, match="byte limit") as failure:
+        invoke_agent("DB", "S", "A", "question", "conn", raw_event_path=target)
+    assert runtime_transport.read_sizes == [33]
+    assert failure.value.result["answer"] == ""
+    assert target.read_bytes() == b""
+
+
+def test_runtime_eof_read_checks_deadline_after_blocking(runtime_transport):
+    runtime_transport.set_stream(PARTIAL_STREAM)
+    runtime_transport.read_delay = 1
+    with pytest.raises(AgentInvocationError, match="deadline") as failure:
+        invoke_agent("DB", "S", "A", "question", "conn", timeout=4)
+    assert failure.value.result["answer"] == "partial"
+    assert len(runtime_transport.read_sizes) == 4
+
+
+def test_truncated_http_read_preserves_accepted_events(runtime_transport):
+    from http.client import IncompleteRead
+
+    runtime_transport.set_stream(PARTIAL_STREAM)
+    runtime_transport.read_error = IncompleteRead(b"unframed bytes")
+    with pytest.raises(AgentInvocationError, match="IncompleteRead") as failure:
+        invoke_agent("DB", "S", "A", "question", "conn")
+    assert failure.value.result["answer"] == "partial"
+    assert failure.value.__cause__ is runtime_transport.read_error
+    assert runtime_transport.closed[-3:] == ["response", "cursor", "connection"]
+
+
+@pytest.mark.parametrize(
+    "failing_closes",
+    [(), ("response",), ("cursor",), ("connection",), ("response", "cursor", "connection")],
+)
+@pytest.mark.parametrize("raw_evidence", [False, True])
+def test_http_error_closes_owned_body_and_retains_primary(
+    runtime_transport, monkeypatch, tmp_path, failing_closes, raw_evidence
+):
+    runtime_transport.set_stream(PARTIAL_STREAM)
+    runtime_transport.close_errors = {name: OSError(f"close {name}") for name in failing_closes}
+    primary = HTTPError(
+        "https://example.snowflakecomputing.com",
+        503,
+        "service unavailable",
+        {},
+        runtime_transport.response,
+    )
+    original_close = primary.close
+    close_calls = []
+
+    def close_error():
+        close_calls.append(True)
+        original_close()
+
+    def reject_request(request, timeout):
+        raise primary
+
+    monkeypatch.setattr(primary, "close", close_error)
+    monkeypatch.setattr("dbt_cortex_agent.invoke.urlopen", reject_request)
+    target = tmp_path / "events.jsonl" if raw_evidence else None
+    with pytest.raises(AgentInvocationError, match="HTTP Error 503") as failure:
+        invoke_agent("DB", "S", "A!VERSION$2", "question", "conn", raw_event_path=target)
+
+    assert failure.value.__cause__ is primary
+    assert str(failure.value) == str(primary)
+    assert close_calls == [True]
+    assert runtime_transport.response.closed
+    assert runtime_transport.closed == ["response", "cursor", "connection"]
+    assert runtime_transport.read_sizes == []
+    result = failure.value.result
+    assert result["answer"] == ""
+    assert result["errors"] == [str(primary)]
+    assert result["metadata"]["agent_fqn"] == "DB.S.A"
+    assert result["metadata"]["requested_version"] == "VERSION$2"
+    assert result["metadata"].get("cleanup_errors", []) == [
+        f"close {name}" for name in failing_closes
+    ]
+    assert getattr(primary, "cleanup_errors", []) == [
+        runtime_transport.close_errors[name] for name in failing_closes
+    ]
+    assert failure.value.raw_event_path == target
+    if target is not None:
+        assert target.read_bytes() == b""
+    else:
+        assert list(tmp_path.iterdir()) == []
+
+
+def test_http_error_survives_cleanup_and_artifact_write_failure(
+    runtime_transport, monkeypatch, tmp_path
+):
+    primary = HTTPError(
+        "https://example.snowflakecomputing.com", 403, "forbidden", {}, runtime_transport.response
+    )
+    runtime_transport.close_errors = {
+        name: OSError(f"close {name}") for name in ("response", "cursor", "connection")
+    }
+
+    def reject_request(request, timeout):
+        raise primary
+
+    def fail_write(*args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("dbt_cortex_agent.invoke.urlopen", reject_request)
+    monkeypatch.setattr("dbt_cortex_agent.invoke.write_raw_events", fail_write)
+    with pytest.raises(AgentInvocationError, match="HTTP Error 403") as failure:
+        invoke_agent("DB", "S", "A", "question", "conn", raw_event_path=tmp_path / "events.jsonl")
+    assert failure.value.__cause__ is primary
+    assert failure.value.result["errors"] == [str(primary), "disk full"]
+    assert failure.value.result["metadata"]["cleanup_errors"] == [
+        "close response",
+        "close cursor",
+        "close connection",
+    ]
+    assert runtime_transport.closed == ["response", "cursor", "connection"]
+    assert failure.value.raw_event_path is None

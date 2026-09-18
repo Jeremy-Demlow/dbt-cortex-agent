@@ -70,19 +70,27 @@ to the Agent specification:
 | `agent_display_name` | string | physical object name | Sets the Agent profile display name. |
 | `agent_comment` | string | `Managed by dbt-cortex-agent` | Sets the Snowflake object comment. |
 | `deploy_alias` | string | current dbt target | Alias reconciled to the managed content version. |
-| `agent_role` | string | current role | Optional role used by configured lifecycle hooks and deployments that opt into role switching. |
+
+`agent_role` is not consumed by the materialization and does not switch roles.
+The approved invoking dbt role is authoritative. There is no automatic grant
+contract for historical `access` metadata; grants are adopter-managed.
 
 `meta.cortex_agent` carries package coordination metadata:
 
 | Field | Type | Behavior |
 |---|---|---|
 | `enabled` | boolean | Set false to exclude the model from package discovery. |
-| `skills` | list | Optional local-to-stage declarations; compiled native `skills` are used when this list is absent. |
+| `skills` | list | Required for local uploads and stage-skill smoke discovery; resolved name/source type/path declarations must match native top-level `skills`. No compiled-spec fallback. |
 | `evaluation` | mapping | Optional evaluation capability classifications used by package validation. |
 
 The native Agent body remains authoritative for models, orchestration,
 instructions, sample questions, tools, tool resources, skills, and arbitrary
 supported or experimental specification mappings.
+
+Fresh parse need not contain compiled model bodies. Put local skill declarations
+in `config.meta.cortex_agent.skills` even when the model body also declares them.
+Readable manifest YAML/JSON is compared against metadata; Python does not render
+Jinja. See [skills](../guides/skills.md) for examples and detection limitations.
 
 ## Dependencies and tools
 

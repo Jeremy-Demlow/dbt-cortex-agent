@@ -93,6 +93,13 @@ def test_compare_mutation_contract() -> None:
             "metric_names": ["answer_correctness"],
             "ordered_ground_truth_refs": ["ref"],
             "status": "completed",
+            "results": [
+                {
+                    "ground_truth_ref": "ref",
+                    "metric_name": "answer_correctness",
+                    "eval_agg_score": score,
+                }
+            ],
             "run_metadata": {
                 "plan_identity": identity,
                 "evaluated_version": "VERSION$1",

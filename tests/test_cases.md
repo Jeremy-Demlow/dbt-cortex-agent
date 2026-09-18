@@ -1,5 +1,72 @@
 # Test cases
 
+## Final Review: HTTP Resources And Proof Isolation
+
+- REQ-030 final-review criteria: behavioral tests in `tests/test_invoke.py` raise real stdlib `HTTPError` with synthetic owned bodies, inject body/cursor/connection close failures and artifact-write failure, and assert primary identity, cleanup order, secondary metadata, and bounded evidence. Existing partial-stream tests remain required.
+- REQ-028 final-review criteria: `tests/test_live_multi_database_verifier.py` exercises absent, empty, and conflicting inherited `DBT_EXECUTABLE` values across preview, applied fake proof, lifecycle/retirement and separate cleanup-only. The isolated binary must match the direct dbt command; missing local venvs do not authorize a host fallback. No real install or live proof is implied.
+- REQ-021 typing: explicitly check `src/dbt_cortex_agent/dbt_runner.py` with mypy in addition to the configured module set; existing command-runner callers retain kwargs and environment behavior.
+
+## Independent-Review Blockers: Local Behavioral Evidence
+
+- `TC-022-06`/`TC-022-07`/`TC-022-09`: `tests/test_eval.py::test_source_rebuild_cannot_exclude_originally_in_scope_failure` covers both tool metrics and START/STATUS/fetch/fetch-retry rebuilds with unchanged input/ref and changed test_type; original failures remain counted and candidates cannot gate or become baselines.
+- `test_source_drift_blocks_start_without_rebinding`, `test_source_drift_after_failed_run_stops_transient_retry`, and `test_source_count_drift_fails_validation_before_upload_or_start` cover validation/upload/retry drift, no rebind onto a changed source, and pre-effect cardinality failure.
+- `test_snapshot_rejects_invalid_mapping`, `test_snapshot_is_immutable_order_independent_and_requires_known_result_input`, and `test_invalid_source_after_start_retains_original_binding_and_fails` cover complete, immutable mappings, duplicates/missing values, changed input, and indeterminate evidence after invalid rebuilds.
+- `test_candidate_snapshot_binding_rejects_inconsistent_evidence` binds persisted input/ref/type and drift evidence while preserving mapping metadata in compact baselines; `test_legacy_candidate_without_snapshot_keeps_existing_validation` explicitly pins the older-v2 provenance limitation. Existing boundary and partial-result tests remain required. No transactional freeze or live ingestion proof is claimed.
+- `TC-032-01`/`TC-032-05`: `tests/test_deployment.py::test_apply_expected_identity_reaches_materialization_before_effects` runs Python apply through actual Jinja with FQN drift, unexpected model IDs and matching identity; no hook, stage inspection or Agent DDL occurs on rejection.
+- `TC-032-01`: `tests/test_materialization.py::test_supplied_invalid_identity_map_cannot_disable_guard` rejects null, non-mapping, empty and missing-FQN expectations; existing no-map direct-build cases remain valid.
+- `TC-022-01`: `tests/test_deployment.py::test_unselected_agent_ancestor_rejected_before_skill_planning` covers direct/indirect and metadata-disabled ancestors through parent_map and depends_on. `test_explicit_agent_ancestor_includes_skills_and_resource_databases` verifies explicit selection includes skill uploads and all resource databases.
+- `TC-023-07`/`TC-023-08`: `test_absent_agent_creates_one_version_and_retry_reuses_it`, `test_post_create_interruption_requires_recovery_without_duplicate`, `test_unknown_creation_inspection_fails_before_mutation`, `test_initial_version_metadata_acknowledgement_loss_retries_without_commit`, `test_post_create_managed_metadata_allows_safe_retry`, and `test_external_unmanaged_agent_adoption_remains_supported` in `tests/test_deployment.py` exercise persistent simulated native state and actual Jinja. Initial CREATE without managed metadata requires explicit recovery, not automatic convergence; external adoption and marked-version retries retain their prior behavior.
+- These are offline behavioral checks, not native specification-equivalence, historical stage-content, concurrency, current-wheel or live Snowflake proof.
+
+## Task 7: Local Product And Release Evidence
+
+- `TC-028-07` and `TC-028-09`: documentation contracts reject missing grant-macro invocation, role-switch promises, and offline compile claims; all canonical target arguments use sandbox.
+- `TC-022-11` and `TC-026-10`: `tests/test_live_multi_database_verifier.py` exercises both-database retention, failed proof, failed cleanup, combined failure, cleanup-only updates, and missing/mismatched prior proof. These are synthetic behavior tests, not live qualification.
+- `TC-032-01` and `TC-028-08`: `tests/test_installed_wheel_verifier.py` parses a temporary consumer with locally installed dbt's default schema generation, then executes materialization against that manifest through the existing Jinja harness, and rejects full-FQN drift in consumer evidence. The installed-wheel harness adds resolved-schema/deploy assertions, but its clean-install matrix remains pending.
+- Existing evidence-map schema/version, historical reports, and pending-live classifications remain unchanged in meaning. Test collection is linkage, not execution evidence.
+
+## Task 6: Proof Linkage Contract
+
+`tests/requirement_evidence.json` is the machine-readable inventory for every
+numbered acceptance criterion in REQ-021 through REQ-032 and every canonical
+developer-guide section. `TC-*` IDs below describe intended tests, not completion.
+Legacy source comments are not evidence. Each map entry contains a bounded claim,
+proof references and gaps. Empty gaps mean only the linked local scope is covered,
+not live/release qualification. `behavioral` means code executed with local/fake
+boundaries; `structural` means source/schema/syntax checks. `live_historic` points
+to an existing report, not a current retained run artifact; `live_pending` means
+no new live proof. Collection checks links but does not execute linked tests.
+
+Task 6 extends `TC-028-10` with the following concrete contract tests:
+
+- `tests/test_requirements_contract.py::test_evidence_map_schema_and_complete_criterion_inventory`: exact criterion coverage, proof kinds, references and explicit gaps.
+- `tests/test_requirements_contract.py::test_offline_proofs_link_to_collected_test_nodes`: resolve concrete functions/parameter cases using current-session pytest collectors, including focused runs; no recursive pytest.
+- `tests/test_requirements_contract.py::test_nonexistent_or_comment_only_linkage_is_rejected` and `test_comment_only_module_collects_no_evidence`: reject fake IDs and comment-only source.
+- `tests/test_requirements_contract.py::test_article_claims_link_to_requirements_and_bounded_proofs`: guide-section/criterion coverage, not semantic completeness of every prose sentence.
+- `tests/test_requirements_contract.py::test_fixture_schemas_and_proof_links`: declared compatibility/SSE fixture contracts and provenance, with malformed-schema negatives.
+- `tests/test_requirements_contract.py::test_incomplete_requirement_statuses_do_not_claim_complete`: keep open gaps visible in requirements and index.
+
+## Task 5: REQ-030 and REQ-031 hardening
+
+- REQ-030 supplement criterion 1: `tests/test_invoke.py::test_runtime_partial_evidence_survives_stream_failure`, `test_runtime_limits_are_incremental_with_partial_evidence`, `test_unframed_stream_is_bounded_before_json_decode`, and `test_truncated_http_read_preserves_accepted_events` exercise real framing/normalization and local JSONL writes.
+- REQ-030 criterion 2: `test_runtime_deadline_includes_setup_and_slow_stream`, `test_setup_overrun_closes_connection_without_opening_http`, `test_runtime_eof_read_checks_deadline_after_blocking`, and `test_invalid_runtime_budget_fails_before_acquisition` use a fake monotonic clock and bounded fake transport; no hard-deadline proof is claimed.
+- REQ-030 criterion 3: `test_runtime_acquisition_and_independent_cleanup`, `test_runtime_programming_defect_propagates_despite_cleanup`, and `test_raw_write_failure_cannot_mask_stream_failure` exercise acquisition, response/cursor/connection close, primary identity, and evidence-write failures.
+- REQ-030 criterion 4: `tests/test_agent_commands.py::test_smoke_runtime_error_retains_partial_response_and_real_artifact` verifies human/JSON partial evidence and exit 2; raw opt-in and collision tests exercise the real invoker.
+- REQ-031 criterion 1: `tests/test_eval_verify.py::test_later_suite_failure_preserves_completed_suite_result` includes a connector-module exception after successful work; `test_unexpected_programming_error_is_not_mislabeled_as_infrastructure` covers AssertionError, TypeError, and AttributeError.
+- REQ-031 criterion 2: `test_post_candidate_failure_retains_execution_evidence` and `test_later_baseline_error_retains_both_candidate_paths_and_prior_gate` verify distinct execution/gate states, retained paths/prior results, and unattempted suites.
+- REQ-031 criterion 3: `test_verify_binds_current_plan_even_for_self_consistent_candidate`, `test_verify_rejects_consistent_foreign_candidate_fields`, `test_verify_gates_exact_loaded_candidate_without_reopening`, and `test_current_plan_identity_drift_blocks_paid_run_even_with_same_signature` bind real loaded candidate evidence without a second file read.
+- REQ-031 criterion 4: `test_evaluation_acquisition_cleanup_preserves_primary` and `tests/test_eval.py::test_evaluation_cleanup_only_failure_closes_both_and_preserves_written_candidate` cover connector acquisition, independent closes, primary defects, and durable file retention after cleanup-only failure.
+
+All task 5 evidence is local and synthetic, not live connector/dbt/Snowflake qualification.
+
+## REQ-032: Resolved mutation identity
+
+1. `TC-032-01`: `tests/test_materialization.py::test_materialization_uses_resolved_identity` executes the materialization with raw config different from the resolved relation.
+2. `TC-032-02`: `tests/test_lifecycle.py::test_route_and_drop_delegate_to_dbt_macros` checks expected-FQN arguments; `test_route_rejects_inspected_identity_mismatch` proves no mutating command occurs.
+3. `TC-032-03`: `tests/test_identity_macros.py` executes route/drop macros with matching, missing, and mismatched expectations and checks the recorded effects.
+4. `TC-032-04`: `tests/test_fresh_manifest.py` exercises custom output locations, precedence, preserved profile environments, stale output, and parse failures using a fake dbt process.
+5. `TC-032-05`: Targeted offline pytest runs the above behavior tests and adjacent contracts without remote operations.
+
 ## REQ-021: Python design and maintainability
 
 1. `TC-021-01`: Reject malformed external payload shapes before domain access.
@@ -28,6 +95,27 @@
 11. `TC-022-11`: Run public deploy/verify commands from the exact protected wheel.
 12. `TC-022-12`: Verify adopter code contains policy but no duplicate workflow sequencer.
 
+Task 2 supplement to `TC-022-06`, `TC-022-07`, and `TC-022-09`:
+
+- `tests/test_eval.py::test_ineligible_candidates_cannot_compare_gate_or_be_accepted` executes comparison, file-backed gate, and acceptance with drift, failed/non-completed status, and non-boolean pass flags.
+- `test_compare_and_gate_reject_invalid_evidence` and `test_native_run_rejects_invalid_observations_without_candidate` cover null, nonfinite, duplicate, missing, and malformed row/count evidence through real artifact and mocked native-run paths.
+- `test_boundary_exclusions_preserve_completeness_and_observation_grain`, `test_native_fetch_annotates_boundaries_before_completeness`, and `test_boundary_exclusion_cannot_hide_invalid_observations` cover native IDs varying by metric, source annotation, absent/null/nonfinite exclusions, duplicate excluded rows, and mandatory boundary answer scores.
+- `test_unknown_signed_policy_fails_plan_and_pre_connector_apply` and `tests/test_eval_verify.py::test_verify_rejects_unknown_policy_in_later_suite_before_effects` prove unknown keys fail before any connector/build/evaluation.
+- `tests/test_eval_verify.py::test_verify_real_candidate_gate_never_greens_invalid_evidence` and `test_verify_honors_excluded_tool_observations` execute real compare/gate/validation through verify, with and without an established baseline.
+- `test_entirely_excluded_tool_cannot_satisfy_policy` and `test_ineligible_baseline_never_authorizes_comparison` preserve explicit policy and baseline eligibility.
+
+All task 2 evidence is local and synthetic; no new live qualification is claimed.
+
+Task 4 supplement to `TC-022-02`, `TC-022-03`, and `TC-022-05`:
+
+- `tests/test_skills.py::test_yaml_is_comparison_evidence_not_upload_authority` and `test_parse_only_metadata_discovers_jinja_declared_skills` cover raw/compiled YAML/JSON, metadata-only parse, and both node metadata representations.
+- `test_model_metadata_mismatch_fails_before_local_file_check`, `test_unresolved_or_malformed_metadata_is_not_an_empty_plan`, `test_detectable_unresolved_body_cannot_silently_plan_empty`, and `test_legacy_capabilities_location_fails_actionably` pin fail-closed discovery before effects.
+- `test_later_copy_preserves_each_destination_and_stops` exercises failed exit, OSError, and timeout after a successful destination using the real upload function.
+- `test_cli_later_copy_retains_outcomes_and_role_override` runs both public CLI paths with mocked subprocesses, actual connection-context resolution, human/JSON outputs, different connection/approved roles, and no later copy/build.
+- `test_skill_smoke_passes_role_through_command_and_runtime` exercises the command and smoke function together; existing `tests/test_invoke.py::test_direct_invocation_sends_explicit_runtime_role` pins the HTTP header boundary.
+
+This is offline synthetic behavior evidence, not live dbt/Snowflake qualification.
+
 ## REQ-023: Macro API and reconciliation
 
 1. `TC-023-01`: Invoke every public macro from an installed consumer.
@@ -42,6 +130,21 @@
 10. `TC-023-10`: Verify signed eval identity, refs, policy, and pre-START provenance.
 11. `TC-023-11`: Reject result-table and normalized-run collisions.
 12. `TC-023-12`: Verify legacy macros and fictional API docs are absent.
+
+Task 3 supplement to `TC-023-04`, `TC-023-07`, `TC-023-08`, `TC-023-09`,
+`TC-022-05`, and `TC-026-05`/`TC-026-06`/`TC-026-09`:
+
+- `tests/test_deployment.py::test_managed_no_change_repairs_live_without_commit_or_default` executes real Jinja inspection/reconciliation with existing or missing LIVE, optionally reconciling the alias while DEFAULT remains older.
+- `test_durable_deploy_failure_retry_converges` injects metadata, alias-unset/set, LIVE-add, inspection, and postcondition failures after commit; retries preserve exactly one new version.
+- `test_no_change_live_failure_retry_verifies_without_commit` fails LIVE repair/verification with already-managed content and proves retry convergence without any COMMIT.
+- `test_multi_agent_durable_outcomes_survive_failure_and_retry` drives Python deploy through real Jinja for two same-named Agents in different databases, duplicates output across stdout/stderr, and retains independent phases after one Agent fails.
+- `test_deploy_programming_error_after_commit_propagates` verifies AssertionError, TypeError, and AttributeError remain visible after a durable commit.
+- `tests/test_identity_macros.py::test_retirement_failure_evidence_and_retry` drives Python retirement through the existing Jinja harness: rejected DROP, lost acknowledgement after effect, failed inspection, and conflicting postconditions for existing/absent Agents.
+- `test_retirement_programming_errors_propagate` exercises programming defects during DROP and post-drop inspection without conversion to controlled failure.
+- `tests/test_lifecycle.py::test_retirement_without_acknowledgement_reports_unknown` and `test_retirement_preserves_completion_if_later_evidence_is_malformed` pin unknown versus acknowledged completion without inventing post-state.
+- `tests/test_agent_commands.py::test_drop_partial_failure_retains_evidence_and_exits_two` checks command output/exit while keeping retained dependencies explicit.
+
+This supplement is local simulated behavior evidence, not new live qualification.
 
 ## REQ-024: Agent scaffold and developer journey
 
@@ -101,7 +204,7 @@
 
 ## REQ-028: Executable developer and CI/CD guide
 
-1. `TC-028-01`: Verify architecture and matching `0.0.8` install coordinates.
+1. `TC-028-01`: Verify architecture and matching `0.0.9` candidate install coordinates, dated candidate status, aligned CI version assertion, and narrow requirements exceptions including REQ-032; preserve historical release evidence.
 2. `TC-028-02`: Verify generic-first creation and optional capability examples.
 3. `TC-028-03`: Parse validation, deploy, smoke, and recovery command sequence.
 4. `TC-028-04`: Parse evaluation, gate, and baseline command sequence and approval labels.

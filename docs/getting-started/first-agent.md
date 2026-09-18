@@ -5,7 +5,7 @@
 Preview the smallest generic Agent without writing files:
 
 ```bash
-dbt-cortex-agent agent scaffold --project-dir . \
+dbt-cortex-agent agent scaffold --project-dir . --target sandbox \
   --agent orders_assistant --json
 ```
 
@@ -39,8 +39,8 @@ table are optional and do not change the Agent specification or deployment.
 
 ```yaml
 vars:
-  cortex_agent_deploy_target: safe
-  cortex_agent_allowed_targets: [safe]
+  cortex_agent_deploy_target: sandbox
+  cortex_agent_allowed_targets: [sandbox]
   cortex_agent_allowed_databases: [ANALYTICS_DEV]
   cortex_agent_schema: AGENTS
   cortex_eval_schema: EVAL
@@ -52,10 +52,11 @@ and `EVAL` are optional conventions.
 ## 4. Validate and compile
 
 ```bash
-dbt-cortex-agent doctor --project-dir . --target safe --json
-dbt-cortex-agent manifest validate --project-dir . --target safe --agent orders_assistant --json
-dbt compile --project-dir . --profiles-dir . --target safe --select orders_assistant
+dbt-cortex-agent doctor --project-dir . --target sandbox --json
+dbt-cortex-agent manifest validate --project-dir . --target sandbox --agent orders_assistant --json
+dbt compile --project-dir . --profiles-dir . --target sandbox --select orders_assistant
 ```
 
-These commands are non-mutating. Continue with [lifecycle](../guides/lifecycle.md)
+These commands do not deploy an Agent, but write local artifacts and compilation
+can connect to Snowflake. Continue with [lifecycle](../guides/lifecycle.md)
 only after [Snowflake setup](snowflake-setup.md) is complete.

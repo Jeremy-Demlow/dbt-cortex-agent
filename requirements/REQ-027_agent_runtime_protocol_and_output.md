@@ -1,6 +1,6 @@
 # REQ-027: Agent Runtime Protocol and Compact Output
 
-**Status:** Complete (`0.0.6`)
+**Status:** In progress; historical `0.0.6` replay retained, current protocol corpus/schema gaps in `tests/requirement_evidence.json`.
 
 ## Summary
 

@@ -134,9 +134,10 @@ models:
 def _skills_readme() -> str:
     return """# Agent skills
 
-Create one folder per skill and place `SKILL.md` inside it. Add the matching
-stage source under the Agent specification only when the skill is ready to be
-uploaded and deployed.
+Create one folder per skill and place `SKILL.md` inside it. When ready, declare
+matching stage sources in native top-level `skills` and in
+`config.meta.cortex_agent.skills`. Fresh parse resolves the metadata used for
+local upload and smoke planning; compiled YAML is not a discovery fallback.
 """
 
 

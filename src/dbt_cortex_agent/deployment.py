@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -9,6 +10,7 @@ from .domain import (
     DurablePhaseError,
     LifecyclePhase,
     OperationOutcome,
+    SnowflakeObjectName,
     is_controlled_operation_error,
 )
 from .identifiers import identifier
@@ -23,9 +25,24 @@ def _dbt_phases(output: str, outcome: OperationOutcome) -> OperationOutcome:
     for line in output.splitlines():
         if DEPLOY_PHASE_PREFIX not in line:
             continue
-        name = line.split(DEPLOY_PHASE_PREFIX, 1)[1].strip()
-        if name in known and all(item.phase is not known[name] for item in outcome.phases):
-            outcome = outcome.complete(known[name])
+        marker = line.split(DEPLOY_PHASE_PREFIX, 1)[1].strip()
+        agent_fqn = None
+        name = marker
+        if marker.startswith("{"):
+            try:
+                payload = json.loads(marker)
+                name = payload.get("phase")
+                agent_fqn = str(SnowflakeObjectName.parse(payload.get("agent_fqn")))
+            except (ValueError, TypeError):
+                continue
+        if (
+            isinstance(name, str)
+            and name in known
+            and all(
+                (item.phase, item.agent_fqn) != (known[name], agent_fqn) for item in outcome.phases
+            )
+        ):
+            outcome = outcome.complete(known[name], agent_fqn=agent_fqn)
     return outcome
 
 
@@ -48,7 +65,10 @@ def _dependency_databases(
     }
     parent_map = manifest.get("parent_map")
     parent_map = parent_map if isinstance(parent_map, dict) else {}
-    pending = [str(agent["unique_id"]) for agent in selected]
+    approved_ids = {agent["unique_id"] for agent in selected}
+    if any(not isinstance(value, str) or not value for value in approved_ids):
+        raise ValueError("Selected Agents must have manifest unique_id values")
+    pending = list(approved_ids)
     visited: set[str] = set()
     databases: set[str] = set()
     while pending:
@@ -57,16 +77,34 @@ def _dependency_databases(
             continue
         visited.add(unique_id)
         resource = resources.get(unique_id)
+        if isinstance(resource, dict):
+            resource_config = resource.get("config", {})
+            if (
+                isinstance(resource_config, dict)
+                and resource_config.get("materialized") == "cortex_agent"
+                and unique_id not in approved_ids
+            ):
+                raise ValueError(
+                    f"Unselected Agent ancestor {unique_id!r}; explicitly select every "
+                    "Agent ancestor and review its skills/databases before deployment"
+                )
         if isinstance(resource, dict) and resource.get("database"):
             databases.add(
                 identifier(str(resource["database"]), f"database for dependency {unique_id}")
             )
-        parents = parent_map.get(unique_id, [])
+        dependencies = resource.get("depends_on", {}) if isinstance(resource, dict) else {}
+        declared_parents = dependencies.get("nodes", []) if isinstance(dependencies, dict) else []
+        parents = parent_map.get(unique_id, declared_parents)
         if not isinstance(parents, list) or any(not isinstance(item, str) for item in parents):
             raise ValueError(
                 f"dbt manifest parent_map entry for {unique_id!r} must be a list of IDs"
             )
         pending.extend(parents)
+        if not isinstance(declared_parents, list) or any(
+            not isinstance(item, str) for item in declared_parents
+        ):
+            raise ValueError(f"dbt dependency nodes for {unique_id!r} must be a list of IDs")
+        pending.extend(declared_parents)
     return tuple(sorted(databases))
 
 
@@ -74,6 +112,7 @@ def build_deploy_plan(
     manifest: dict[str, Any], config: Config, agent_names: list[str] | None
 ) -> DeployPlan:
     selected = select_agents(manifest, agent_names)
+    resource_databases = set(_dependency_databases(manifest, selected))
     agents = tuple(
         {
             "name": item["name"],
@@ -87,7 +126,6 @@ def build_deploy_plan(
     )
     names = [item["name"] for item in selected]
     uploads = tuple(build_upload_plan(manifest, config.project_dir, names))
-    resource_databases = set(_dependency_databases(manifest, selected))
     resource_databases.update(upload.stage_fqn.split(".", 1)[0] for upload in uploads)
     return DeployPlan(
         agents=agents,
@@ -120,7 +158,12 @@ def apply_deploy_plan(
     command_runner = runner or CommandRunner()
     outcome = OperationOutcome().complete(LifecyclePhase.PREFLIGHT)
     try:
-        upload_skills(list(plan.skill_uploads), config, command_runner)
+        uploads = upload_skills(list(plan.skill_uploads), config, command_runner)
+    except DurablePhaseError as exc:
+        raise DurablePhaseError(
+            f"Agent skill upload failed: {exc}",
+            OperationOutcome((*outcome.phases, *exc.outcome.phases)),
+        ) from exc
     except Exception as exc:
         if not is_controlled_operation_error(exc):
             raise
@@ -128,7 +171,9 @@ def apply_deploy_plan(
             f"Agent skill upload failed: {exc}",
             outcome.fail(LifecyclePhase.SKILLS_UPLOADED, str(exc)),
         ) from exc
-    outcome = outcome.complete(LifecyclePhase.SKILLS_UPLOADED)
+    outcome = OperationOutcome((*outcome.phases, *uploads.phases)).complete(
+        LifecyclePhase.SKILLS_UPLOADED
+    )
     result = run_dbt_build(
         config.dbt_executable,
         config.project_dir,
@@ -136,6 +181,11 @@ def apply_deploy_plan(
         plan.dbt_selection,
         command_runner,
         config.dbt_env,
+        variables={
+            "cortex_agent_expected_fqns": {
+                agent["unique_id"]: agent["physical_fqn"] for agent in plan.agents
+            }
+        },
     )
     output = "\n".join(value for value in (result.stdout, result.stderr) if value)
     outcome = _dbt_phases(output, outcome)

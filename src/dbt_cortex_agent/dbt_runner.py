@@ -20,7 +20,12 @@ class CommandRunner:
         cwd: str | Path | None = None,
         env: Mapping[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        kwargs = {"cwd": cwd, "text": True, "capture_output": True, "check": False}
+        kwargs: dict[str, object] = {
+            "cwd": cwd,
+            "text": True,
+            "capture_output": True,
+            "check": False,
+        }
         if env is not None:
             kwargs["env"] = dict(env)
         return self.run_callable(list(command), **kwargs)
@@ -61,10 +66,14 @@ def run_dbt_parse(
     target: str | None,
     runner: CommandRunner,
     env: Mapping[str, str] | None = None,
+    *,
+    target_path: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [executable, "parse", "--project-dir", str(project_dir)]
     if target:
         command.extend(["--target", target])
+    if target_path is not None:
+        command.extend(["--target-path", str(target_path), "--write-json"])
     return _run(runner, command, cwd=project_dir, env=env)
 
 
@@ -75,11 +84,15 @@ def run_dbt_build(
     selectors: Sequence[str],
     runner: CommandRunner,
     env: Mapping[str, str] | None = None,
+    *,
+    variables: Mapping[str, object] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     command = [executable, "build", "--project-dir", str(project_dir)]
     if target:
         command.extend(["--target", target])
     command.extend(["--select", *selectors])
+    if variables is not None:
+        command.extend(["--vars", json.dumps(variables, separators=(",", ":"))])
     return _run(runner, command, cwd=project_dir, env=env)
 
 

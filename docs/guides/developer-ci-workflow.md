@@ -4,6 +4,16 @@ This is the canonical executable path for building, testing, shipping, and
 retiring a dbt-owned Cortex Agent. Substitute project-specific values; never
 copy the example policy unchanged into production.
 
+Prerequisites for this golden adopter path: an existing dbt project, matching
+Python/dbt package versions, `dbt-snowflake`, Snow CLI, and a reviewed `sandbox`
+profile. Every command below uses that same target. The examples assume database
+`ANALYTICS_DEV`, target schema `DEV`, default dbt schema generation, and scaffolded
+custom schema `AGENTS`, resolving to `ANALYTICS_DEV.DEV_AGENTS.FINANCE_ASSISTANT`.
+Check `agent deploy --json`'s `agents[].physical_fqn` before applying; substitute
+your actual resolved schema and FQN for smoke and retirement if naming differs.
+Live steps additionally need approved authentication, operation-specific roles,
+warehouse, schemas, dependency access, and grants provisioned by the adopter.
+
 > **dbt is the system of record. The manifest is the contract. Layout is
 > convention.**
 
@@ -31,14 +41,17 @@ source of Agent state.
 
 ## Install one release
 
+The 0.0.9 candidate is pending qualification and publication. These pins describe
+the intended release; use them only after the matching tag and distribution exist.
+
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.8'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.9'
 ```
 
 ```yaml
 packages:
   - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git
-    revision: v0.0.8
+    revision: v0.0.9
 ```
 
 The Python package coordinates files, dbt, runtime calls, and evidence. The dbt
@@ -49,8 +62,8 @@ package owns Agent DDL, immutable versions, aliases, DEFAULT, and retirement.
 An Agent does not require a Semantic View. Start with a generic model:
 
 ```bash
-dbt-cortex-agent agent scaffold --project-dir . --agent finance_assistant --json
-dbt-cortex-agent agent scaffold --project-dir . --agent finance_assistant --apply --json
+dbt-cortex-agent agent scaffold --project-dir . --target sandbox --agent finance_assistant --json
+dbt-cortex-agent agent scaffold --project-dir . --target sandbox --agent finance_assistant --apply --json
 ```
 
 Add `--semantic-view-model sem_finance` only when a dbt Semantic View already
@@ -70,7 +83,14 @@ models/agents/finance_assistant/
     `-- README.md
 ```
 
-## Validate without effects
+## Validate without Agent mutation
+
+This section is not a no-write or guaranteed-offline path. `dbt deps` may fetch
+packages and writes dependencies; fresh parse writes manifests and logs. Compile
+writes compiled artifacts and can open the Snowflake adapter, including with
+`--no-introspect`. Run compile only with separately approved connection access;
+credential-free CI uses parse and local deterministic tests instead. Do not run
+unreviewed consumer hooks/macros as part of an allegedly effect-free check.
 
 ```bash
 dbt deps --project-dir .
@@ -80,11 +100,16 @@ dbt compile --project-dir . --target sandbox --select finance_assistant
 dbt-cortex-agent agent deploy --project-dir . --target sandbox --agent finance_assistant --allow-target sandbox --allow-database ANALYTICS_DEV --json
 ```
 
+Machine-readable checkpoints: doctor returns `passed`; manifest validation lists
+the selected `agents`; deploy preview has `applied: false`, resolved
+`agents[].physical_fqn`, `resource_databases`, and `dbt_selection`. A preview is
+not deployment or runtime evidence. Compilation output needs separate review.
+
 ## Deploy and ask
 
 ```bash
 dbt-cortex-agent agent deploy --project-dir . --target sandbox --agent finance_assistant --connection sandbox --database ANALYTICS_DEV --role AGENT_DEPLOYER --warehouse AGENT_WH --allow-target sandbox --allow-database ANALYTICS_DEV --apply --json
-dbt-cortex-agent agent smoke --project-dir . --target sandbox --agent finance_assistant --question 'What can you help me answer?' --connection sandbox --database ANALYTICS_DEV --schema AGENTS --allow-target sandbox --allow-database ANALYTICS_DEV --apply
+dbt-cortex-agent agent smoke --project-dir . --target sandbox --agent finance_assistant --question 'What can you help me answer?' --connection sandbox --database ANALYTICS_DEV --schema DEV_AGENTS --allow-target sandbox --allow-database ANALYTICS_DEV --apply
 ```
 
 Human smoke output is answer-first and bounded. Use `--json` for normalized
@@ -93,6 +118,11 @@ Use `--version 'VERSION$N'` to prove an exact immutable candidate and
 `--expect-tool <tool_name>` to make routing part of the smoke contract. Raw SSE
 evidence is opt-in through `--raw-events <filename>`; the package does not emit
 raw protocol traffic by default.
+
+Applied deploy JSON retains `phases`; a controlled partial failure includes
+`status: partial_failure` and completed work. Applied smoke JSON has `passed`
+and a normalized `response`; preview leaves both null. Runtime inference and
+warehouse work may incur costs independently of native Agent Evaluation.
 
 ## Understand what deployment commits
 
@@ -125,18 +155,25 @@ dbt-cortex-agent eval accept-baseline <candidate.json> --baseline-dir baselines 
 
 The evaluation stage must already exist. Paid verification never deploys an
 Agent, and baseline acceptance is a separate policy decision.
+The `core` suite examples require the optional evaluation scaffold (or an existing
+suite), authored representative ground truth, thresholds, and any reviewed
+baseline. Bare scaffold alone does not create a runnable evaluation suite.
+Verify preview returns `applied: false` and `passed: null`; an applied verification
+retains per-suite candidate paths and separates execution from gate outcomes.
 
 ## Promote and roll back
 
 ```bash
 dbt-cortex-agent agent versions --project-dir . --target sandbox --agent finance_assistant --connection sandbox --json
 dbt-cortex-agent agent promote --project-dir . --target sandbox --agent finance_assistant --version 'VERSION$2' --alias production --set-default --connection sandbox --database ANALYTICS_DEV --allow-target sandbox --allow-database ANALYTICS_DEV --apply --json
-dbt-cortex-agent agent smoke --project-dir . --target sandbox --agent finance_assistant --version 'VERSION$2' --question 'What can you help me answer?' --connection sandbox --database ANALYTICS_DEV --schema AGENTS --allow-target sandbox --allow-database ANALYTICS_DEV --apply
+dbt-cortex-agent agent smoke --project-dir . --target sandbox --agent finance_assistant --version 'VERSION$2' --question 'What can you help me answer?' --connection sandbox --database ANALYTICS_DEV --schema DEV_AGENTS --allow-target sandbox --allow-database ANALYTICS_DEV --apply
 dbt-cortex-agent agent rollback --project-dir . --target sandbox --agent finance_assistant --to-version 'VERSION$1' --alias production --set-default --connection sandbox --database ANALYTICS_DEV --allow-target sandbox --allow-database ANALYTICS_DEV --apply --json
 ```
 
 Rollback moves routing and preserves newer immutable versions. Re-promoting
 `VERSION$2` reuses it; it does not create `VERSION$3`.
+These commands require observed `VERSION$1` and `VERSION$2` from two distinct
+deployed specifications; do not infer those versions from the examples.
 
 Alias movement is not transactional. The package validates the target and
 planned source state, performs the required durable operations, verifies alias
@@ -147,7 +184,7 @@ automatic rollback.
 ## Retire deliberately
 
 ```bash
-dbt-cortex-agent agent drop --project-dir . --target sandbox --agent finance_assistant --confirm-agent ANALYTICS_DEV.AGENTS.FINANCE_ASSISTANT --connection sandbox --database ANALYTICS_DEV --allow-target sandbox --allow-database ANALYTICS_DEV --apply --json
+dbt-cortex-agent agent drop --project-dir . --target sandbox --agent finance_assistant --confirm-agent ANALYTICS_DEV.DEV_AGENTS.FINANCE_ASSISTANT --connection sandbox --database ANALYTICS_DEV --allow-target sandbox --allow-database ANALYTICS_DEV --apply --json
 ```
 
 Removing a dbt model never drops its Agent. The guarded command removes only the
@@ -159,7 +196,8 @@ baselines remain.
 
 ```text
 pull request
-  install -> deps -> parse -> doctor -> compile -> tests -> deploy/eval previews
+  install -> deps -> parse -> doctor -> tests -> deploy/eval previews
+  compile only where adapter connection access is separately approved
 
 protected deployment
   complete allowlists -> deploy --apply -> version-specific smoke
@@ -168,7 +206,7 @@ protected deployment
 release
   build one wheel -> offline matrices -> installed-consumer proof
   -> protected zero-state V1/V2/promote/rollback/drop proof
-  -> publish that exact wheel and matching dbt tag
+  -> publish that exact wheel from the already matching immutable dbt tag
 ```
 
 Pull requests should maximize offline confidence by default. Protected jobs
@@ -182,7 +220,10 @@ Main reconciles every enabled Agent to current desired state but does not need
 to repeat every paid evaluation. Package release qualification is a third lane:
 it builds one wheel, installs that exact artifact into clean consumer fixtures,
 proves zero-state V1/V2/promotion/rollback/no-op/drop behavior, and only then
-publishes the matching Python version and dbt tag.
+publishes the Python artifact. The Git tag and GitHub release record already
+exist when the release live gate starts. Installed-consumer matrices are package
+CI checks; they must also pass for the release candidate. Native paid-evaluation
+quality is not qualified by this lifecycle proof (`paid_evaluation: false`).
 
 ## Authentication, authorization, and wrappers
 

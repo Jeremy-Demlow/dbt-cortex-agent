@@ -1,6 +1,6 @@
 # REQ-021: Python Design and Maintainability
 
-**Status:** Complete (`0.0.6`)
+**Status:** In progress; historical `0.0.6` qualification retained, current coverage gaps in `tests/requirement_evidence.json`.
 
 ## Summary
 

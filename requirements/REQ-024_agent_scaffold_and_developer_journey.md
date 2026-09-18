@@ -1,6 +1,6 @@
 # REQ-024: Generic Agent Scaffold and Developer Journey
 
-**Status:** Complete (`0.0.6`)
+**Status:** In progress; historical `0.0.6` qualification retained, installed/experimental round-trip gaps in `tests/requirement_evidence.json`.
 
 ## Summary
 

@@ -50,7 +50,7 @@ def test_active_docs_describe_v001_materialization_boundary():
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
-    assert "0.0.8" in combined
+    assert "0.0.9" in combined
     assert "dbt build --select" in combined
     assert "Python must not render, create, alter, commit, alias, grant, promote" in combined
     assert "Legacy exposure declarations remain supported" not in combined
@@ -151,7 +151,7 @@ def test_non_mutating_quickstart_has_no_applied_remote_command():
 
 
 def test_current_release_identity_is_consistent_across_public_docs():
-    expected = "0.0.8"
+    expected = "0.0.9"
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     installation = (ROOT / "docs/getting-started/installation.md").read_text(encoding="utf-8")
     cli_reference = (ROOT / "docs/reference/cli.md").read_text(encoding="utf-8")
@@ -160,3 +160,72 @@ def test_current_release_identity_is_consistent_across_public_docs():
         assert f"dbt-cortex-agent[runtime]=={expected}" in text
         assert f"revision: v{expected}" in text
     assert cli_reference.startswith(f"# CLI reference (v{expected})")
+    for text in (readme, installation):
+        assert "pending qualification and publication" in text
+
+
+def test_product_docs_do_not_invoke_absent_grants_or_promise_role_switching():
+    paths = [ROOT / "README.md", *(ROOT / "docs").rglob("*.md")]
+    for path in paths:
+        text = path.read_text()
+        assert "cortex_agent__grant_usage" not in text, path
+        assert "materialization switches to that role" not in text, path
+        assert "Compile is offline" not in text, path
+        assert "custom materialization or connecting to Snowflake" not in text, path
+        assert "Only `agent scaffold --apply` changes local files" not in text, path
+    access = (ROOT / "docs/guides/access-control.md").read_text()
+    assert "does not ship a public" in access
+    assert "adding them does not grant access" in access
+    skills = (ROOT / "docs/guides/skills.md").read_text()
+    assert "config.meta.cortex_agent.skills" in skills
+    assert "not a second renderer" in skills
+    from dbt_cortex_agent.scaffold import _skills_readme
+
+    assert "config.meta.cortex_agent.skills" in _skills_readme()
+
+
+def test_golden_adopter_target_schema_and_effect_boundaries():
+    path = ROOT / "docs/guides/developer-ci-workflow.md"
+    for command in _documented_cli_commands(path):
+        if "accept-baseline" not in command:
+            assert command[command.index("--target") + 1] == "sandbox"
+        if "--schema" in command:
+            assert command[command.index("--schema") + 1] == "DEV_AGENTS"
+        if "--confirm-agent" in command:
+            assert command[command.index("--confirm-agent") + 1] == (
+                "ANALYTICS_DEV.DEV_AGENTS.FINANCE_ASSISTANT"
+            )
+    text = path.read_text()
+    assert "## Validate without Agent mutation" in text
+    assert "not a no-write or guaranteed-offline path" in text
+    assert "agents[].physical_fqn" in text
+    assert "paid_evaluation: false" in text
+
+
+def test_release_setup_documents_protected_environment_and_unqualified_work():
+    text = (ROOT / "docs/guides/releasing.md").read_text()
+    for setting in (
+        "snowflake-live-ci",
+        "SNOWFLAKE_ACCOUNT",
+        "SNOWFLAKE_USER",
+        "SNOWFLAKE_PRIVATE_KEY",
+        "SNOWFLAKE_LIVE_ROLE",
+        "SNOWFLAKE_LIVE_WAREHOUSE",
+        "SNOWFLAKE_LIVE_DATABASE_A",
+        "SNOWFLAKE_LIVE_DATABASE_B",
+        "SNOWFLAKE_LIVE_EVAL_DATABASE",
+        "proof_status",
+        "cleanup_status",
+        "paid_evaluation: false",
+        "not an",
+        "clean-install",
+    ):
+        assert setting in text
+    changelog = (ROOT / "CHANGELOG.md").read_text()
+    assert "## 0.0.9 — 2026-09-18" in changelog
+    assert "## UNRELEASED" not in changelog
+    assert "pending qualification and publication" in changelog
+    assert "`0.0.9` candidate" in text
+    assert "pending qualification and" in text
+    assert "publication" in text
+    assert "do not rewrite" in text.lower()

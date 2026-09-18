@@ -18,6 +18,7 @@ VERSION_STATE_PREFIX = "CORTEX_AGENT_VERSION_STATE="
 ROUTE_RESULT_PREFIX = "CORTEX_AGENT_ROUTE_RESULT="
 DEFAULT_ROUTE_RESULT_PREFIX = "CORTEX_AGENT_DEFAULT_ROUTE_RESULT="
 DROP_RESULT_PREFIX = "CORTEX_AGENT_DROP_RESULT="
+DROP_EVIDENCE_PREFIX = "CORTEX_AGENT_DROP_EVIDENCE="
 RESERVED_ROUTE_ALIASES = {"DEFAULT", "FIRST", "LAST", "LIVE"}
 
 
@@ -119,6 +120,14 @@ def _inspect_state(
 
 def apply_route_plan(config: Config, plan: RoutePlan, *, runner=None) -> dict[str, Any]:
     planned_state = read_version_state(config, plan.agent, runner=runner)
+    observed_fqn = SnowflakeObjectName.parse(
+        str(planned_state.get("agent_fqn") or ""), "inspected Agent FQN"
+    )
+    if observed_fqn != plan.agent_fqn:
+        raise ValueError(
+            f"Agent identity changed after planning: expected {plan.agent_fqn}, "
+            f"resolved {observed_fqn}"
+        )
     expected_alias_version = planned_state.get("aliases", {}).get(plan.alias, "")
     expected_default_version = planned_state.get("default_version") or ""
     try:
@@ -127,6 +136,7 @@ def apply_route_plan(config: Config, plan: RoutePlan, *, runner=None) -> dict[st
             "dbt_cortex_agent.cortex_agent__route_alias",
             {
                 "agent_name": plan.agent,
+                "expected_agent_fqn": str(plan.agent_fqn),
                 "to_version": plan.to_version,
                 "alias": plan.alias,
                 "expected_alias_version": expected_alias_version,
@@ -166,6 +176,7 @@ def apply_route_plan(config: Config, plan: RoutePlan, *, runner=None) -> dict[st
             "dbt_cortex_agent.cortex_agent__route_default",
             {
                 "agent_name": plan.agent,
+                "expected_agent_fqn": str(plan.agent_fqn),
                 "to_version": plan.to_version,
                 "expected_default_version": expected_default_version,
             },
@@ -202,11 +213,48 @@ def apply_route_plan(config: Config, plan: RoutePlan, *, runner=None) -> dict[st
     }
 
 
-def drop_agent(config: Config, agent_name: str, *, runner=None) -> dict[str, Any]:
-    stdout = _operation(
-        config,
-        "dbt_cortex_agent.cortex_agent__drop",
-        {"agent_name": agent_name},
-        runner,
-    )
-    return _marked_json(stdout, DROP_RESULT_PREFIX)
+def drop_agent(
+    config: Config, agent_name: str, expected_agent_fqn: str, *, runner=None
+) -> dict[str, Any]:
+    expected_fqn = SnowflakeObjectName.parse(expected_agent_fqn, "expected Agent FQN")
+    evidence: dict[str, Any] = {
+        "agent_fqn": str(expected_fqn),
+        "before": None,
+        "after": None,
+        "dropped": None,
+        "drop_status": "unknown",
+    }
+    try:
+        result = run_dbt_operation(
+            config.dbt_executable,
+            config.project_dir,
+            config.target,
+            "dbt_cortex_agent.cortex_agent__drop",
+            {"agent_name": agent_name, "expected_agent_fqn": str(expected_fqn)},
+            runner or CommandRunner(),
+            config.dbt_env,
+        )
+        output = "\n".join(value for value in (result.stdout, result.stderr) if value)
+        for line in output.splitlines():
+            if DROP_EVIDENCE_PREFIX not in line:
+                continue
+            payload = json.loads(line.split(DROP_EVIDENCE_PREFIX, 1)[1].strip())
+            if (
+                not isinstance(payload, dict)
+                or payload.get("agent_fqn") != str(expected_fqn)
+                or payload.get("drop_status") not in {"unknown", "completed"}
+            ):
+                raise ValueError("Invalid Agent retirement evidence")
+            if evidence["drop_status"] != "completed" or payload["drop_status"] == "completed":
+                evidence.update({key: value for key, value in payload.items() if value is not None})
+        if result.returncode:
+            detail = result.stderr.strip() or result.stdout.strip() or "Agent drop failed"
+            raise RuntimeError(detail)
+        return _marked_json(result.stdout, DROP_RESULT_PREFIX)
+    except Exception as exc:
+        if not is_controlled_operation_error(exc):
+            raise
+        phases = [{"phase": "drop", "status": evidence["drop_status"]}]
+        if evidence["drop_status"] == "completed":
+            phases.append({"phase": "verification", "status": "failed"})
+        return {**evidence, "status": "partial_failure", "error": str(exc), "phases": phases}

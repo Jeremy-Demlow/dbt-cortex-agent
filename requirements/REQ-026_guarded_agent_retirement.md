@@ -1,6 +1,6 @@
 # REQ-026: Guarded Agent Retirement
 
-**Status:** Complete (`0.0.6`)
+**Status:** In progress; task 3 locally verified, historical cleanup is not current retained-dependency proof. See `tests/requirement_evidence.json` gaps.
 
 ## Summary
 
@@ -27,3 +27,16 @@ implicit retirement on model removal. Protected cleanup removed both dedicated
 proof Agents and post-cleanup `SHOW AGENTS` returned no rows.
 
 `TC-026-01` through `TC-026-10` in `tests/test_cases.md`.
+
+## Task 3 Supplement
+
+The task 3 scope and acceptance criteria are recorded in
+`REQ-023_macro_api_and_reconciliation.md`. Retirement now emits inventory before
+DROP, records statement acknowledgement before postcondition inspection, and
+retains both through a controlled failure. `drop_status=completed` means the
+statement was acknowledged, not that post-drop absence was verified;
+`drop_status=unknown` and `dropped=null` make no completion claim. Failed
+verification retains `after=null` when unavailable, or the observed conflicting
+state when available, and the CLI exits 2. Successful output and retained asset
+classes are unchanged. New evidence is offline only; the historical live proof
+above has not been rerun for these changes.

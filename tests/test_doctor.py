@@ -174,7 +174,7 @@ def test_doctor_accepts_immutable_sha_when_installed_dbt_version_matches(tmp_pat
     )
     installed = tmp_path / "dbt_packages/dbt_cortex_agent/dbt_project.yml"
     installed.parent.mkdir(parents=True)
-    installed.write_text("name: dbt_cortex_agent\nversion: 0.0.8\nconfig-version: 2\n")
+    installed.write_text("name: dbt_cortex_agent\nversion: 0.0.9\nconfig-version: 2\n")
 
     diagnostics = run_doctor(
         config,
@@ -212,7 +212,7 @@ def test_doctor_rejects_branch_revision_even_when_installed_dbt_version_matches(
     )
     installed = tmp_path / "dbt_packages/dbt_cortex_agent/dbt_project.yml"
     installed.parent.mkdir(parents=True)
-    installed.write_text("name: dbt_cortex_agent\nversion: 0.0.1\nconfig-version: 2\n")
+    installed.write_text("name: dbt_cortex_agent\nversion: 0.0.9\nconfig-version: 2\n")
 
     diagnostics = run_doctor(
         config,
@@ -249,7 +249,7 @@ def test_doctor_preserves_semantic_revision_direct_match(tmp_path):
     config = _config(tmp_path)
     (tmp_path / "packages.yml").write_text(
         "packages:\n  - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git\n"
-        "    revision: v0.0.8\n"
+        "    revision: v0.0.9\n"
     )
 
     diagnostics = run_doctor(

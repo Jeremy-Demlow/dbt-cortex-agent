@@ -205,13 +205,13 @@ def test_current_release_identity_is_consistent():
     readme = (ROOT / "README.md").read_text()
     changelog = (ROOT / "CHANGELOG.md").read_text()
 
-    assert project["version"] == "0.0.8"
-    assert package["project"]["version"] == "0.0.8"
-    assert citation["version"] == "0.0.8"
-    assert __version__ == "0.0.8"
-    assert 'name = "dbt-cortex-agent"\nversion = "0.0.8"' in lock
-    assert "revision: v0.0.8" in readme
-    assert "## 0.0.8 — 2026-09-09" in changelog
+    assert project["version"] == "0.0.9"
+    assert package["project"]["version"] == "0.0.9"
+    assert citation["version"] == "0.0.9"
+    assert __version__ == "0.0.9"
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.9"' in lock
+    assert "revision: v0.0.9" in readme
+    assert "## 0.0.9 — 2026-09-18" in changelog
 
 
 def test_runtime_is_the_only_connector_extra():

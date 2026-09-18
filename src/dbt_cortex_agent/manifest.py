@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from .domain import SnowflakeObjectName
 from .identifiers import fqn, identifier, stage_path
 
@@ -120,15 +122,78 @@ def _relation_fqn(node: dict[str, Any]) -> str:
     return fqn(f"{database}.{schema}.{relation}", "eval model")
 
 
-def _model_agent_spec(node: dict[str, Any]) -> dict[str, Any]:
+def _skill_text(value: Any, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or not value.strip()
+        or any(marker in value for marker in ("{{", "{%", "{#"))
+    ):
+        raise ValueError(f"{label} has an incomplete or unresolved skill declaration")
+    return value
+
+
+def _skill_contract(value: Any, label: str) -> dict[str, tuple[str, str]]:
+    if not isinstance(value, list):
+        raise ValueError(f"{label} must be a list of skill declarations")
+    contract: dict[str, tuple[str, str]] = {}
+    for skill in value:
+        if not isinstance(skill, dict) or not isinstance(skill.get("source"), dict):
+            raise ValueError(f"{label} requires skill mappings with a source mapping")
+        name, source = _skill_text(skill.get("name"), label), skill["source"]
+        source_type = _skill_text(source.get("type"), label).lower()
+        path = _skill_text(source.get("path"), label)
+        if name in contract:
+            raise ValueError(f"{label} declares duplicate skill name {name!r}")
+        if source_type == "stage":
+            stage_fqn, suffix = stage_path_parts(path)
+            path = f"@{stage_fqn}/{suffix}"
+        contract[name] = (source_type, path)
+    return contract
+
+
+def _skill_spec_evidence(node: dict[str, Any]) -> tuple[dict[str, Any] | None, bool]:
     compiled = node.get("compiled_code")
-    if not isinstance(compiled, str) or not compiled.strip():
-        return {}
+    has_compiled = isinstance(compiled, str) and bool(compiled.strip())
+    body = compiled if has_compiled else node.get("raw_code")
+    if not isinstance(body, str) or not body.strip():
+        return None, False
+    detectable = "skills" in body
+    if not has_compiled and any(marker in body for marker in ("{{", "{%", "{#")):
+        return None, detectable
     try:
-        value = json.loads(compiled)
-    except json.JSONDecodeError:
-        return {}
-    return value if isinstance(value, dict) else {}
+        spec = yaml.safe_load(body)
+    except yaml.YAMLError as exc:
+        if has_compiled or detectable:
+            raise ValueError(f"Agent {node['name']!r} has unreadable skill evidence") from exc
+        return None, False
+    if not isinstance(spec, dict):
+        if has_compiled or detectable:
+            raise ValueError(f"Agent {node['name']!r} specification must be a YAML mapping")
+        return None, False
+    return spec, detectable
+
+
+def _agent_skill_contract(agent: dict[str, Any], node: dict[str, Any]) -> dict:
+    label = f"Agent {agent['name']!r} meta.cortex_agent.skills"
+    capabilities = agent["meta"].get("capabilities")
+    if isinstance(capabilities, dict) and "skills" in capabilities:
+        raise ValueError(f"{label} is required; capabilities.skills metadata is unsupported")
+    configured = agent["meta"].get("skills", [])
+    contract = _skill_contract(configured, label)
+    spec, detectable = _skill_spec_evidence(node)
+    if spec is None:
+        if detectable and not contract:
+            raise ValueError(f"{label} must explicitly resolve detectable model skills")
+        return contract
+    capabilities = spec.get("capabilities")
+    if isinstance(capabilities, dict) and "skills" in capabilities:
+        raise ValueError("Use native top-level skills, not capabilities.skills, in model YAML")
+    declared = _skill_contract(spec.get("skills", []), f"Agent {agent['name']!r} model skills")
+    if declared and "skills" not in agent["meta"]:
+        raise ValueError(f"{label} is required for local skill uploads; YAML alone is insufficient")
+    if contract != declared:
+        raise ValueError(f"{label} does not match model skills (name, source type, or path)")
+    return contract
 
 
 def _stage_suffix(stage_path: str) -> Path:
@@ -177,7 +242,6 @@ def cortex_agents(manifest: dict[str, Any]) -> list[dict[str, Any]]:
         physical_name = identifier(str(node.get("alias") or name), f"physical Agent for {name}")
         normalized_meta = {
             **agent_meta,
-            "compiled_spec": _model_agent_spec(node),
             "snowflake_name": physical_name,
         }
         agents.append(
@@ -237,25 +301,18 @@ def skill_declarations(
 ) -> list[SkillDeclaration]:
     declarations: list[SkillDeclaration] = []
     for agent in select_agents(manifest, agent_names):
-        configured = agent["meta"].get("skills") or []
-        spec_skills = agent["meta"].get("compiled_spec", {}).get("skills") or []
-        skills = configured or spec_skills
-        for skill in skills:
-            source = skill.get("source") or {}
-            if str(source.get("type", "")).lower() != "stage":
+        node = manifest["nodes"][agent["unique_id"]]
+        skills = _agent_skill_contract(agent, node)
+        for skill_name, (source_type, path) in skills.items():
+            if source_type != "stage":
                 continue
-            stage_path = source.get("path")
-            if not stage_path or not skill.get("name"):
-                raise ValueError(
-                    f"Agent {agent['name']!r} has an incomplete stage skill declaration"
-                )
             declarations.append(
                 SkillDeclaration(
                     agent_name=agent["name"],
-                    skill_name=skill["name"],
-                    source_type=source["type"],
-                    stage_path=stage_path,
-                    local_dir=local_skill_dir(project_dir, stage_path),
+                    skill_name=skill_name,
+                    source_type=source_type,
+                    stage_path=path,
+                    local_dir=local_skill_dir(project_dir, path),
                 )
             )
     return declarations

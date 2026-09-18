@@ -20,7 +20,6 @@ for skills, runtime, and evaluations, but never reparses the model source.
       'deploy_alias': 'latest',
       'cortex_agent': {
         'enabled': true,
-        'access': {'usage_roles': ['ORDERS_AGENT_USER']},
         'evaluation': {'native_tools': ['OrdersAnalytics']}
       }
     }
@@ -56,7 +55,10 @@ missing orchestration fails compilation.
 Use no-output `ref()` calls for Agent dependencies. The relation database,
 schema, and alias are the physical Agent identity. `config.meta.cortex_agent`
 contains operational metadata that is not part of the deployed specification:
-access hints, local skill mapping, and native-evaluation classifications.
+explicit local skill mapping and native-evaluation classifications. Local uploads
+require `config.meta.cortex_agent.skills` matching native top-level `skills`;
+compiled YAML is comparison evidence, not a fallback upload contract. See
+[skills](skills.md). Grants remain adopter-owned.
 
 Preview the Agent with dbt, then use the package-native deployment workflow:
 
@@ -71,11 +73,12 @@ Direct `dbt build --select orders_assistant` is the lower-level immutable deploy
 primitive. It is appropriate only when the operator separately owns skill
 upload, execution context, allowlist, and evidence sequencing.
 
-When `meta.agent_role` is set, the materialization switches to that role for
-Agent lifecycle statements and post-hooks, then restores the original role on
-successful completion. dbt/Jinja materializations do not provide `try/finally`;
-if a statement or hook raises after `USE ROLE`, discard that failed dbt process
-instead of reusing its thread/session.
+The materialization uses the invoking dbt role and never switches session roles.
+`meta.agent_role` does not select a deployment role. Configure the approved role
+in the dbt profile/CLI execution context instead. User-authored hooks are separate
+adopter code; they do not make Agent DDL transactional or provide automatic
+rollback. Compilation writes local artifacts and may open an adapter connection;
+non-mutating does not mean offline.
 
 ## Optional evaluation model
 

@@ -21,6 +21,7 @@ AGENT = "orders_assistant"
 SUITE = "core"
 TARGET = "sandbox"
 DATABASE = "WHEEL_VERIFY_DB"
+EXPECTED_AGENT_FQN = f"{DATABASE}.ANALYTICS_AGENTS.ORDERS_ASSISTANT_SANDBOX"
 EVAL_FILES = (
     Path("models/agents/orders_assistant/evals/core.yml"),
     Path("models/agents/orders_assistant/evals/orders_assistant_core.sql"),
@@ -41,6 +42,7 @@ class ProjectEvidence:
     eval_log: str
     render_digest_before_eval: str
     render_digest_after_eval: str
+    deploy: dict[str, Any]
 
 
 def run_checked(
@@ -225,6 +227,14 @@ def validate_project_evidence(  # noqa: C901
     fqn = evidence.compiled_agent.get("physical_agent")
     if not isinstance(fqn, str):
         raise AssertionError(f"{evidence.name}: compiled model has no physical Agent FQN")
+    if fqn != EXPECTED_AGENT_FQN:
+        raise AssertionError(f"{evidence.name}: default schema Agent FQN drift: {fqn}")
+    if (
+        evidence.deploy.get("applied") is not False
+        or evidence.deploy.get("dbt_selection") != [f"+{AGENT}"]
+        or [agent.get("physical_fqn") for agent in evidence.deploy.get("agents", [])] != [fqn]
+    ):
+        raise AssertionError(f"{evidence.name}: deploy preview Agent FQN drift")
     smoke_object = evidence.smoke.get("agent_object")
     if not isinstance(smoke_object, str) or fqn.split(".")[-1] != smoke_object:
         raise AssertionError(f"{evidence.name}: smoke Agent FQN drift")
@@ -429,6 +439,7 @@ def exercise_project(
         eval_log,
         before,
         after,
+        deploy,
     )
 
 

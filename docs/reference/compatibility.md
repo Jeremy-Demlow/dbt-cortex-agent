@@ -1,12 +1,14 @@
 # Compatibility
 
-This matrix applies to `dbt_cortex_agent` 0.0.8 on both install surfaces.
+This matrix defines the compatibility targets for the `dbt_cortex_agent` 0.0.9
+candidate on both install surfaces. Current exact-wheel qualification is pending;
+historical verification below is not proof for this candidate.
 
-The project-local Cortex Code adoption skill uses the same 0.0.8 CLI/parser and
+The project-local Cortex Code adoption skill uses the same 0.0.9 CLI/parser and
 metadata contracts. dbt Core with `dbt-snowflake` remains authoritative for its
 proof steps; Fusion/fdbt output is advisory. The skill adds no runtime dependency,
 is script-free, and adds no global installation or live-verification claim.
-It ships in the same v0.0.8 release scope as the generic and Orders scaffolds,
+It is included in the same v0.0.9 candidate scope as the generic and Orders scaffolds,
 single-Agent render/deploy, general Agent smoke, and immutable-SHA doctor
 validation.
 

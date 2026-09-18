@@ -166,6 +166,50 @@
   {{ return(local_md5(entries | sort | join('|'))) }}
 {% endmacro %}
 
+{% macro cortex_agent__deploy_phase(agent_fqn, phase) %}
+  {% do log('CORTEX_AGENT_DEPLOY_PHASE=' ~ tojson({'agent_fqn': agent_fqn, 'phase': phase}), info=True) %}
+{% endmacro %}
+
+{% macro cortex_agent__reconcile_live(agent_fqn) %}
+  {% if not execute %}
+    {{ return(none) }}
+  {% endif %}
+  {% set agent_fqn = dbt_cortex_agent.cortex_agent__unquoted_fqn(agent_fqn, 'Agent FQN') %}
+  {% do dbt_cortex_agent.cortex_agent__assert_deploy_target('cortex_agent__reconcile_live') %}
+  {% do dbt_cortex_agent.cortex_agent__assert_database_allowed('cortex_agent__reconcile_live', agent_fqn.split('.')[0]) %}
+  {% if not dbt_cortex_agent.cortex_agent__live_draft_exists(agent_fqn) %}
+    {% do run_query("ALTER AGENT " ~ agent_fqn ~ " ADD LIVE VERSION FROM LAST") %}
+  {% endif %}
+  {% if not dbt_cortex_agent.cortex_agent__live_draft_exists(agent_fqn) %}
+    {{ exceptions.raise_compiler_error("Agent LIVE postcondition failed: " ~ agent_fqn) }}
+  {% endif %}
+  {% do dbt_cortex_agent.cortex_agent__deploy_phase(agent_fqn, 'live_reconciled') %}
+{% endmacro %}
+
+{% macro cortex_agent__assert_creation_complete(agent_fqn) %}
+  {% set description = run_query("DESCRIBE AGENT " ~ agent_fqn) %}
+  {% set columns = description.column_names | map('lower') | list %}
+  {% if 'comment' not in columns or description.rows | length != 1 %}
+    {{ exceptions.raise_compiler_error('Cannot inspect Agent creation metadata; explicit recovery required: ' ~ agent_fqn) }}
+  {% endif %}
+  {% set comment = description.rows[0][columns.index('comment')] %}
+  {% if comment == 'Managed by dbt cortex_agent materialization' %}
+    {% set versions = run_query("SHOW VERSIONS IN AGENT " ~ agent_fqn) %}
+    {% set version_columns = versions.column_names | map('lower') | list %}
+    {% if 'name' in version_columns and 'comment' in version_columns %}
+      {% for row in versions %}
+        {% if row[version_columns.index('name')] == 'VERSION$1' %}
+          {% set metadata = row[version_columns.index('comment')] | string %}
+          {% if modules.re.search('spec_md5=[0-9a-f]+(?:[ ]|$)', metadata) and modules.re.search('skill_md5=[0-9a-f]*(?:[ ]|$)', metadata) %}
+            {{ return(none) }}
+          {% endif %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+    {{ exceptions.raise_compiler_error('Unfinished initial Agent creation; explicit recovery required before retry: ' ~ agent_fqn ~ '. Initial version content and historical staged skills are not established. Inspect native versions and retained skill evidence; do not invent hash metadata. force_agent_recreate does not bypass this guard.') }}
+  {% endif %}
+{% endmacro %}
+
 {% macro cortex_agent__apply_deploy(agent_fqn, spec_json, deploy_alias, mcp_statements=[], skill_hash='', reconcile_alias=false) %}
   {% if not execute %}
     {{ return('') }}
@@ -185,6 +229,9 @@
 
   {% set spec_hash = local_md5(spec_json) %}
   {% set existed = dbt_cortex_agent.cortex_agent__agent_exists(agent_fqn) %}
+  {% if existed %}
+    {% do dbt_cortex_agent.cortex_agent__assert_creation_complete(agent_fqn) %}
+  {% endif %}
 
   {# Idempotency: skip minting a new version when a managed immutable version
      matches the requested content, regardless of the serving DEFAULT.
@@ -200,9 +247,10 @@
       {% set expected_alias_version = aliases.get(alias_key, '') %}
       {% if reconcile_alias and expected_alias_version != managed_version %}
         {% do dbt_cortex_agent.cortex_agent__route_alias_for_fqn(agent_fqn, managed_version, deploy_alias, expected_alias_version) %}
-        {% do log('CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled', info=True) %} {# pragma: allowlist secret #}
+        {% do dbt_cortex_agent.cortex_agent__deploy_phase(agent_fqn, 'alias_reconciled') %}
         {% do log("Reconciled alias " ~ deploy_alias ~ " -> " ~ managed_version ~ " on unchanged " ~ agent_fqn, info=True) %}
       {% endif %}
+      {% do dbt_cortex_agent.cortex_agent__reconcile_live(agent_fqn) %}
       {% do log("No spec/skill change for " ~ agent_fqn ~ " (spec_md5=" ~ spec_hash ~ ", skill_md5=" ~ skill_hash ~ "); skipping COMMIT. Set var('force_agent_recreate', true) to force a new version.", info=True) %}
       {{ return(agent_fqn) }}
     {% endif %}
@@ -229,20 +277,17 @@
     {% endif %}
     {% set new_version = version_match.group(0) %}
   {% endif %}
-  {% do log('CORTEX_AGENT_DEPLOY_PHASE=version_committed', info=True) %} {# pragma: allowlist secret #}
+  {% do dbt_cortex_agent.cortex_agent__deploy_phase(agent_fqn, 'version_committed') %}
 
   {% set version_comment = target.name ~ ' | inv=' ~ invocation_id ~ ' | spec_md5=' ~ spec_hash ~ ' | skill_md5=' ~ skill_hash %}
   {% do run_query("ALTER AGENT " ~ agent_fqn ~ " MODIFY VERSION " ~ new_version ~ " SET COMMENT = $$" ~ version_comment ~ "$$") %}
-  {% do log('CORTEX_AGENT_DEPLOY_PHASE=metadata_reconciled', info=True) %} {# pragma: allowlist secret #}
+  {% do dbt_cortex_agent.cortex_agent__deploy_phase(agent_fqn, 'metadata_reconciled') %}
   {% set current_aliases = dbt_cortex_agent.cortex_agent__describe_aliases(agent_fqn) %}
   {% set expected_alias_version = current_aliases.get(deploy_alias | upper, '') %}
   {% do dbt_cortex_agent.cortex_agent__route_alias_for_fqn(agent_fqn, new_version, deploy_alias, expected_alias_version) %}
-  {% do log('CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled', info=True) %} {# pragma: allowlist secret #}
+  {% do dbt_cortex_agent.cortex_agent__deploy_phase(agent_fqn, 'alias_reconciled') %}
 
-  {% if not dbt_cortex_agent.cortex_agent__live_draft_exists(agent_fqn) %}
-    {% do run_query("ALTER AGENT " ~ agent_fqn ~ " ADD LIVE VERSION FROM LAST") %}
-  {% endif %}
-  {% do log('CORTEX_AGENT_DEPLOY_PHASE=live_reconciled', info=True) %} {# pragma: allowlist secret #}
+  {% do dbt_cortex_agent.cortex_agent__reconcile_live(agent_fqn) %}
 
   {# MCP connectors reference a pre-existing EXTERNAL MCP SERVER object and are
      attached out-of-band from the spec. Gated behind mcp_deploy_enabled because

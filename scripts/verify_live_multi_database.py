@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -410,10 +409,64 @@ def _cleanup(config: LiveConfig, env: dict[str, str], apply: bool) -> None:
     for command in cleanup_commands(config):
         try:
             _run(command, cwd=config.project_dir, env=env, apply=apply, capture=False)
-        except RuntimeError as exc:
+        except (RuntimeError, OSError) as exc:
             failures.append(str(exc))
     if failures:
         raise RuntimeError("Cleanup failed: " + "; ".join(failures))
+
+
+def _write_attestation(output: Path, attestation: dict) -> None:
+    proof_status = attestation["proof_status"]
+    cleanup_status = attestation["cleanup_status"]
+    attestation["status"] = "failed" if "failed" in (proof_status, cleanup_status) else proof_status
+    output.write_text(json.dumps(attestation, indent=2) + "\n", encoding="utf-8")
+
+
+def _record_cleanup(
+    config: LiveConfig, env: dict[str, str], apply: bool, attestation: dict
+) -> None:
+    attestation["cleanup_requested"] = True
+    attestation["cleanup_status"] = "planned"
+    attestation.pop("cleanup_error_type", None)
+    try:
+        _cleanup(config, env, apply)
+    except Exception as exc:
+        attestation["cleanup_status"] = "failed"
+        attestation["cleanup_error_type"] = type(exc).__name__
+        raise
+    else:
+        if apply:
+            attestation["cleanup_status"] = "completed"
+
+
+def _prior_attestation(output: Path, expected: dict) -> dict:
+    prior = json.loads(output.read_text(encoding="utf-8"))
+    if not isinstance(prior, dict):
+        raise ValueError("Existing live attestation must be an object")
+    for key in ("schema_version", "target", "eval_database", "paid_evaluation"):
+        if prior.get(key) != expected[key]:
+            raise ValueError(f"Existing live attestation has mismatched {key}")
+    if (
+        expected["wheel_sha256"] is not None
+        and prior.get("wheel_sha256") != expected["wheel_sha256"]
+    ):
+        raise ValueError("Existing live attestation has mismatched wheel_sha256")
+    agents = prior.get("agents")
+    if (
+        not isinstance(agents, list)
+        or len(agents) != 2
+        or any(not isinstance(agent, dict) for agent in agents)
+    ):
+        raise ValueError("Existing live attestation must retain both Agent identities")
+    if [agent.get("agent_fqn") for agent in agents] != [
+        agent["agent_fqn"] for agent in expected["agents"]
+    ]:
+        raise ValueError("Existing live attestation has mismatched Agent identities")
+    if prior.get("proof_status") not in {"planned", "not_started", "completed", "failed"}:
+        raise ValueError("Existing live attestation has no valid proof_status")
+    if prior.get("cleanup_status") not in {"not_requested", "planned", "completed", "failed"}:
+        raise ValueError("Existing live attestation has no valid cleanup_status")
+    return prior
 
 
 def run(  # noqa: C901
@@ -427,17 +480,17 @@ def run(  # noqa: C901
         ("warehouse", config.warehouse),
     ):
         _identifier(value, label)
-    if len(set(config.databases)) != 3:
+    if len({database.upper() for database in config.databases}) != 3:
         raise ValueError("Live proof requires three distinct databases")
     if not cleanup_only and not config.wheel.is_file():
         raise FileNotFoundError(config.wheel)
     venv = config.artifact_dir / "venv"
     python = venv / "bin/python"
     env = os.environ.copy()
-    dbt_executable = env.get("DBT_EXECUTABLE") or shutil.which("dbt", path=env.get("PATH"))
     env.update(
         {
             "PATH": f"{python.parent}{os.pathsep}{env.get('PATH', '')}",
+            "DBT_EXECUTABLE": str(python.parent / "dbt"),
             "DBT_TARGET": config.target,
             "SNOWFLAKE_DATABASE": config.database_a,
             "SNOWFLAKE_ROLE": config.role,
@@ -447,37 +500,62 @@ def run(  # noqa: C901
             "CORTEX_AGENT_LIVE_DATABASE_EVAL": config.eval_database,
         }
     )
-    if dbt_executable:
-        env["DBT_EXECUTABLE"] = dbt_executable
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
+    output = config.artifact_dir / "live-attestation.json"
+    attestation = {
+        "schema_version": 1,
+        "proof_status": "not_started" if cleanup_only else "planned",
+        "wheel_sha256": (
+            hashlib.sha256(config.wheel.read_bytes()).hexdigest()
+            if config.wheel.is_file()
+            else None
+        ),
+        "target": config.target,
+        "agents": [
+            {"agent_fqn": f"{config.database_a}.AGENTS.SHARED_ASSISTANT"},
+            {"agent_fqn": f"{config.database_b}.AGENTS.SHARED_ASSISTANT"},
+        ],
+        "eval_database": config.eval_database,
+        "paid_evaluation": False,
+        "cleanup_requested": cleanup or cleanup_only,
+        "cleanup_status": "not_requested",
+        "guarded_retirement": False,
+        "dbt_package_source": "release checkout matching the wheel build",
+        "reconciliation": {"before": [], "after": []},
+    }
     if cleanup_only:
-        _cleanup(config, env, apply)
-        return config.artifact_dir / "live-attestation.json"
-    if apply:
-        _run(
-            [sys.executable, "-m", "venv", "--clear", str(venv)],
-            cwd=config.project_dir,
-            env=env,
-            apply=True,
-        )
+        if output.exists():
+            attestation = _prior_attestation(output, attestation)
+            if not apply:
+                _cleanup(config, env, apply=False)
+                return output
+        try:
+            _record_cleanup(config, env, apply, attestation)
+        finally:
+            _write_attestation(output, attestation)
+        return output
     first_state: list[dict] = []
     second_state: list[dict] = []
-    lifecycle_state: dict | None = None
+    attestation["reconciliation"] = {"before": first_state, "after": second_state}
     proof_error: Exception | None = None
+    cleanup_error: Exception | None = None
     try:
+        if apply:
+            _run(
+                [sys.executable, "-m", "venv", "--clear", str(venv)],
+                cwd=config.project_dir,
+                env=env,
+                apply=True,
+            )
         planned = commands(config, python)
         for index, command in enumerate(planned):
             _run(command, cwd=config.project_dir, env=env, apply=apply, capture=False)
-            if apply and index == 3:
-                first_state = [
-                    _agent_state(config, database, env)
-                    for database in (config.database_a, config.database_b)
-                ]
-            if apply and index == len(planned) - 1:
-                second_state = [
-                    _agent_state(config, database, env)
-                    for database in (config.database_a, config.database_b)
-                ]
+            if apply and index in (3, len(planned) - 1):
+                snapshot = first_state if index == 3 else second_state
+                for position, database in enumerate((config.database_a, config.database_b)):
+                    state = _agent_state(config, database, env)
+                    snapshot.append(state)
+                    attestation["agents"][position] = state
         if apply and first_state != second_state:
             raise RuntimeError("No-change reconciliation changed Agent versions or aliases")
         lifecycle_env = {**env, "CORTEX_AGENT_LIVE_SPEC_REVISION": "v2"}
@@ -485,37 +563,27 @@ def run(  # noqa: C901
             _run(command, cwd=config.project_dir, env=lifecycle_env, apply=apply, capture=False)
         if apply:
             lifecycle_state = _agent_state(config, config.database_a, lifecycle_env)
+            attestation["agents"][0] = lifecycle_state
             _assert_lifecycle_state(lifecycle_state)
             for command in guarded_drop_commands(config, python):
                 _run(command, cwd=config.project_dir, env=lifecycle_env, apply=True, capture=False)
+            attestation["guarded_retirement"] = True
+            attestation["proof_status"] = "completed"
     except Exception as exc:
         proof_error = exc
-        raise
+        attestation["proof_status"] = "failed"
+        attestation["proof_error_type"] = type(exc).__name__
     finally:
         if cleanup:
             try:
-                _cleanup(config, env, apply)
-            except RuntimeError:
-                if proof_error is None:
-                    raise
-    attestation = {
-        "schema_version": 1,
-        "status": "completed" if apply else "planned",
-        "wheel_sha256": hashlib.sha256(config.wheel.read_bytes()).hexdigest(),
-        "target": config.target,
-        "agents": ([lifecycle_state] if lifecycle_state else second_state)
-        or [
-            {"agent_fqn": f"{config.database_a}.AGENTS.SHARED_ASSISTANT"},
-            {"agent_fqn": f"{config.database_b}.AGENTS.SHARED_ASSISTANT"},
-        ],
-        "eval_database": config.eval_database,
-        "paid_evaluation": False,
-        "cleanup_requested": cleanup,
-        "guarded_retirement": bool(apply),
-        "dbt_package_source": "release checkout matching the wheel build",
-    }
-    output = config.artifact_dir / "live-attestation.json"
-    output.write_text(json.dumps(attestation, indent=2) + "\n", encoding="utf-8")
+                _record_cleanup(config, env, apply, attestation)
+            except Exception as exc:
+                cleanup_error = exc
+        _write_attestation(output, attestation)
+    if proof_error is not None:
+        raise proof_error
+    if cleanup_error is not None:
+        raise cleanup_error
     return output
 
 
