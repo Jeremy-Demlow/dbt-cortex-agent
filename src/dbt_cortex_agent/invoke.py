@@ -3,16 +3,22 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterable, Iterator
+from contextlib import ExitStack
 from dataclasses import dataclass, field
+from http.client import HTTPException
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
+from .domain import finite_number, is_controlled_operation_error, managed_resource
 from .identifiers import identifier
 
 MAX_RESULT_PREVIEW_ROWS = 5
 MAX_RAW_EVENT_BYTES = 1_000_000
+MAX_STREAM_BYTES = 1_000_000
+MAX_AGENT_EVENTS = 10_000
 
 
 @dataclass(frozen=True)
@@ -47,7 +53,65 @@ class AgentRunResult:
         }
 
 
+class AgentInvocationError(RuntimeError):
+    def __init__(self, message: str, result: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.result = result
+        self.raw_event_path: Path | None = None
+
+
 TERMINAL_EVENTS = frozenset({"done", "response"})
+
+
+def _remaining(deadline: float) -> float:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TimeoutError("Agent invocation deadline exceeded")
+    return remaining
+
+
+def _bounded_lines(lines: Iterable[bytes | str], deadline: float | None) -> Iterator[bytes | str]:
+    iterator = iter(lines)
+    total = 0
+    while True:
+        if deadline is not None:
+            _remaining(deadline)
+        if hasattr(lines, "readline"):
+            raw_line = lines.readline(MAX_STREAM_BYTES - total + 1)
+        else:
+            try:
+                raw_line = next(iterator)
+            except StopIteration:
+                if deadline is not None:
+                    _remaining(deadline)
+                return
+        if deadline is not None:
+            _remaining(deadline)
+        if not raw_line and hasattr(lines, "readline"):
+            return
+        total += len(raw_line if isinstance(raw_line, bytes) else raw_line.encode("utf-8"))
+        if total > MAX_STREAM_BYTES:
+            raise RuntimeError(f"Agent SSE stream exceeds {MAX_STREAM_BYTES} byte limit")
+        yield raw_line
+
+
+def _encode_event(event: AgentEvent) -> bytes:
+    return (json.dumps({"event": event.event, "data": event.data}, sort_keys=True) + "\n").encode(
+        "utf-8"
+    )
+
+
+def frame_sse(
+    lines: Iterable[bytes | str], *, deadline: float | None = None
+) -> Iterator[AgentEvent]:
+    total = 0
+    for count, event in enumerate(_frame_sse(_bounded_lines(lines, deadline)), start=1):
+        if count > MAX_AGENT_EVENTS:
+            raise RuntimeError(f"Agent SSE stream exceeds {MAX_AGENT_EVENTS} event limit")
+        total += len(_encode_event(event))
+        if total > MAX_RAW_EVENT_BYTES:
+            raise RuntimeError(f"Raw Agent event artifact exceeds {MAX_RAW_EVENT_BYTES} byte limit")
+        yield event
 
 
 def _decode_line(raw_line: bytes | str) -> str:
@@ -70,7 +134,7 @@ def _frame_event(event_name: str | None, data_lines: list[str]) -> AgentEvent | 
     return AgentEvent(event_name or "message", value)
 
 
-def frame_sse(lines: Iterable[bytes | str]) -> Iterator[AgentEvent]:  # noqa: C901
+def _frame_sse(lines: Iterable[bytes | str]) -> Iterator[AgentEvent]:  # noqa: C901
     current_event: str | None = None
     data_lines: list[str] = []
     completed = False
@@ -195,9 +259,16 @@ def _apply_metadata(result: AgentRunResult, data: dict[str, Any]) -> None:
         result.metadata.update(metadata)
 
 
-def collect_agent_events(events: Iterable[AgentEvent]) -> AgentRunResult:
-    result = AgentRunResult()
+def collect_agent_events(
+    events: Iterable[AgentEvent],
+    *,
+    result: AgentRunResult | None = None,
+    raw_events: list[AgentEvent] | None = None,
+) -> AgentRunResult:
+    result = result if result is not None else AgentRunResult()
     for item in events:
+        if raw_events is not None:
+            raw_events.append(item)
         event, data = item.event, item.data
         if event in {"response.text.delta", "response.text"}:
             _apply_text_event(result, data)
@@ -225,17 +296,15 @@ def parse_sse(lines: Iterable[bytes | str]) -> dict[str, Any]:
 
 
 def write_raw_events(events: list[AgentEvent], target: Path) -> Path:
-    encoded = "".join(
-        json.dumps({"event": event.event, "data": event.data}, sort_keys=True) + "\n"
-        for event in events
-    ).encode("utf-8")
+    encoded = b"".join(_encode_event(event) for event in events)
     if len(encoded) > MAX_RAW_EVENT_BYTES:
         raise ValueError(f"Raw Agent event artifact exceeds {MAX_RAW_EVENT_BYTES} byte limit")
     target = target.resolve()
     if target.exists():
         raise FileExistsError(f"Raw Agent event artifact already exists: {target}")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(encoded)
+    with target.open("xb") as artifact:
+        artifact.write(encoded)
     return target
 
 
@@ -255,6 +324,8 @@ def compact_agent_output(result: dict[str, Any]) -> str:
         lines.append(f"Version: {metadata['resolved_version']}")
     if result.get("duration_seconds"):
         lines.append(f"Duration: {result['duration_seconds']:.2f}s")
+    if result.get("errors"):
+        lines.append("Errors: " + "; ".join(result["errors"]))
     return "\n".join(lines)
 
 
@@ -283,63 +354,150 @@ def invoke_agent(
             "Direct invocation requires the 'runtime' extra: "
             "pip install 'dbt-cortex-agent[runtime]'"
         ) from exc
+    timeout = finite_number(timeout, "Agent invocation timeout")
     if timeout <= 0:
         raise ValueError("Agent invocation timeout must be positive")
+    if raw_event_path is not None and raw_event_path.exists():
+        raise FileExistsError(f"Raw Agent event artifact already exists: {raw_event_path}")
+    if endpoint is not None:
+        _validate_endpoint(endpoint)
 
-    conn = snowflake.connector.connect(connection_name=connection)
-    cursor = conn.cursor()
+    start = time.monotonic()
+    deadline = start + timeout
+    result = AgentRunResult(
+        metadata={
+            "requested_version": version_selector,
+            "agent_fqn": f"{database}.{schema}.{agent_name}",
+        }
+    )
+    events: list[AgentEvent] = []
+    failure: Exception | None = None
     try:
-        if endpoint is None:
-            cursor.execute("SELECT CURRENT_ORGANIZATION_NAME(), CURRENT_ACCOUNT_NAME()")
-            organization, account = cursor.fetchone()
-            endpoint = (
-                f"https://{str(organization).lower()}-"
-                f"{str(account).replace('_', '-').lower()}.snowflakecomputing.com"
+        with ExitStack() as resources:
+            conn = resources.enter_context(
+                managed_resource(
+                    snowflake.connector.connect(
+                        connection_name=connection,
+                        login_timeout=_remaining(deadline),
+                        network_timeout=_remaining(deadline),
+                        socket_timeout=_remaining(deadline),
+                    )
+                )
             )
-        parsed_endpoint = urlparse(endpoint)
-        hostname = (parsed_endpoint.hostname or "").lower()
-        if parsed_endpoint.scheme != "https" or not (
-            hostname == "snowflakecomputing.com" or hostname.endswith(".snowflakecomputing.com")
-        ):
-            raise ValueError("Agent endpoint must use HTTPS on a snowflakecomputing.com host")
-        agent_path = f"agents/{quote(agent_name, safe='')}"
-        if version_selector:
-            agent_path += f"/versions/{quote(version_selector, safe='')}"
-        url = (
-            f"{endpoint.rstrip('/')}/api/v2/databases/{quote(database, safe='')}/"
-            f"schemas/{quote(schema, safe='')}/{agent_path}:run"
-        )
-        payload = json.dumps(
-            {"messages": [{"role": "user", "content": [{"type": "text", "text": question}]}]}
-        ).encode("utf-8")
-        request = Request(
-            url,
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "text/event-stream",
-                "Authorization": f'Snowflake Token="{conn.rest.token}"',
-                **({"X-Snowflake-Role": identifier(role, "Agent runtime role")} if role else {}),
-            },
-            method="POST",
-        )
-        start = time.monotonic()
-        with urlopen(request, timeout=timeout) as response:
-            events = list(frame_sse(response))
-        result = collect_agent_events(events).to_dict()
+            _remaining(deadline)
+            cursor = resources.enter_context(managed_resource(conn.cursor()))
+            if endpoint is None:
+                cursor.execute(
+                    "SELECT CURRENT_ORGANIZATION_NAME(), CURRENT_ACCOUNT_NAME()",
+                    timeout=_remaining(deadline),
+                )
+                organization, account = cursor.fetchone()
+                endpoint = (
+                    f"https://{str(organization).lower()}-"
+                    f"{str(account).replace('_', '-').lower()}.snowflakecomputing.com"
+                )
+            request = _agent_request(
+                endpoint,
+                database,
+                schema,
+                agent_name,
+                version_selector,
+                question,
+                conn.rest.token,
+                role,
+            )
+            try:
+                response = urlopen(request, timeout=_remaining(deadline))
+            except HTTPError as exc:
+                resources.enter_context(managed_resource(exc))
+                raise
+            resources.enter_context(managed_resource(response))
+            collect_agent_events(
+                frame_sse(response, deadline=deadline), result=result, raw_events=events
+            )
+            _remaining(deadline)
+    except Exception as exc:
+        if not is_controlled_operation_error(exc) and not isinstance(exc, HTTPException):
+            raise
+        failure = exc
+        if str(exc) not in result.errors:
+            result.errors.append(str(exc))
+        cleanup_errors = getattr(exc, "cleanup_errors", [])
+        if cleanup_errors:
+            result.metadata["cleanup_errors"] = [str(error) for error in cleanup_errors]
+    result.duration_seconds = round(time.monotonic() - start, 3)
+    result.metadata.update(
+        {
+            "requested_version": version_selector,
+            "agent_fqn": f"{database}.{schema}.{agent_name}",
+        }
+    )
+    return _finish_invocation(result, events, raw_event_path, failure)
+
+
+def _finish_invocation(
+    result: AgentRunResult,
+    events: list[AgentEvent],
+    raw_event_path: Path | None,
+    failure: Exception | None,
+) -> dict[str, Any]:
+    artifact_path = None
+    try:
         if raw_event_path is not None:
-            write_raw_events(events, raw_event_path)
-        result["duration_seconds"] = round(time.monotonic() - start, 3)
-        result["metadata"].update(
-            {
-                "requested_version": version_selector,
-                "agent_fqn": f"{database}.{schema}.{agent_name}",
-            }
-        )
-        return result
-    finally:
-        cursor.close()
-        conn.close()
+            artifact_path = write_raw_events(events, raw_event_path)
+    except Exception as exc:
+        if not is_controlled_operation_error(exc):
+            raise
+        result.errors.append(str(exc))
+        failure = failure if failure is not None else exc
+    if failure is not None:
+        error = AgentInvocationError(str(failure), result.to_dict())
+        error.raw_event_path = artifact_path
+        raise error from failure
+    return result.to_dict()
+
+
+def _agent_request(
+    endpoint: str,
+    database: str,
+    schema: str,
+    agent_name: str,
+    version_selector: str | None,
+    question: str,
+    token: str,
+    role: str | None,
+) -> Request:
+    _validate_endpoint(endpoint)
+    agent_path = f"agents/{quote(agent_name, safe='')}"
+    if version_selector:
+        agent_path += f"/versions/{quote(version_selector, safe='')}"
+    url = (
+        f"{endpoint.rstrip('/')}/api/v2/databases/{quote(database, safe='')}/"
+        f"schemas/{quote(schema, safe='')}/{agent_path}:run"
+    )
+    payload = json.dumps(
+        {"messages": [{"role": "user", "content": [{"type": "text", "text": question}]}]}
+    ).encode("utf-8")
+    return Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "Authorization": f'Snowflake Token="{token}"',
+            **({"X-Snowflake-Role": identifier(role, "Agent runtime role")} if role else {}),
+        },
+        method="POST",
+    )
+
+
+def _validate_endpoint(endpoint: str) -> None:
+    parsed_endpoint = urlparse(endpoint)
+    hostname = (parsed_endpoint.hostname or "").lower()
+    if parsed_endpoint.scheme != "https" or not (
+        hostname == "snowflakecomputing.com" or hostname.endswith(".snowflakecomputing.com")
+    ):
+        raise ValueError("Agent endpoint must use HTTPS on a snowflakecomputing.com host")
 
 
 def smoke_skills(
@@ -349,6 +507,7 @@ def smoke_skills(
     connection: str,
     endpoint: str | None = None,
     invoker=invoke_agent,
+    role: str | None = None,
 ) -> list[str]:
     verified: list[str] = []
     for skill in skills:
@@ -362,6 +521,7 @@ def smoke_skills(
             f"Use the {skill.skill_name} skill and summarize the expected next actions.",
             connection,
             endpoint,
+            **({"role": role} if role is not None else {}),
         )
         selected = any(
             item.get("name") == "server_skill"

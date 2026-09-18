@@ -17,7 +17,7 @@ View and Search dependencies without placing those calls in the rendered YAML.
 | Versions/aliases | Materialization adapts LIVE to immutable `VERSION$N` and alias state |
 | Lineage | Model `ref()` dependencies |
 | Return value | No fake dbt relation |
-| Default safety | Compile is offline; selected build is the mutation boundary |
+| Default safety | Compile does not run the Agent materialization, but can connect and writes local artifacts; selected build is the mutation boundary |
 
 The materialization validates the YAML mapping and orchestration settings,
 enforces target/database allowlists and staged-skill readiness, hashes the final

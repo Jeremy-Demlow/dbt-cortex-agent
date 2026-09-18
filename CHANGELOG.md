@@ -3,6 +3,26 @@
 This project had no public beta or stable release before `0.0.1`. Earlier Git
 history records design experiments, not supported package versions.
 
+## 0.0.9 — 2026-09-18
+
+Candidate pending qualification and publication; this heading is not release proof.
+
+- Bind deployment, routing, retirement, and fresh-manifest consumption to resolved
+  Agent identity, including default dbt schema generation.
+- Reject incomplete, non-finite, duplicate, drifted, or otherwise ineligible
+  evaluation evidence before quality gates or baseline acceptance.
+- Repair LIVE on unchanged retries and preserve per-Agent/per-destination durable
+  outcomes; align explicit skill metadata and approved-role propagation.
+- Retain bounded partial runtime and candidate evidence on failure, distinguish
+  execution from gate failure, and independently clean up acquired resources.
+- Close HTTPError-owned response bodies without masking primary failures or
+  secondary cleanup evidence; pin all proof child environments to isolated dbt.
+- Replace comment-token governance with collected proof links and explicit gaps.
+- Correct grant, role, skill, and effect-boundary guidance; retain both database
+  observations and independent cleanup outcomes in live-proof attestations.
+- Local checks are not current exact-wheel/live qualification. Version 0.0.8
+  and its immutable tag remain unchanged; no new release is published here.
+
 ## 0.0.8 — 2026-09-09
 
 - Centralize controlled operational failure classification across deployment,

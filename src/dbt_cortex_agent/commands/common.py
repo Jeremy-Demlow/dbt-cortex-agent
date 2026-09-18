@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 from typing import Any
 
 from ..config import Config
@@ -48,19 +49,34 @@ def add_allowlists(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _artifact_stamp(path: Path) -> tuple[int, int, int, int] | None:
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return None
+    return stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns
+
+
 def fresh_manifest(
     config: Config, *, no_parse: bool, runner: CommandRunner | None = None
 ) -> dict[str, Any]:
     if not no_parse:
+        if config.manifest.name != "manifest.json":
+            raise ValueError("Fresh dbt parse requires --manifest <directory>/manifest.json")
+        previous_stamp = _artifact_stamp(config.manifest)
         result = run_dbt_parse(
             config.dbt_executable,
             config.project_dir,
             config.target,
             runner or CommandRunner(),
             config.dbt_env,
+            target_path=config.manifest.parent,
         )
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "dbt parse failed")
+        current_stamp = _artifact_stamp(config.manifest)
+        if current_stamp is None or current_stamp == previous_stamp:
+            raise RuntimeError(f"dbt parse did not produce a fresh manifest at {config.manifest}")
     return load_manifest(config.manifest)
 
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from ..config import Config
+from ..domain import DurablePhaseError, OperationOutcome
 from ..identifiers import identifier
 from ..invoke import smoke_skills
 from ..manifest import (
@@ -73,35 +74,51 @@ def _plan_payload(plan: list) -> list[dict]:
     ]
 
 
+def _handle_upload(args: argparse.Namespace, config: Config, manifest: dict) -> int:
+    plan = build_upload_plan(manifest, config.project_dir, args.agents)
+    applied = args.skill_command == "upload" and args.apply
+    outcome = OperationOutcome()
+    error = None
+    if applied:
+        require_explicit_connection(config, "Skill upload")
+        assert_apply_safety(config, args.allow_target, args.allow_database)
+        assert_resource_databases_allowed(
+            {item.stage_fqn.split(".", 1)[0] for item in plan}, args.allow_database
+        )
+        try:
+            outcome = upload_skills(plan, config)
+        except DurablePhaseError as exc:
+            outcome = exc.outcome
+            error = str(exc)
+    payload = {
+        "command": f"skill {args.skill_command}",
+        "applied": applied,
+        "uploads": _plan_payload(plan),
+        "phases": outcome.to_dict(),
+    }
+    if error:
+        payload.update(status="partial_failure", error=error)
+    if args.json:
+        emit_json(payload)
+    elif error:
+        print(error)
+        for phase in outcome.to_dict():
+            print(f"{phase['stage_path']}: completed={phase['completed']}")
+    else:
+        for item in plan:
+            print(
+                f"{item.stage_path} <- {item.local_dir} "
+                f"(skills={','.join(item.skill_names)}; agents={','.join(item.agent_names)})"
+            )
+    return 2 if error else 0
+
+
 def handle(args: argparse.Namespace, config: Config) -> int:
     manifest = fresh_manifest(config, no_parse=args.no_parse)
+    if args.skill_command in {"plan", "upload"}:
+        return _handle_upload(args, config, manifest)
     selected = select_agents(manifest, args.agents)
     selected_names = [item["name"] for item in selected]
-    if args.skill_command in {"plan", "upload"}:
-        plan = build_upload_plan(manifest, config.project_dir, selected_names)
-        applied = args.skill_command == "upload" and args.apply
-        if applied:
-            require_explicit_connection(config, "Skill upload")
-            assert_apply_safety(config, args.allow_target, args.allow_database)
-            assert_resource_databases_allowed(
-                {item.stage_fqn.split(".", 1)[0] for item in plan}, args.allow_database
-            )
-            upload_skills(plan, config)
-        payload = {
-            "command": f"skill {args.skill_command}",
-            "applied": applied,
-            "uploads": _plan_payload(plan),
-        }
-        if args.json:
-            emit_json(payload)
-        else:
-            for item in plan:
-                print(
-                    f"{item.stage_path} <- {item.local_dir} "
-                    f"(skills={','.join(item.skill_names)}; agents={','.join(item.agent_names)})"
-                )
-        return 0
-
     declarations = skill_declarations(manifest, config.project_dir, selected_names)
     if args.agent_object and len(selected) != 1:
         raise ValueError("--agent-object may be used only when exactly one Agent is selected")
@@ -137,6 +154,7 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             agent_names=physical_agents,
             connection=str(config.connection),
             endpoint=args.endpoint,
+            role=config.role,
         )
     if args.json:
         emit_json(

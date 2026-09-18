@@ -1,6 +1,6 @@
 # REQ-029: Macro Evaluation Execution Safety
 
-**Status:** Complete (`0.0.7`)
+**Status:** In progress; structural macro checks exist, executed macro/installed-consumer proof gaps in `tests/requirement_evidence.json`.
 
 ## Summary
 

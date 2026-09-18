@@ -51,6 +51,23 @@ def _value(explicit: str | None, env: Mapping[str, str], name: str) -> str | Non
     return explicit if explicit is not None else env.get(name)
 
 
+def _manifest_path(project_dir: Path, value: str | None, env: Mapping[str, str]) -> Path:
+    if value:
+        return Path(value).expanduser()
+    target_path = env.get("DBT_TARGET_PATH")
+    if not target_path:
+        target_path = load_yaml_mapping(project_dir / "dbt_project.yml").get(
+            "target-path", "target"
+        )
+    if (
+        not isinstance(target_path, str)
+        or not target_path.strip()
+        or any(marker in target_path for marker in ("{{", "{%", "{#"))
+    ):
+        raise ValueError("Ambiguous dbt target-path; supply --manifest <directory>/manifest.json")
+    return Path(target_path).expanduser() / "manifest.json"
+
+
 def resolve_config(args: object, env: Mapping[str, str] | None = None) -> Config:
     values = os.environ if env is None else env
     project_dir = (
@@ -62,7 +79,7 @@ def resolve_config(args: object, env: Mapping[str, str] | None = None) -> Config
     artifact_value = _value(
         getattr(args, "artifact_dir", None), values, "DBT_CORTEX_AGENT_ARTIFACT_DIR"
     )
-    manifest = Path(manifest_value).expanduser() if manifest_value else Path("target/manifest.json")
+    manifest = _manifest_path(project_dir, manifest_value, values)
     artifact_dir = (
         Path(artifact_value).expanduser() if artifact_value else Path("target/dbt_cortex_agent")
     )

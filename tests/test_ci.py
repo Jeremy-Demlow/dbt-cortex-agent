@@ -153,9 +153,42 @@ def test_current_product_versions_and_project_names_align():
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
 
     assert package["project"]["name"].replace("-", "_") == project["name"]
-    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.8"
-    assert '__version__ = "0.0.8"' in init_source
-    assert 'name = "dbt-cortex-agent"\nversion = "0.0.8"' in lock
+    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.9"
+    assert '__version__ = "0.0.9"' in init_source
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.9"' in lock
+    assert package["project"]["urls"]["Documentation"].endswith("/tree/v0.0.9/docs")
+    assert '" --version)" = "0.0.9"' in _workflow_text()
+
+
+def test_requirements_ignore_exceptions_remain_narrow():
+    lines = (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    expected = [
+        "REQ-019_resource_scoped_multi_database_context.md",
+        "REQ-021_python_design_and_maintainability.md",
+        "REQ-022_package_native_workflow_safety.md",
+        "REQ-023_macro_api_and_reconciliation.md",
+        "REQ-024_agent_scaffold_and_developer_journey.md",
+        "REQ-025_agent_version_promotion_and_rollback.md",
+        "REQ-026_guarded_agent_retirement.md",
+        "REQ-027_agent_runtime_protocol_and_output.md",
+        "REQ-028_executable_developer_ci_guide.md",
+        "REQ-029_macro_eval_execution_safety.md",
+        "REQ-030_runtime_failure_evidence.md",
+        "REQ-031_shared_controlled_failure_contract.md",
+        "REQ-032_resolved_mutation_identity.md",
+        "README.md",
+        "user_stories.md",
+    ]
+    start = lines.index("requirements/")
+    end = lines.index("evidence/")
+    assert lines[start:end] == [
+        "requirements/",
+        "!requirements/",
+        "requirements/*",
+        *(f"!requirements/{name}" for name in expected),
+    ]
+    assert ".plans/" in lines
+    assert ".snowflake/" in lines
 
 
 def test_generated_residue_is_ignored_or_cleaned_by_workflow():

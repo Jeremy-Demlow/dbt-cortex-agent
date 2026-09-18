@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -14,6 +16,25 @@ def is_controlled_operation_error(exc: Exception) -> bool:
     return isinstance(exc, CONTROLLED_OPERATION_ERRORS) or exc.__class__.__module__.startswith(
         "snowflake.connector"
     )
+
+
+@contextmanager
+def managed_resource(resource: Any) -> Iterator[Any]:
+    primary: BaseException | None = None
+    try:
+        yield resource
+    except BaseException as exc:
+        primary = exc
+        raise
+    finally:
+        try:
+            resource.close()
+        except BaseException as exc:
+            if primary is None:
+                raise
+            errors = getattr(primary, "cleanup_errors", [])
+            errors.append(exc)
+            primary.cleanup_errors = errors  # type: ignore[attr-defined]
 
 
 @dataclass(frozen=True, order=True)
@@ -74,6 +95,8 @@ class PhaseResult:
     phase: LifecyclePhase
     completed: bool
     detail: str | None = None
+    agent_fqn: str | None = None
+    stage_path: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -82,6 +105,10 @@ class PhaseResult:
         }
         if self.detail is not None:
             result["detail"] = self.detail
+        if self.agent_fqn is not None:
+            result["agent_fqn"] = self.agent_fqn
+        if self.stage_path is not None:
+            result["stage_path"] = self.stage_path
         return result
 
 
@@ -89,11 +116,24 @@ class PhaseResult:
 class OperationOutcome:
     phases: tuple[PhaseResult, ...] = field(default_factory=tuple)
 
-    def complete(self, phase: LifecyclePhase, detail: str | None = None) -> OperationOutcome:
-        return OperationOutcome((*self.phases, PhaseResult(phase, True, detail)))
+    def complete(
+        self,
+        phase: LifecyclePhase,
+        detail: str | None = None,
+        *,
+        agent_fqn: str | None = None,
+        stage_path: str | None = None,
+    ) -> OperationOutcome:
+        return OperationOutcome(
+            (*self.phases, PhaseResult(phase, True, detail, agent_fqn, stage_path))
+        )
 
-    def fail(self, phase: LifecyclePhase, detail: str) -> OperationOutcome:
-        return OperationOutcome((*self.phases, PhaseResult(phase, False, detail)))
+    def fail(
+        self, phase: LifecyclePhase, detail: str, *, stage_path: str | None = None
+    ) -> OperationOutcome:
+        return OperationOutcome(
+            (*self.phases, PhaseResult(phase, False, detail, stage_path=stage_path))
+        )
 
     def to_dict(self) -> list[dict[str, Any]]:
         return [result.to_dict() for result in self.phases]

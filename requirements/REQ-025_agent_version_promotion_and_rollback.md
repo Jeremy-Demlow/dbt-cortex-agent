@@ -1,6 +1,6 @@
 # REQ-025: Immutable Agent Version Promotion, Rollback, and Recovery
 
-**Status:** Complete (`0.0.6`)
+**Status:** In progress; historical `0.0.6` live report retained, current routing/live proof gaps in `tests/requirement_evidence.json`.
 
 ## Summary
 
@@ -27,8 +27,9 @@ Expose inspectable, package-native routing over immutable Snowflake Agent versio
 
 Offline qualification on 2026-08-28 verifies immutable selectors, guarded
 routing plans, partial alias/DEFAULT outcomes, reserved-alias rejection, stale
-state rejection, and retry convergence. Live promotion and rollback replay is
-completed with distinct V1/V2 promotion, rollback, exact-version smoke,
-roll-forward, and unchanged-deploy no-V3 evidence.
+state rejection, and retry convergence. The historical report states that live
+replay completed with distinct V1/V2 promotion, rollback, exact-version smoke,
+roll-forward, and unchanged-deploy no-V3 evidence. Task 6 has not independently
+verified a retained run artifact or repeated that replay on the current tree.
 
 `TC-025-01` through `TC-025-14` in `tests/test_cases.md`.

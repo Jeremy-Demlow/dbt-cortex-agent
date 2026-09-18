@@ -113,6 +113,68 @@ Baseline acceptance is preview-only until `--apply`; `--force` also requires
 `--apply`. A candidate cannot widen accepted baseline tolerances. A baseline move
 is a reviewed policy decision, never an automatic response to a failed gate.
 
+### Gate eligibility and result completeness
+
+Comparison, gating, verification (including runs without an accepted baseline),
+and baseline acceptance require `status: completed` and `passed: true` exactly.
+Good averages cannot override an intrinsic failure or DEFAULT-version drift.
+Threshold and regression-tolerance keys must name declared metrics; the Python
+execution-plan and apply preflights reject unknown keys before build or paid work.
+
+Native aggregate observations are joined by the already-unique source
+`INPUT_QUERY` to the declared `ground_truth_ref` using an immutable local snapshot
+of all validated input/ref/test_type entries captured before START, not a later
+read of the source table. Completeness requires exactly
+one finite `eval_agg_score` for each applicable ref/metric pair. Native
+`RECORD_ID` and `INPUT_ID` are retained as evidence, not assumed to identify
+questions; `total_records` counts distinct ground-truth refs. Duplicate pairs
+fail even when their native IDs differ. Missing, unknown, or ambiguous refs and
+metrics fail closed. Candidate summaries and counts must agree with row evidence.
+
+The existing boundary rule applies only to `tool_selection_accuracy` and
+`tool_execution_accuracy` (`TOOL_METRICS`): when source `test_type` is not
+`in_scope`, these observations are excluded from scoring and required-score
+coverage. Their rows may be absent or carry null/nonfinite scores. Duplicate
+excluded observations or inconsistent test types still fail. Answer correctness
+and custom metrics remain required on boundary rows. If every observation for a
+tool metric is excluded, that metric cannot satisfy an explicit threshold or
+regression policy. Every declared ref must still be represented; an entirely
+absent boundary ref is not inferred from other results.
+
+Malformed/incomplete candidate evidence is a controlled validation failure;
+valid but non-passing or indeterminate evidence is a failed quality gate. Compact
+baselines continue to omit raw rows, so their finite summaries/counts and
+eligibility can be checked but their historical row grain cannot be reconstructed.
+Older candidates without complete row evidence must be regenerated rather than
+silently treated as passing. These rules have local fixture-based regression
+coverage; they are not a new live Snowflake qualification claim.
+
+### Source Rebuilds And Snapshot Evidence
+
+The Python client compares its captured mapping before every START and after
+polling/result collection. A pre-START mismatch stops execution. Observed later
+drift makes a completed scored candidate `indeterminate` and failed; an incomplete
+or failed run stops without a candidate or retry onto the changed source. Invalid
+post-run mappings count as drift; source-query failures remain infrastructure
+failures. Result-fetch retries always use the original snapshot.
+
+New candidates retain `run_metadata.dataset_snapshot` as rows of
+`[input_query, test_type, ground_truth_ref]` and a boolean `dataset_source_changed`.
+Artifact validation checks complete unique mapping membership and exact result
+input/ref/type agreement, and rejects a passing artifact with observed drift.
+Baseline acceptance retains these metadata fields but still omits scored rows.
+The fields are additive to schema v2: older artifacts without either field retain
+existing validation, not retrospective snapshot proof. Regenerate an older
+candidate when immutable annotation provenance is required; do not backfill its
+mapping from today's source. This is consistency evidence, not tamper-proof signing.
+
+START initiates native dataset ingestion from the configured table. These reads
+do not transactionally freeze Snowflake, prove exactly when ingestion read that
+table, or detect a change reverted between observations. Only the input/ref/type
+mapping is compared, not all ground-truth OUTPUT content. Coordinate source
+rebuilds externally when that stronger guarantee is required. This protection
+applies to the Python client path, not the separate native macro gate below.
+
 ## dbt macro path
 
 Use public macros when the complete workflow should remain in dbt:

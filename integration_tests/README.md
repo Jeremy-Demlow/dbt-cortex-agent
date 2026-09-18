@@ -28,7 +28,11 @@ The protected package workflow closes the live product boundary with
 `scripts/verify_live_multi_database.py`. It installs the exact built wheel,
 deploys `SHARED_ASSISTANT` independently in database A and database B, performs
 runtime smoke, renders the cross-database eval plan without paid execution, runs
-a second no-change build, retains sanitized attestation, and requests cleanup.
+a second no-change build, and retains both database observations plus independent
+proof/cleanup outcomes. Runtime and warehouse use can incur costs even with
+`paid_evaluation: false`. Separate cleanup-only updates cannot qualify failed or
+unattempted proof. The fixture overrides schema naming; default schema generation
+is exercised separately by the installed-consumer verifier.
 This is package behavior proof, not customer fleet-orchestration proof.
 
 ## Local non-mutating proof
@@ -55,7 +59,8 @@ deploy another one.
 No command above applies mutation or starts evaluation spend. `dbt compile` and
 model execution require a valid Snowflake profile; do not treat an offline parse
 as proof of live relation or privilege behavior. The checked-in fixture explicitly
-allowlists `DBT_CORTEX_AGENT_SANDBOX` so its documented `doctor` command validates
+allowlists `DBT_CORTEX_AGENT_SANDBOX_A`, `DBT_CORTEX_AGENT_SANDBOX_B`, and
+`DBT_CORTEX_AGENT_SANDBOX_EVAL` so its documented `doctor` command validates
 the complete fail-closed safety contract; changing the sandbox database requires
 changing that allowlist deliberately.
 
@@ -70,7 +75,7 @@ export SNOWFLAKE_USER='<user>'
 export SNOWFLAKE_PRIVATE_KEY_PATH='<absolute-key-path>'
 export SNOWFLAKE_ROLE='<sandbox-deploy-role>'
 export SNOWFLAKE_WAREHOUSE='<sandbox-warehouse>'
-export SNOWFLAKE_DATABASE='DBT_CORTEX_AGENT_SANDBOX'
+export SNOWFLAKE_DATABASE='DBT_CORTEX_AGENT_SANDBOX_A'
 export CORTEX_AGENT_LIVE_DATABASE_A='DBT_CORTEX_AGENT_SANDBOX_A'
 export CORTEX_AGENT_LIVE_DATABASE_B='DBT_CORTEX_AGENT_SANDBOX_B'
 export CORTEX_AGENT_LIVE_DATABASE_EVAL='DBT_CORTEX_AGENT_SANDBOX_EVAL'

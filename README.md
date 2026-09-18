@@ -1,6 +1,6 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` 0.0.8 is a Snowflake-only dbt package and Python companion for
+`dbt_cortex_agent` 0.0.9 is a Snowflake-only dbt package and Python companion for
 defining, versioning, evaluating, and operating Cortex Agents from dbt models.
 A `materialized='cortex_agent'` model body is the native Agent YAML
 specification.
@@ -17,28 +17,32 @@ evidence. It does not implement a second Agent specification or DDL authority.
 
 ## Install one immutable version on two surfaces
 
+The 0.0.9 candidate is pending qualification and publication. The coordinates
+below are the intended release contract, not a claim that the tag or PyPI
+distribution is already available. See [releasing](docs/guides/releasing.md).
+
 Install the Python companion from PyPI:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.0.8'
+pipx install 'dbt-cortex-agent[runtime]==0.0.9'
 ```
 
 For a managed Python environment, use:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.8'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.9'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
-public HTTPS `v0.0.8` Git tag in `packages.yml`:
+public HTTPS `v0.0.9` Git tag in `packages.yml`:
 
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.8
+    revision: v0.0.9
 ```
 
-PyPI version `0.0.8` and Git tag `v0.0.8` identify the same immutable release
+After publication, PyPI version `0.0.9` and Git tag `v0.0.9` identify the same immutable release
 across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
 declared dbt dependency, and installed consumer dbt package versions align. A
@@ -84,9 +88,11 @@ After reviewing the plan, create the local files explicitly:
 dbt-cortex-agent agent scaffold --project-dir . --agent orders_assistant --apply --json
 ```
 
-The remaining checks are non-mutating. They install dependencies, generate a
-fresh manifest, validate the selected Agent, compile its complete specification,
-and preview deployment without connecting to Snowflake:
+The remaining checks do not deploy or invoke an Agent. They do write local
+dependencies, manifests, logs, and compiled artifacts. `dbt deps` can use the
+network; `dbt compile` can open a Snowflake adapter connection even with
+`--no-introspect`. Use parse and deterministic tests for credential-free proof;
+run compilation only where connection access is approved:
 
 ```bash
 dbt deps
@@ -98,8 +104,9 @@ dbt-cortex-agent agent deploy --project-dir . --target sandbox \
   --allow-target sandbox --allow-database ANALYTICS_DEV --json
 ```
 
-Only `agent scaffold --apply` changes local files. None of these commands mutate
-Snowflake. `dbt compile` renders the full Agent body without invoking its
+Scaffold preview writes no model files. Parsing and the subsequent previews can
+write local artifacts without `--apply`; they do not apply Agent DDL or invoke
+runtime. `dbt compile` renders the full Agent body without invoking its
 materialization, and `agent deploy` without `--apply` reports the resolved
 physical identity, skills, and dbt selection. Follow the
 [quickstart](docs/getting-started/quickstart.md) for the complete explanation.
@@ -108,7 +115,7 @@ For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
 It discovers an existing dbt project, establishes objective/levers/data/proof,
 and guides an existing semantic view, the fixed Orders starter, or an existing
-Agent into dbt-owned metadata. It is script-free, shows manual 0.0.8 command
+Agent into dbt-owned metadata. It is script-free, shows manual 0.0.9 command
 parity, and stops separately before local writes, Snowflake mutation/runtime,
 paid evaluation, and baseline movement. The checked-in skill is not a claim of
 catalog publication or live Snowflake verification.
@@ -129,6 +136,9 @@ staged skills, updates LIVE, commits immutable `VERSION$N`, and reconciles the
 configured alias. The package preflights and uploads selected skills before it
 invokes the dbt dependency closure. dbt remains the sole Agent DDL authority.
 No Makefile or copied adopter Python script is required.
+Unselected Agent ancestors are rejected before skill planning. Apply forwards
+the approved unique-ID/FQN map to dbt and rejects identity drift or unexpected
+Agent materialization before that Agent's hooks or DDL.
 
 Repository wrappers can still provide reviewed defaults, fleet selection,
 approval checks, or report retention. They must delegate to the same package
@@ -195,7 +205,9 @@ Every effectful operation is preview-first. Cross one boundary at a time:
 Snowflake Agent DDL is non-transactional. Applied commands record completed
 durable phases and verify postconditions; they do not claim that a later failure
 rolled back an earlier version commit or route change. Inspect returned state,
-correct the underlying problem, and retry the same desired operation.
+correct the underlying problem, and retry the same desired operation. An initial
+CREATE interrupted before its managed version metadata requires explicit
+[recovery](docs/guides/lifecycle.md), not a blind or forced retry.
 
 ## Lifecycle and evaluation
 

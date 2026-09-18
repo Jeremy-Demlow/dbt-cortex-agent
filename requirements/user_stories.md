@@ -1,5 +1,12 @@
 # User stories
 
+## REQ-032
+
+- As an adopter, deployment uses dbt's resolved naming, including generated schemas.
+- As an operator, routing and drop cannot mutate a different Agent than the approved FQN.
+- As an automation author, parsing produces the exact manifest my command consumes.
+- As an operator, deploy forwards approved physical identities and rejects unselected Agent ancestors before skill work; graph drift cannot authorize an unexpected Agent's hooks or DDL.
+
 ## REQ-021
 
 - As a maintainer, I can reason about immutable validated domain values instead of loosely shaped dictionaries.
@@ -11,11 +18,20 @@
 - As an operator, all selected resources are authorized before the first durable effect.
 - As an automation author, I receive structured evidence for every completed and failed phase.
 - As an adopter, I use package-native deployment and evaluation without copied sequencers.
+- As a release operator, a failed, indeterminate, or incomplete candidate cannot become green through baseline comparison.
+- As an evaluation author, boundary tool exclusions remain valid without concealing missing answer scores or duplicate observations.
+- As a release operator, source rebuilds during evaluation cannot reclassify an originally in-scope failing tool score; retained candidate evidence shows its captured mapping and observed drift.
+- As a cost owner, unknown metric-policy keys fail before build, connection, or paid evaluation.
+- As an adopter, fresh parse discovers my explicit local skill metadata without relying on compiled_code (task 4).
+- As an operator, skill preflight, copy, and smoke use my approved role, and later-copy failure retains earlier destination evidence (task 4).
 
 ## REQ-023
 
 - As a dbt developer, I have one real documented macro surface and one reconciliation process.
 - As an operator, retries converge from observed Snowflake state after partial durable work.
+- As an operator, unchanged deploy retries repair missing LIVE without moving DEFAULT or committing another version (task 3).
+- As a fleet operator, durable phase evidence identifies each physical Agent independently (task 3).
+- As an operator, an unmarked initial version stops for explicit recovery rather than creating duplicate history or claiming unproven historical skill content.
 - As a maintainer, I can delete orphaned legacy code rather than preserve a second broken lifecycle.
 
 ## REQ-024
@@ -35,6 +51,7 @@
 - As an owner, I can intentionally retire a manifest-owned Agent with exact destructive confirmation.
 - As a reviewer, I can see what is deleted and what remains before approving the operation.
 - As a platform owner, deleting a dbt model cannot silently delete a deployed Agent.
+- As an operator, retirement preserves pre-drop inventory and acknowledged completion when inspection fails, without claiming unknown effects completed (task 3).
 
 ## REQ-027
 
@@ -44,9 +61,15 @@
 
 ## REQ-028
 
+- As a release reviewer, I can distinguish 0.0.9 candidate identity and local checks from pending exact-wheel/live qualification and publication, without rewriting 0.0.8 evidence.
 - As a developer, I can follow one executable path from scaffold to CI/CD without repository-specific wrappers.
 - As a platform owner, I can identify each privilege, approval, mutation, runtime, and spend boundary.
 - As an article author, I can trace every technical claim to repeatable package evidence.
+- As an adopter, I can distinguish local writes, network access, and Snowflake mutation in the documented sandbox path (task 7).
+- As a release reviewer, I retain both database observations and independent proof/cleanup outcomes without treating cleanup-only success as qualification (task 7).
+- As a release reviewer, an inherited dbt executable cannot bypass the proof's isolated pinned runtime, including during retirement and cleanup.
+- As a reviewer, I can distinguish collected behavioral tests, structural checks,
+  historical live reports, and pending gaps without treating comment tokens as proof (task 6).
 
 ## REQ-029
 
@@ -56,12 +79,16 @@
 
 - As an operator, runtime assertion failures retain useful evidence while programming defects remain visible.
 - As a multi-database operator, connection context does not narrow explicitly authorized resources.
+- As an operator, malformed streams and enforced runtime limits retain bounded partial evidence, and cleanup cannot mask the primary failure (task 5).
+- As an operator, rejected HTTP requests close their owned bodies, and failing cleanup preserves the original HTTP failure and available evidence.
+- As an automation author, I can distinguish cooperative timeout checks from a hard wall-clock deadline the transport cannot guarantee (task 5).
 
 ## REQ-031
 
 - As an operator, equivalent operational failures receive equivalent structured outcomes.
 - As a developer, assertion and programming defects continue to propagate with tracebacks.
 - As a maintainer, routing reconciliation uses one tested state-inspection helper.
+- As an evaluator, later connector or baseline failures retain prior suite results and the produced candidate path, while only the exact loaded candidate bound to my current plan can gate (task 5).
 
 ## REQ-016
 

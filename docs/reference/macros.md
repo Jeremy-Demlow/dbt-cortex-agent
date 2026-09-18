@@ -9,11 +9,17 @@ than invoking mutating macros directly.
 | Macro | Important arguments | Remote/mutation behavior |
 |---|---|---|
 | `cortex_agent__version_state_for_model` | `agent_name` | Read-only version/default/alias inventory |
-| `cortex_agent__route_version` | `agent_name`, `to_version`, `alias`, `set_default=false` | Guarded alias and optional DEFAULT reconciliation |
-| `cortex_agent__drop` | `agent_name` | Guarded retirement used only after CLI confirmation |
+| `cortex_agent__route_version` | `agent_name`, `to_version`, `alias`, `set_default=false`, `expected_agent_fqn=none` | Guarded alias and optional DEFAULT reconciliation |
+| `cortex_agent__drop` | `agent_name`, `expected_agent_fqn=none` | Guarded retirement used only after CLI confirmation |
 
 These macros validate the manifest-owned physical identity and package
 target/database policy. Python contains no Agent DDL.
+
+The CLI always binds routing and retirement to the planned physical FQN. Direct
+macro callers can supply `expected_agent_fqn` to enforce the same check before
+mutation. Omitting it preserves the lower-level graph-resolved interface; target,
+database, version, and alias guards still apply. Alias and DEFAULT phases each
+enforce the supplied expectation, including composite `route_version` calls.
 
 ## Evaluations
 

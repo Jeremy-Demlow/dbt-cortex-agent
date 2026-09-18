@@ -6,6 +6,7 @@ import importlib
 import json
 import subprocess
 from argparse import Namespace
+from dataclasses import replace
 
 import pytest
 
@@ -17,7 +18,13 @@ from dbt_cortex_agent.eval.baseline import (
     build_baseline,
 )
 from dbt_cortex_agent.eval.compare import compare_results
-from dbt_cortex_agent.eval.dataset import validate_eval_meta, validate_table
+from dbt_cortex_agent.eval.dataset import (
+    annotate_rows,
+    validate_eval_meta,
+    validate_snapshot,
+    validate_table,
+)
+from dbt_cortex_agent.eval.gate import gate_candidate
 from dbt_cortex_agent.eval.lifecycle import (
     TERMINAL_SUCCESS,
     _default_connect,
@@ -471,7 +478,7 @@ def test_result_fetch_retries_empty_and_unscored_rows_to_bound():
     cursor = Cursor()
     sleeps = []
 
-    assert _fetch_rows(cursor, plan, "run", retries=2, sleep=sleeps.append) == [
+    assert _fetch_rows(cursor, plan, "run", retries=2, sleep=sleeps.append, snapshot=()) == [
         {"metric_name": "answer_correctness"}
     ]
     assert cursor.calls == 3
@@ -483,18 +490,20 @@ def test_result_fetch_retries_partial_scored_rows_until_complete():
         description = [
             ("INPUT",),
             ("METRIC_NAME",),
+            ("EVAL_AGG_SCORE",),
         ]
 
         def __init__(self):
             self.calls = 0
 
         def execute(self, sql, params=None):
+            assert "GET_AI_EVALUATION_DATA" in sql
             self.calls += 1
 
         def fetchall(self):
-            rows = [("Revenue?", "answer_correctness")]
+            rows = [("Revenue?", "answer_correctness", 0.8)]
             if self.calls > 1:
-                rows.append(("Orders?", "answer_correctness"))
+                rows.append(("Orders?", "answer_correctness", 0.9))
             return rows
 
     plan = type(
@@ -502,6 +511,7 @@ def test_result_fetch_retries_partial_scored_rows_until_complete():
         (),
         {
             "agent_fqn": "DB.S.AGENT",
+            "table_fqn": "DB.S.DATA",
             "ordered_ground_truth_refs": ["q1", "q2"],
             "metric_names": ["answer_correctness"],
         },
@@ -509,7 +519,14 @@ def test_result_fetch_retries_partial_scored_rows_until_complete():
     cursor = Cursor()
     sleeps = []
 
-    rows = _fetch_rows(cursor, plan, "run", retries=2, sleep=sleeps.append)
+    rows = _fetch_rows(
+        cursor,
+        plan,
+        "run",
+        retries=2,
+        sleep=sleeps.append,
+        snapshot=(("Revenue?", "in_scope", "q1"), ("Orders?", "in_scope", "q2")),
+    )
 
     assert len(rows) == 2
     assert cursor.calls == 2
@@ -656,7 +673,10 @@ def _result(*, score=0.8, passed=True, ids=None):
         "passed": passed,
         "total_records": 2,
         "ordered_ground_truth_refs": ids or ["q1", "q2"],
-        "results": [{"secret": "detail"}],  # pragma: allowlist secret
+        "results": [
+            {"ground_truth_ref": ref, "metric_name": "answer_correctness", "eval_agg_score": score}
+            for ref in (ids or ["q1", "q2"])
+        ],
     }
 
 
@@ -749,7 +769,7 @@ class LifecycleCursor:
         ):
             self.rows = [(0,)]
         elif normalized == "SELECT COUNT(*) FROM DB.EVAL.EVAL_ORDERS":
-            self.rows = [(2,)]
+            self.rows = [(1,)]
         elif normalized.startswith("SELECT INPUT_QUERY, OUTPUT:CUSTOM_CRITERIA:GROUND_TRUTH_REF"):
             self.rows = [("Revenue?", "total_revenue")]
         elif "'START'" in normalized:
@@ -841,6 +861,10 @@ class FailedLifecycleConnection(LifecycleConnection):
 class PartialLifecycleCursor(LifecycleCursor):
     def execute(self, sql, params=None):
         normalized = " ".join(sql.split()).upper()
+        if normalized == "SELECT COUNT(*) FROM DB.EVAL.EVAL_ORDERS":
+            self.calls.append(normalized)
+            self.rows = [(2,)]
+            return
         if normalized.startswith("SELECT INPUT_QUERY, COALESCE"):
             self.calls.append(normalized)
             self.rows = [
@@ -890,6 +914,50 @@ class PartialLifecycleCursor(LifecycleCursor):
 class PartialLifecycleConnection(LifecycleConnection):
     def __init__(self):
         self.cursor_value = PartialLifecycleCursor()
+
+
+def test_evaluation_cleanup_only_failure_closes_both_and_preserves_written_candidate(tmp_path):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"]),
+    )
+    closed = []
+
+    class Cursor(LifecycleCursor):
+        def close(self):
+            closed.append("cursor")
+            raise OSError("cursor close")
+
+    class Connection(LifecycleConnection):
+        def __init__(self):
+            self.cursor_value = Cursor()
+
+        def close(self):
+            closed.append("connection")
+            raise OSError("connection close")
+
+    with pytest.raises(OSError, match="cursor close") as failure:
+        run_evaluation(
+            config,
+            plan,
+            apply=True,
+            run_name="cleanup_run",
+            poll_attempts=1,
+            poll_interval=0,
+            transient_retries=1,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: Connection(),
+            sleep=lambda _: None,
+        )
+    assert closed == ["cursor", "connection"]
+    assert [str(error) for error in failure.value.cleanup_errors] == ["connection close"]
+    candidates = list(config.artifact_dir.glob("candidates/**/*.json"))
+    assert len(candidates) == 1
+    assert load_result(candidates[0])["passed"] is True
 
 
 def test_apply_retries_once_and_persists_candidate(tmp_path):
@@ -1237,9 +1305,7 @@ def test_table_validation_rejects_duplicate_refs_and_inputs():
                 self.rows = [("INPUT_QUERY",), ("OUTPUT",)]
             elif normalized.startswith("SELECT COUNT(*)"):
                 self.rows = [(2,)]
-            elif normalized.startswith(
-                "SELECT INPUT_QUERY, OUTPUT:CUSTOM_CRITERIA:GROUND_TRUTH_REF"
-            ):
+            elif normalized.startswith("SELECT INPUT_QUERY, COALESCE"):
                 self.rows = self.identity_rows
 
         def fetchall(self):
@@ -1250,15 +1316,650 @@ def test_table_validation_rejects_duplicate_refs_and_inputs():
 
     with pytest.raises(ValueError, match="duplicate ground_truth_ref"):
         validate_table(
-            Cursor([("one", "q1"), ("two", "q1")]),
+            Cursor([("one", "in_scope", "q1"), ("two", "in_scope", "q1")]),
             "DB.S.T",
             ["logical_consistency"],
             ["q1", "q2"],
         )
     with pytest.raises(ValueError, match="duplicate INPUT_QUERY"):
         validate_table(
-            Cursor([("same", "q1"), ("same", "q2")]),
+            Cursor([("same", "in_scope", "q1"), ("same", "in_scope", "q2")]),
             "DB.S.T",
             ["logical_consistency"],
             ["q1", "q2"],
         )
+
+
+@pytest.mark.parametrize(
+    "status,passed",
+    [
+        ("indeterminate", False),
+        ("failed", True),
+        ("running", True),
+        ("completed", False),
+        ("completed", None),
+        ("completed", "true"),
+        ("completed", 1),
+    ],
+)
+def test_ineligible_candidates_cannot_compare_gate_or_be_accepted(tmp_path, status, passed):
+    baseline = build_baseline(_result())
+    candidate = _result(passed=passed)
+    candidate["status"] = status
+    if status == "indeterminate":
+        candidate["run_metadata"]["post_completion"]["default_version"] = "VERSION$2"
+        candidate["run_metadata"]["default_version_changed"] = True
+    comparison = compare_results(baseline, candidate)
+    assert comparison["passed"] is False
+    assert comparison["eligibility_failures"]["candidate"]
+    baseline_path = tmp_path / "baseline.json"
+    candidate_path = tmp_path / "candidate.json"
+    baseline_path.write_text(json.dumps(baseline))
+    candidate_path.write_text(json.dumps(candidate))
+    assert gate_candidate(candidate_path, baseline=baseline_path)["passed"] is False
+    with pytest.raises(ValueError, match="cannot become baselines"):
+        accept_baseline(candidate, tmp_path / "accepted")
+    assert not (tmp_path / "accepted").exists()
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "null",
+        "duplicate",
+        "nan",
+        "inf",
+        "missing",
+        "unknown_ref",
+        "unknown_metric",
+        "summary",
+        "count",
+        "total",
+        "no_rows",
+    ],
+)
+def test_compare_and_gate_reject_invalid_evidence(tmp_path, damage):
+    baseline = build_baseline(_result())
+    candidate = _result()
+    if damage in {"null", "nan", "inf"}:
+        candidate["results"][0]["eval_agg_score"] = {
+            "null": None,
+            "nan": float("nan"),
+            "inf": float("inf"),
+        }[damage]
+    elif damage == "duplicate":
+        candidate["results"].append({**candidate["results"][0], "record_id": "different-id"})
+    elif damage == "missing":
+        candidate["results"].pop()
+    elif damage == "unknown_ref":
+        candidate["results"][0]["ground_truth_ref"] = "unexpected"
+    elif damage == "unknown_metric":
+        candidate["results"][0]["metric_name"] = "unexpected"
+    elif damage == "summary":
+        candidate["summary"]["answer_correctness"]["avg"] = float("nan")
+    elif damage == "count":
+        candidate["summary"]["answer_correctness"]["n"] = 1
+    elif damage == "total":
+        candidate["total_records"] = float("inf")
+    else:
+        candidate.pop("results")
+    with pytest.raises(ValueError):
+        compare_results(baseline, candidate)
+    baseline_path = tmp_path / "baseline.json"
+    candidate_path = tmp_path / "candidate.json"
+    baseline_path.write_text(json.dumps(baseline))
+    candidate_path.write_text(json.dumps(candidate))
+    with pytest.raises(ValueError):
+        gate_candidate(candidate_path, baseline=baseline_path)
+
+
+@pytest.mark.parametrize("policy", ["thresholds", "regression_tolerances"])
+def test_unknown_signed_policy_fails_plan_and_pre_connector_apply(tmp_path, policy):
+    config = _config(tmp_path, _manifest())
+    payload = _plan_payload()
+    payload[policy]["typo_metric"] = 0.1
+    signed = json.loads(payload["signature_material"])
+    signed[policy] = payload[policy]
+    payload["signature_material"] = json.dumps(signed, separators=(",", ":"))
+    payload["suite_signature"] = hashlib.md5(payload["signature_material"].encode()).hexdigest()
+    with pytest.raises(ValueError, match="undeclared metrics: typo_metric"):
+        build_plan(config, agent_name="orders_assistant", suite_name="core", plan_payload=payload)
+    plan = build_plan(
+        config, agent_name="orders_assistant", suite_name="core", plan_payload=_plan_payload()
+    )
+    invalid = replace(plan, **{policy: {"typo_metric": 0.1}})
+    with pytest.raises(ValueError, match="undeclared metrics: typo_metric"):
+        run_evaluation(
+            config,
+            invalid,
+            apply=True,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: pytest.fail("connected before policy validation"),
+        )
+
+
+@pytest.mark.parametrize("excluded_score", [None, float("nan"), float("inf"), "absent"])
+def test_boundary_exclusions_preserve_completeness_and_observation_grain(tmp_path, excluded_score):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config, agent_name="orders_assistant", suite_name="core", plan_payload=_plan_payload()
+    )
+    rows = _rows()
+    if excluded_score == "absent":
+        rows.pop()
+    else:
+        rows[-1]["eval_agg_score"] = excluded_score
+    for index, row in enumerate(rows):
+        row["record_id"] = f"metric-record-{index}"
+        row["input_id"] = f"metric-input-{index}"
+    candidate = build_candidate(
+        plan=plan,
+        run_name="boundary",
+        rows=rows,
+        provenance={**_result()["run_metadata"], "plan_identity": plan.plan_identity},
+    )
+    assert candidate["total_records"] == 2
+    assert candidate["summary"]["tool_selection_accuracy"] == {"avg": 1.0, "n": 1}
+    baseline = build_baseline(candidate)
+    assert compare_results(baseline, candidate)["passed"] is True
+    path = write_candidate(candidate, tmp_path / "artifacts")
+    baseline_file = tmp_path / "baseline.json"
+    baseline_file.write_text(json.dumps(baseline))
+    assert gate_candidate(path, baseline=baseline_file)["passed"] is True
+
+
+@pytest.mark.parametrize("damage", ["null", "duplicate", "nan", "inf", "missing"])
+def test_native_run_rejects_invalid_observations_without_candidate(tmp_path, damage):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"]),
+    )
+
+    class InvalidRowsCursor(LifecycleCursor):
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if "GET_AI_EVALUATION_DATA" not in sql:
+                return
+            if damage in {"null", "nan", "inf"}:
+                score = {"null": None, "nan": float("nan"), "inf": float("inf")}[damage]
+                self.rows[0] = (*self.rows[0][:-1], score)
+            elif damage == "duplicate":
+                self.rows.append(("r-other", "i-other", *self.rows[0][2:]))
+            else:
+                self.rows.pop()
+
+    connection = LifecycleConnection()
+    connection.cursor_value = InvalidRowsCursor()
+    connection.cursor_value.starts = 1
+    with pytest.raises(RuntimeError, match="INCOMPLETE_RESULTS"):
+        run_evaluation(
+            config,
+            plan,
+            apply=True,
+            run_name="invalid",
+            poll_attempts=1,
+            poll_interval=0,
+            transient_retries=0,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: connection,
+            sleep=lambda _: None,
+        )
+    assert not (config.artifact_dir / "candidates").exists()
+    diagnostic = next((config.artifact_dir / "diagnostics").rglob("invalid.json"))
+    assert json.loads(diagnostic.read_text())["status"] == "INCOMPLETE_RESULTS"
+
+
+@pytest.mark.parametrize("excluded_score", [None, float("nan"), "absent"])
+def test_native_fetch_annotates_boundaries_before_completeness(tmp_path, excluded_score):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config, agent_name="orders_assistant", suite_name="core", plan_payload=_plan_payload()
+    )
+
+    class BoundaryCursor(PartialLifecycleCursor):
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if sql.startswith("SELECT input_query, COALESCE"):
+                self.rows[1] = ("Orders?", "out_of_scope", "q2")
+            elif "GET_AI_EVALUATION_DATA" in sql:
+                if excluded_score == "absent":
+                    self.rows.pop()
+                else:
+                    self.rows[-1] = (*self.rows[-1][:-1], excluded_score)
+
+    connection = LifecycleConnection()
+    connection.cursor_value = BoundaryCursor()
+    connection.cursor_value.starts = 1
+    path = run_evaluation(
+        config,
+        plan,
+        apply=True,
+        run_name="boundary",
+        poll_attempts=1,
+        poll_interval=0,
+        transient_retries=0,
+        allowed_targets=["sandbox"],
+        allowed_databases=["DB"],
+        connect=lambda _: connection,
+        sleep=lambda _: None,
+    )
+    candidate = load_result(path)
+    assert candidate["passed"] is True
+    assert candidate["summary"]["tool_selection_accuracy"]["n"] == 1
+    assert compare_results(build_baseline(candidate), candidate)["passed"] is True
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "duplicate_excluded",
+        "inconsistent_type",
+        "boundary_answer",
+        "missing_in_scope_tool",
+        "boolean_score",
+        "summary_mismatch",
+    ],
+)
+def test_boundary_exclusion_cannot_hide_invalid_observations(tmp_path, damage):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config, agent_name="orders_assistant", suite_name="core", plan_payload=_plan_payload()
+    )
+    valid = build_candidate(
+        plan=plan,
+        run_name="valid",
+        rows=_rows(),
+        provenance={**_result()["run_metadata"], "plan_identity": plan.plan_identity},
+    )
+    baseline = build_baseline(valid)
+    if damage == "duplicate_excluded":
+        valid["results"].append(dict(valid["results"][-1]))
+    elif damage == "inconsistent_type":
+        valid["results"][-1]["test_type"] = "in_scope"
+    elif damage == "boundary_answer":
+        valid["results"][1]["eval_agg_score"] = None
+    elif damage == "missing_in_scope_tool":
+        valid["results"].pop(2)
+    elif damage == "boolean_score":
+        valid["results"][0]["eval_agg_score"] = True
+    else:
+        valid["summary"]["answer_correctness"]["avg"] = 0.9
+    with pytest.raises(ValueError):
+        compare_results(baseline, valid)
+
+
+@pytest.mark.parametrize("policy", ["thresholds", "regression_tolerances"])
+def test_entirely_excluded_tool_cannot_satisfy_policy(tmp_path, policy):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config, agent_name="orders_assistant", suite_name="core", plan_payload=_plan_payload()
+    )
+    plan = replace(plan, thresholds={}, regression_tolerances={})
+    plan = replace(plan, **{policy: {"tool_selection_accuracy": 0.0}})
+    rows = _rows()
+    for row in rows:
+        row["test_type"] = "out_of_scope"
+    candidate = build_candidate(
+        plan=plan,
+        run_name="excluded",
+        rows=rows,
+        provenance={**_result()["run_metadata"], "plan_identity": plan.plan_identity},
+    )
+    assert candidate["passed"] is False
+    assert "missing" in candidate["threshold_failures"][0]
+    candidate["passed"] = True
+    with pytest.raises(ValueError, match="cannot become baselines"):
+        build_baseline(candidate)
+
+
+@pytest.mark.parametrize("field,value", [("status", "failed"), ("passed", False)])
+def test_ineligible_baseline_never_authorizes_comparison(field, value):
+    baseline = build_baseline(_result())
+    baseline[field] = value
+    comparison = compare_results(baseline, _result())
+    assert comparison["passed"] is False
+    assert comparison["eligibility_failures"]["baseline"]
+
+
+@pytest.mark.parametrize("field", ["avg", "n"])
+@pytest.mark.parametrize("invalid", [None, float("nan"), float("inf"), True])
+@pytest.mark.parametrize("side", ["baseline", "candidate"])
+def test_compare_rejects_invalid_summary_statistics(field, invalid, side):
+    baseline = build_baseline(_result())
+    candidate = _result()
+    artifact = baseline if side == "baseline" else candidate
+    artifact["summary"]["answer_correctness"][field] = invalid
+    with pytest.raises(ValueError):
+        compare_results(baseline, candidate)
+
+
+@pytest.mark.parametrize("metric", ["tool_selection_accuracy", "tool_execution_accuracy"])
+@pytest.mark.parametrize("phase", ["start", "status", "fetch", "fetch_retry"])
+def test_source_rebuild_cannot_exclude_originally_in_scope_failure(tmp_path, metric, phase):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config, agent_name="orders_assistant", suite_name="core", plan_payload=_plan_payload()
+    )
+    plan = replace(
+        plan,
+        metric_names=["answer_correctness", metric],
+        thresholds={metric: 0.8},
+        regression_tolerances={metric: 0.05},
+    )
+
+    class RebuiltCursor(PartialLifecycleCursor):
+        def __init__(self):
+            super().__init__()
+            self.changed = False
+            self.fetches = 0
+
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if "'START'" in sql and phase == "start":
+                self.changed = True
+            if "'STATUS'" in sql:
+                self.rows = [("run", "agent", None, "COMPLETED", "")]
+                if phase == "status":
+                    self.changed = True
+            if "GET_AI_EVALUATION_DATA" in sql:
+                self.fetches += 1
+                self.rows = [
+                    ("r1", "i1", "Revenue?", "answer_correctness", 1.0),
+                    ("r1", "i1", "Revenue?", metric, 1.0),
+                    ("r2", "i2", "Orders?", "answer_correctness", 1.0),
+                    ("r2", "i2", "Orders?", metric, 0.0),
+                ]
+                if phase in {"fetch", "fetch_retry"}:
+                    self.changed = True
+                if phase == "fetch_retry" and self.fetches == 1:
+                    self.rows.pop()
+            if sql.startswith("SELECT input_query, COALESCE") and self.changed:
+                self.rows[1] = ("Orders?", "out_of_scope", "q2")
+
+    connection = LifecycleConnection()
+    cursor = connection.cursor_value = RebuiltCursor()
+    path = run_evaluation(
+        config,
+        plan,
+        apply=True,
+        run_name="rebuild",
+        poll_attempts=1,
+        poll_interval=0,
+        transient_retries=1,
+        allowed_targets=["sandbox"],
+        allowed_databases=["DB"],
+        connect=lambda _: connection,
+        sleep=lambda _: None,
+    )
+    candidate = load_result(path)
+    assert cursor.starts == 1
+    assert cursor.fetches == (2 if phase == "fetch_retry" else 1)
+    assert candidate["summary"][metric] == {"avg": 0.5, "n": 2}
+    assert candidate["results"][-1]["test_type"] == "in_scope"
+    assert candidate["results"][-1]["eval_agg_score"] == 0.0
+    assert candidate["run_metadata"]["dataset_snapshot"] == [
+        ["Orders?", "in_scope", "q2"],
+        ["Revenue?", "in_scope", "q1"],
+    ]
+    assert candidate["run_metadata"]["dataset_source_changed"] is True
+    assert candidate["status"] == "indeterminate"
+    assert candidate["passed"] is False
+    baseline_candidate = json.loads(json.dumps(candidate))
+    baseline_candidate["run_metadata"]["dataset_source_changed"] = False
+    baseline_candidate["status"] = "completed"
+    baseline_candidate["passed"] = True
+    baseline_candidate["threshold_failures"] = []
+    for row in baseline_candidate["results"]:
+        row["eval_agg_score"] = 1.0
+    baseline_candidate["summary"] = compute_summary(baseline_candidate["results"])
+    baseline_path = accept_baseline(baseline_candidate, tmp_path / "baselines")
+    assert gate_candidate(path, baseline=baseline_path)["passed"] is False
+    with pytest.raises(ValueError, match="cannot become baselines"):
+        build_baseline(candidate)
+
+
+@pytest.mark.parametrize("phase", ["validation", "upload", "retry_upload"])
+def test_source_drift_blocks_start_without_rebinding(tmp_path, phase):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"]),
+    )
+
+    class Cursor(LifecycleCursor):
+        def __init__(self):
+            super().__init__()
+            self.changed = False
+
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if phase == "validation" and "WHERE output:ground_truth_output" in sql:
+                self.changed = True
+            if sql.startswith("COPY INTO") and (
+                phase == "upload" or phase == "retry_upload" and self.starts == 1
+            ):
+                self.changed = True
+            if sql.startswith("SELECT input_query, COALESCE") and self.changed:
+                self.rows = [("Revenue?", "out_of_scope", "total_revenue")]
+
+    connection = LifecycleConnection()
+    cursor = connection.cursor_value = Cursor()
+    with pytest.raises(RuntimeError, match="source changed before evaluation START"):
+        run_evaluation(
+            config,
+            plan,
+            apply=True,
+            run_name="pre_start_rebuild",
+            poll_attempts=1,
+            poll_interval=0,
+            transient_retries=1,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: connection,
+            sleep=lambda _: None,
+        )
+    assert cursor.starts == (1 if phase == "retry_upload" else 0)
+    assert not (config.artifact_dir / "candidates").exists()
+
+
+def test_source_drift_after_failed_run_stops_transient_retry(tmp_path):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"]),
+    )
+
+    class Cursor(LifecycleCursor):
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if sql.startswith("SELECT input_query, COALESCE") and self.starts:
+                self.rows = [("Revenue?", "out_of_scope", "total_revenue")]
+
+    connection = LifecycleConnection()
+    cursor = connection.cursor_value = Cursor()
+    with pytest.raises(RuntimeError, match="DATASET_SOURCE_CHANGED"):
+        run_evaluation(
+            config,
+            plan,
+            apply=True,
+            run_name="failed_rebuild",
+            poll_attempts=1,
+            poll_interval=0,
+            transient_retries=1,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: connection,
+            sleep=lambda _: None,
+        )
+    assert cursor.starts == 1
+    assert not (config.artifact_dir / "candidates").exists()
+    diagnostic = next(config.artifact_dir.glob("diagnostics/**/*.json"))
+    assert json.loads(diagnostic.read_text())["status"] == "DATASET_SOURCE_CHANGED"
+
+
+@pytest.mark.parametrize(
+    "source_rows",
+    [
+        [],
+        [(None, "in_scope", "q1")],
+        [(" ", "in_scope", "q1")],
+        [("Question?", "in_scope", None)],
+        [("Question?", "in_scope", "")],
+        [("Question?", "", "q1")],
+        [("Question?", None, "q1")],
+        [("Question?", "in_scope", "q2")],
+        [("Question?", "in_scope", "q1"), ("Question?", "negative", "q2")],
+        [("One?", "in_scope", "q1"), ("Two?", "negative", "q1")],
+    ],
+)
+def test_snapshot_rejects_invalid_mapping(source_rows):
+    with pytest.raises(ValueError):
+        validate_snapshot(source_rows, ["q1"])
+
+
+def test_snapshot_is_immutable_order_independent_and_requires_known_result_input():
+    source = [["Revenue?", "in_scope", "q1"], ["Orders?", "negative", "q2"]]
+    snapshot = validate_snapshot(source, ["q1", "q2"])
+    assert snapshot == validate_snapshot(list(reversed(source)), ["q1", "q2"])
+    source[0][1] = "out_of_scope"
+    rows = [{"input": "Revenue?"}]
+    annotate_rows(snapshot, rows)
+    assert rows == [{"input": "Revenue?", "test_type": "in_scope", "ground_truth_ref": "q1"}]
+    for invalid in ("Unknown?", None, []):
+        with pytest.raises(ValueError, match="absent from the dataset snapshot"):
+            annotate_rows(snapshot, [{"input": invalid}])
+
+
+@pytest.mark.parametrize("damage", ["type", "ref", "input", "snapshot", "drift_flag", "drift"])
+def test_candidate_snapshot_binding_rejects_inconsistent_evidence(tmp_path, damage):
+    candidate = _result()
+    for row in candidate["results"]:
+        row["input"] = row["ground_truth_ref"] + "?"
+        row["test_type"] = "in_scope"
+    candidate["run_metadata"].update(
+        dataset_snapshot=[["q1?", "in_scope", "q1"], ["q2?", "in_scope", "q2"]],
+        dataset_source_changed=False,
+    )
+    baseline = build_baseline(candidate)
+    assert (
+        baseline["run_metadata"]["dataset_snapshot"]
+        == candidate["run_metadata"]["dataset_snapshot"]
+    )
+    assert "results" not in baseline
+    if damage == "type":
+        candidate["results"][0]["test_type"] = "out_of_scope"
+    elif damage == "ref":
+        candidate["results"][0]["ground_truth_ref"] = "q2"
+    elif damage == "input":
+        candidate["results"][0]["input"] = "unknown"
+    elif damage == "snapshot":
+        candidate["run_metadata"]["dataset_snapshot"].pop()
+    elif damage == "drift_flag":
+        candidate["run_metadata"].pop("dataset_source_changed")
+    else:
+        candidate["run_metadata"]["dataset_source_changed"] = True
+    with pytest.raises(ValueError):
+        write_candidate(candidate, tmp_path)
+
+
+def test_legacy_candidate_without_snapshot_keeps_existing_validation(tmp_path):
+    path = write_candidate(_result(), tmp_path)
+    candidate = load_result(path)
+    assert "dataset_snapshot" not in candidate["run_metadata"]
+    baseline_path = accept_baseline(candidate, tmp_path / "baselines")
+    assert gate_candidate(path, baseline=baseline_path)["passed"] is True
+
+
+def test_source_count_drift_fails_validation_before_upload_or_start(tmp_path):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"]),
+    )
+
+    class Cursor(LifecycleCursor):
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if sql == "SELECT COUNT(*) FROM DB.EVAL.EVAL_ORDERS":
+                self.rows = [(2,)]
+
+    connection = LifecycleConnection()
+    cursor = connection.cursor_value = Cursor()
+    with pytest.raises(ValueError, match="cardinality changed during validation"):
+        run_evaluation(
+            config,
+            plan,
+            apply=True,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: connection,
+            sleep=lambda _: None,
+        )
+    assert cursor.starts == 0
+    assert not any(call.startswith("COPY INTO") for call in cursor.calls)
+
+
+@pytest.mark.parametrize("damage", ["empty", "duplicate", "missing_ref", "changed_input"])
+def test_invalid_source_after_start_retains_original_binding_and_fails(tmp_path, damage):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"]),
+    )
+
+    class Cursor(LifecycleCursor):
+        def __init__(self):
+            super().__init__()
+            self.completed = False
+
+        def execute(self, sql, params=None):
+            super().execute(sql, params)
+            if "'STATUS'" in sql:
+                self.rows = [("run", "agent", None, "COMPLETED", "")]
+                self.completed = True
+            if sql.startswith("SELECT input_query, COALESCE") and self.completed:
+                if damage == "empty":
+                    self.rows = []
+                elif damage == "duplicate":
+                    self.rows *= 2
+                elif damage == "missing_ref":
+                    self.rows = [("Revenue?", "in_scope", None)]
+                else:
+                    self.rows = [("Changed?", "in_scope", "total_revenue")]
+
+    connection = LifecycleConnection()
+    cursor = connection.cursor_value = Cursor()
+    path = run_evaluation(
+        config,
+        plan,
+        apply=True,
+        run_name="invalid_source",
+        poll_attempts=1,
+        poll_interval=0,
+        transient_retries=1,
+        allowed_targets=["sandbox"],
+        allowed_databases=["DB"],
+        connect=lambda _: connection,
+        sleep=lambda _: None,
+    )
+    candidate = load_result(path)
+    assert cursor.starts == 1
+    assert candidate["status"] == "indeterminate"
+    assert candidate["passed"] is False
+    assert candidate["run_metadata"]["dataset_snapshot"] == [
+        ["Revenue?", "in_scope", "total_revenue"]
+    ]
+    assert candidate["results"][0]["ground_truth_ref"] == "total_revenue"

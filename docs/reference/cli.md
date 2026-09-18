@@ -1,7 +1,11 @@
-# CLI reference (v0.0.8)
+# CLI reference (v0.0.9)
 
 `dbt-cortex-agent` is the single console entry. Manifest-dependent commands run
 a fresh `dbt parse` unless `--no-parse` is supplied for a controlled fixture.
+Fresh parse writes local manifest and log artifacts even for previews without
+`--apply`. Non-mutating describes the remote operation boundary, not an absence
+of local writes. Dependency installation may use the network and dbt compilation
+may open the Snowflake adapter; neither is guaranteed offline.
 
 ## Process contract
 
@@ -22,7 +26,7 @@ are preview/dry-run by default and require `--apply`.
 | `-h`, `--help` | Show command help. |
 | `--version` | Print CLI version. |
 | `--project-dir` | dbt project; default current directory. |
-| `--manifest` | Manifest path relative to project; default `target/manifest.json`. |
+| `--manifest` | Absolute or project-relative path ending in `manifest.json`; fresh parse writes to its parent. |
 | `--target` | Explicit dbt target. |
 | `--connection` | Explicit Snowflake connection; required as a flag for applied remote operations. |
 | `--database` | Snowflake connection/default execution database; resolved resource databases are authorized independently by repeatable `--allow-database`. |
@@ -40,12 +44,21 @@ are preview/dry-run by default and require `--apply`.
 
 Precedence is CLI option, then environment variable, then built-in default.
 
+Manifest location uses `--manifest`, then `DBT_MANIFEST`, then `DBT_TARGET_PATH`,
+then a literal `target-path` in `dbt_project.yml`, then `target/manifest.json`.
+Jinja or non-string project target paths require an explicit manifest location
+or `DBT_TARGET_PATH`; the CLI does not render project configuration itself.
+Fresh parse pins `--target-path` and `--write-json` so the file consumed is the
+file produced, and rejects missing or unchanged output. Alternate filenames are
+only supported with the explicit `--no-parse` fixture escape hatch. Parsing keeps
+the project working directory and child environment, including `DBT_PROFILES_DIR`.
+
 ## Bootstrap and diagnostics
 
 ### `dbt-cortex-agent init` — MUTATION with `--apply`
 
 Preview or append missing package/project-var entries. Options: shared options,
-`--package-source`, `--revision` (default `v0.0.8`), `--agent-schema`,
+`--package-source`, `--revision` (default `v0.0.9`), `--agent-schema`,
 `--eval-schema`, both repeatable allowlists, `--apply`, and `--run-dbt-deps`.
 Output is messages or JSON with `applied`, `changed_files`, and `messages`.
 By default, the command configures an existing dbt project only; it does not scaffold a dbt
@@ -73,17 +86,27 @@ Validate freshly resolved metadata. Options: shared options and repeatable
 ### `dbt-cortex-agent skill plan`
 
 Build a non-mutating upload plan. Options: shared options and repeatable `--agent`.
+Requires `config.meta.cortex_agent.skills` for locally managed skills; compiled
+YAML/JSON is comparison evidence only, never fallback discovery. See
+[skills](../guides/skills.md) for the metadata contract and Jinja limitations.
 
 ### `dbt-cortex-agent skill upload` — MUTATION with `--apply`
 
 Preview or upload through Snow CLI. Options: shared options, repeatable `--agent`,
 both repeatable allowlists, and `--apply`.
 
+The resolved role is passed to stage preflight and copy. JSON includes per-copy
+`phases` with `stage_path` and `completed`. Partial upload errors emit retained
+evidence on stdout and exit `2`, as deploy does; they do not discard earlier
+successful destinations. Failed copies may have partial file effects. Subsequent
+destinations are not attempted and no rollback is implied.
+
 ### `dbt-cortex-agent skill smoke` — RUNTIME with `--apply`
 
 Preview mappings or invoke live Agents. Options: shared options, repeatable
 `--agent`, `--agent-object`, `--endpoint`, both allowlists, and `--apply`.
 Applied smoke requires `--connection`, database, schema, and the `runtime` extra.
+The resolved role is forwarded to the Agent runtime request.
 
 ## Agent lifecycle and runtime
 
@@ -140,6 +163,28 @@ the configured database matching dbt's resolved database, and CLI target/databas
 allowlists. It reuses the package's bounded SSE invocation client. Runtime,
 configuration, and expected-tool assertion failures exit `2`.
 
+Controlled invocation failures retain the partial normalized `response` with
+`passed=false`; human output includes the error. Optional `--raw-events` retains
+only accepted parsed events, including on malformed/truncated streams. The
+`raw_event_artifact` field is populated only after a successful write. Malformed,
+unframed, and over-limit bytes are not copied verbatim into this JSONL artifact.
+Existing artifacts are rejected before connecting, and exclusive creation also
+protects against a later collision. Raw retention remains opt-in.
+
+The runtime enforces incremental limits of 1,000,000 received stream bytes,
+1,000,000 serialized raw-event bytes, and 10,000 events, even without a raw file.
+The Python invocation's `timeout` defaults to 60 seconds and must be finite and
+positive. Its monotonic budget starts before connector setup; login/network/socket
+timeouts, endpoint-discovery query timeout, and HTTP open receive a remaining
+budget. Reads check the deadline before and after blocking and use bounded
+`readline` sizes. This is not a hard total wall-clock deadline: connector retries,
+DNS/authentication, a blocking HTTP read (including a slowly arriving line), and
+cleanup may overrun. There is no remote cancellation guarantee. Python callers
+receive `AgentInvocationError` (a `RuntimeError`) with `result` and the successfully
+written `raw_event_path`; programming defects are re-raised unchanged. Independent
+cleanup never masks an active primary exception; secondary cleanup errors are
+attached to it and included in controlled runtime metadata.
+
 ## Evaluations
 
 ### `dbt-cortex-agent eval verify` — PAID with `--apply`
@@ -150,6 +195,15 @@ consumes the exact candidate, and gates against an established baseline when
 present. Missing baselines use intrinsic thresholds and report
 `baseline_state=not_established`. Quality failure exits `1`; controlled
 configuration or runtime failure exits `2`. Baseline acceptance stays separate.
+
+Verification loads a candidate once and binds its identity, signature, model,
+resources, refs, metrics, and policy to the current plan before gating that same
+in-memory object. Completed suites survive later connector or gate errors.
+Once evaluation returns a candidate path, a subsequent artifact/baseline/gate
+error retains that path with `execution=completed`, `gate=error`, `passed=null`,
+and top-level `outcome=infrastructure_failed`. An execution failure before that
+point uses `execution=failed`, `gate=not_run`; a completed quality rejection uses
+`gate=failed` and `passed=false`. Unattempted later suites remain `not_run`.
 
 ### `dbt-cortex-agent eval run` — PAID with `--apply`
 

@@ -8,7 +8,7 @@ from ..config import Config
 from ..deployment import apply_deploy_plan, build_deploy_plan, validate_deploy_plan
 from ..domain import AgentVersionSelector, DurablePhaseError
 from ..identifiers import identifier
-from ..invoke import compact_agent_output, invoke_agent
+from ..invoke import AgentInvocationError, compact_agent_output, invoke_agent
 from ..lifecycle import apply_route_plan, build_route_plan, drop_agent, read_version_state
 from ..manifest import (
     assert_resource_databases_allowed,
@@ -209,19 +209,25 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
             raw_event_path = contained_path(config.artifact_dir, "raw-events", args.raw_events)
             if raw_event_path.exists():
                 raise FileExistsError(f"Raw Agent event artifact already exists: {raw_event_path}")
-        response = invoke_agent(
-            selected["database"],
-            selected["schema"],
-            runtime_object,
-            question,
-            str(config.connection),
-            args.endpoint,
-            role=config.role,
-            raw_event_path=raw_event_path,
-        )
-        passed = expected_tool is None or any(
-            item.get("name") == expected_tool for item in response.get("tool_uses", [])
-        )
+        try:
+            response = invoke_agent(
+                selected["database"],
+                selected["schema"],
+                runtime_object,
+                question,
+                str(config.connection),
+                args.endpoint,
+                role=config.role,
+                raw_event_path=raw_event_path,
+            )
+        except AgentInvocationError as exc:
+            response = exc.result
+            raw_event_path = exc.raw_event_path
+            passed = False
+        else:
+            passed = expected_tool is None or any(
+                item.get("name") == expected_tool for item in response.get("tool_uses", [])
+            )
     payload = {
         "command": "agent smoke",
         "applied": bool(args.apply),
@@ -350,7 +356,7 @@ def _handle_drop(args: argparse.Namespace, config: Config, manifest: dict) -> in
             raise ValueError(f"Agent drop requires --confirm-agent {physical_fqn}")
         assert_apply_safety(config, args.allow_target, args.allow_database)
         assert_resource_databases_allowed({selected["database"]}, args.allow_database)
-        result = drop_agent(config, logical_agent)
+        result = drop_agent(config, logical_agent, physical_fqn)
     _emit(
         args,
         {
@@ -362,7 +368,7 @@ def _handle_drop(args: argparse.Namespace, config: Config, manifest: dict) -> in
             "result": result,
         },
     )
-    return 0
+    return 2 if result and result.get("status") == "partial_failure" else 0
 
 
 def handle(args: argparse.Namespace, config: Config) -> int:

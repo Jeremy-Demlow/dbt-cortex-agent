@@ -1,5 +1,71 @@
 # Regression tests
 
+## Candidate Preparation: Requirements Exceptions Removed
+
+- Root cause: the pending ignore diff removed every historical requirements exception, hiding the new REQ-032 file from normal untracked-file discovery.
+- Fix summary: restore the prior narrow allowlist and add only REQ-032; generated evidence stays ignored. Align current release surfaces at 0.0.9 without rewriting archived 0.0.8 evidence.
+- Verification: `tests/test_ci.py::test_requirements_ignore_exceptions_remain_narrow` pins the exact requirements rule block; current CLI/docs/CI identity tests require the dated candidate and pending qualification/publication status.
+
+## Final Review: HTTPError Body Leak And Inherited Proof Executable
+
+- Root cause: `urlopen` raises an `HTTPError` that owns its body before the successful-response registration runs. The proof script also preferred inherited `DBT_EXECUTABLE` or host PATH discovery over its pinned isolated dbt, so package child commands could bypass the proof runtime.
+- Fix summary: register the HTTP exception itself with the existing managed-resource stack before re-raising; retain primary identity, normalized/raw evidence, and secondary cleanup errors. Force the shared proof environment's executable to `venv/bin/dbt`, including lifecycle, guarded retirement, and cleanup-only; remove host discovery. Give the command runner's heterogeneous kwargs an explicit `dict[str, object]` annotation without ignores or execution changes.
+- Verification: `test_http_error_closes_owned_body_and_retains_primary` and `test_http_error_survives_cleanup_and_artifact_write_failure` cover real stdlib error ownership with fake bodies, single explicit close, all cleanup phases, and evidence errors. `test_proof_pins_dbt_for_all_phases_despite_inherited_executable`, `test_cleanup_only_uses_same_pinned_environment_without_venv`, and `test_fake_setup_without_pinned_dbt_fails_instead_of_using_host` cover conflicting/absent overrides, isolated command/environment agreement, fake setup failure without host fallback, and independent bounded cleanup. Exact offline results are in REQ-028's final-review supplement; no live proof or clean installation is implied.
+
+## Review Blocker: Post-Run Annotation Read Mutable Source
+
+- Root cause: `_fetch_rows` reread current source input/ref/test_type after evaluation and on fetch retries. An in_scope-to-boundary rebuild could discard an evaluated failing tool score without changing inputs or refs.
+- Fix summary: validate/capture the entire immutable mapping before START, compare before each START and after polling/fetch, annotate only from that snapshot, stop retries on observed source drift, and persist/validate mapping and drift metadata. Completed scored runs with observed drift are indeterminate and failed; source query failures remain infrastructure failures, not green evidence.
+- Verification: `tests/test_eval.py` exercises both tool metrics, START/STATUS/fetch/fetch-retry changes, pre-START/run-retry drift, malformed mappings, invalid post-run sources, persisted binding and legacy-v2 compatibility. See REQ-022's review-blocker supplement for exact offline results. Checks do not freeze Snowflake ingestion, hash all OUTPUT content, or detect change-and-revert between reads; the separate native macro path is unchanged.
+
+## Independent Review: Deploy Approval And Initial CREATE Gaps
+
+- Root cause: deploy apply passed selectors without planned physical identities; ancestor traversal collected databases but omitted implicitly selected Agents/skills from approval; CREATE produced its first immutable version before managed hashes were written.
+- Fix summary: pass invocation-scoped unique_id/FQN vars and enforce resolved `this` before Agent hooks/DDL, reject unselected Agent ancestors before skill planning, and stop retries of package-created unmarked initial versions for explicit recovery rather than guessing spec/stage provenance or minting duplicates. External unmarked Agents retain intentional adoption.
+- Verification: new behavioral tests in `tests/test_deployment.py` and `tests/test_materialization.py` cover graph drift, unexpected materialization, malformed expectations, ancestor closure, absent Agents, CREATE/metadata acknowledgement loss, failed inspections/comment writes, changed current skill hashes, forced retries and existing adoption. Prior task 1-7 tests remain intact. No whole-build atomicity, automatic unmanaged-version equivalence, or live qualification is claimed.
+
+## Task 7: Product Contracts And Release Attestation Overclaimed Proof
+
+- Root cause: active docs invoked an absent grant macro, promised prohibited role switching and offline/no-write compilation, and omitted skill metadata from scaffold guidance. Live attestation replaced both database states with lifecycle database A, skipped writes on failures, and ignored separate cleanup-only outcomes.
+- Fix summary: correct guidance without adding grants; use one sandbox/default-schema adopter path and explicit local/network/runtime/paid boundaries. Preserve both last observed Agent states and reconciliation snapshots, record independent proof/cleanup statuses on failure and cleanup-only, reject mismatched prior identity, and keep sanitized error types. Extend the existing installed-consumer verifier's resolved-schema/deploy checks.
+- Verification: `tests/test_docs.py`, `tests/test_live_multi_database_verifier.py`, and `tests/test_installed_wheel_verifier.py` exercise local contracts, injected failures, and available local dbt default-schema parse plus simulated materialization effects. Clean exact-wheel installs, protected live qualification, and separate paid evaluation remain pending; neither scripts nor collected nodes are passing live evidence.
+
+## Task 6: Comment Tokens Masqueraded As Executable Proof
+
+- Root cause: requirements coverage concatenated Python source and accepted a `TC-*` substring, even when present only in a comment or unrelated test. Complete labels also mixed historical live reports with current unqualified changes.
+- Fix summary: explicit claim/criterion/proof JSON with bounded scopes and gaps; concrete pytest function/parameter linkage through collection APIs; separate structural/behavioral/historical/pending proof kinds; compatibility/SSE fixture contracts and accurate statuses. Existing task 1-5 tests and implementation remain intact.
+- Verification: `tests/test_requirements_contract.py` rejects nonexistent nodes, invalid parameter nodes, comment-only modules, missing/extra criteria, orphan/unknown proofs, misleading empty gaps, duplicate JSON keys, invalid fixture schemas and non-local references. Current-session collection is not proof execution or live qualification; exact run results are recorded in REQ-028.
+
+## Task 5: Runtime and verification failures discarded evidence
+
+- Root cause: verify caught only the standard exception tuple, reset candidate paths on every failure, and reopened unbound candidates for gates; runtime buffered the entire stream before normalization/writing, used only a per-operation HTTP timeout, and acquired cursors outside cleanup protection. Sequential closes could mask the primary error and skip the connection.
+- Fix summary: shared controlled predicate in verify, explicit execution/gate error states, single-load current-plan binding, incremental bounded framing/normalization, monotonic budget checks and transport timeout arguments, structured runtime evidence errors, exclusive raw writes, and shared independent managed-resource cleanup for invocation and evaluation. Programming defects propagate; prior task 1-4 behavior is retained.
+- Verification: task 5 behavioral tests are mapped in `tests/test_cases.md`; exact offline results and limitations are recorded in the REQ-030/031 supplements. No hard deadline, live qualification, remote cancellation, or transactional rollback is claimed. Malformed/unframed/over-limit bytes are not retained as raw parsed events.
+
+## Task 4: Skill discovery, role, and partial upload evidence gaps
+
+- Root cause: local planning fell back to JSON-only compiled_code although fresh parse can omit it; docs taught an unsupported capabilities.skills location; skill clients omitted the resolved role; upload exceptions discarded successful earlier destinations.
+- Fix summary: require explicit manifest metadata for local uploads, compare readable native YAML/JSON, reject detectable unresolved/mismatched declarations, forward the resolved role through stage and smoke operations, and retain per-destination outcomes using the existing durable phase domain types. Failed copies may have partial effects and are not rolled back.
+- Verification: behavioral tests in `tests/test_skills.py` exercise metadata-only discovery, raw/compiled YAML/JSON parity, malformed/unresolved/mismatched declarations, role override, standalone/deploy later-copy failure, and smoke role forwarding. Results and uncompiled-Jinja limitations are recorded in the REQ-022 task 4 supplement. No live proof is claimed.
+
+## Task 3: Interrupted deploy and retirement lost recovery evidence
+
+- Root cause: managed-version early return skipped LIVE repair; deploy markers deduplicated globally by phase; retirement discarded subprocess evidence when verification failed after a successful DROP.
+- Fix summary: share LIVE repair/postcondition checks across changed and unchanged paths, carry physical FQN in structured phase markers and outcomes, and emit retirement inventory/acknowledgement before verification. Unknown effects remain unknown; acknowledged DROP remains completed even if post-state is unavailable. Partial retirement exits 2.
+- Verification: `tests/test_deployment.py` and `tests/test_identity_macros.py` reuse `tests/conftest.py` to execute real Jinja with controlled failures and persistent simulated state across retries. Adjacent lifecycle/command tests cover evidence parsing and exit behavior. Assertions include unchanged DEFAULT, no redundant COMMIT, separate same-name Agent identities, and propagation of programming defects. No live proof is claimed.
+
+## REQ-022 Task 2: Favorable partial results produced green gates
+
+- Root cause: compare recomputed threshold/regression outcomes without candidate eligibility; completeness counted names, not finite unique observations; policy keys were not rechecked in the consumed plan or apply preflight.
+- Fix summary: share strict eligibility across compare/accept/verify; validate source-annotated ref/metric grain and finite scores before aggregation; apply TOOL_METRICS boundary exclusions before completeness; reject undeclared policy keys before effects. Validate candidate summaries against row evidence and count refs, not native record IDs.
+- Verification: behavioral tests in `tests/test_eval.py` and `tests/test_eval_verify.py` exercise real compare, gate, acceptance, and verify plus mocked native result fetch/run. They cover null/nonfinite/duplicate/missing/excluded results, DEFAULT drift, non-completed/failed candidates, and policy-before-effect ordering. Local test results are recorded in the REQ-022 task 2 supplement; no live execution is claimed.
+
+## REQ-032: Planned and mutated Agent identities diverged
+
+- Root cause: materialization rebuilt identity from raw database/schema config rather than resolved `this`; Python routing/drop forwarded only a logical name; fresh parse wrote independently of the consumed manifest path.
+- Fix summary: use the resolved relation, bind planned FQNs across Python and dbt with pre-mutation checks, and pin fresh parse to the consumed manifest directory while rejecting ambiguous paths and stale output.
+- Verification: `tests/test_materialization.py::test_materialization_uses_resolved_identity`, `tests/test_lifecycle.py::test_route_rejects_inspected_identity_mismatch`, `tests/test_identity_macros.py`, and `tests/test_fresh_manifest.py` execute local behavior and record effects, rather than relying on source-string assertions. No live deployment or full-plan qualification is claimed.
+
 ## REQ-017: Native evaluation ingestion could not query an Agent Search tool
 
 - Symptom: Agent deployment, provenance, grants, preflight, and smoke succeeded, but native evaluation ingestion failed with Search error `399502`.

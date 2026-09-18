@@ -18,11 +18,7 @@
 {% endmacro %}
 
 {% materialization cortex_agent, adapter='snowflake' %}
-  {% set target_relation = api.Relation.create(
-      database=config.get('database', this.database),
-      schema=config.get('schema', this.schema),
-      identifier=this.identifier
-  ) %}
+  {% set target_relation = this %}
   {% set metadata = config.get('meta', {}) %}
   {% set agent_comment = metadata.get('agent_comment', 'Managed by dbt-cortex-agent') %}
   {% set agent_display_name = metadata.get('agent_display_name', this.identifier) %}
@@ -32,6 +28,17 @@
       target_relation.database ~ '.' ~ target_relation.schema ~ '.' ~ target_relation.identifier,
       'cortex_agent model relation'
   ) %}
+  {% set missing_expectations = namespace() %}
+  {% set expected_fqns = var('cortex_agent_expected_fqns', missing_expectations) %}
+  {% if expected_fqns is not sameas missing_expectations %}
+    {% if expected_fqns is not mapping %}
+      {{ exceptions.raise_compiler_error('cortex_agent_expected_fqns must be a mapping of unique_id to physical FQN') }}
+    {% endif %}
+    {% if model.unique_id not in expected_fqns or expected_fqns[model.unique_id] is not string %}
+      {{ exceptions.raise_compiler_error('Unexpected Agent materialization or missing planned FQN: ' ~ model.unique_id) }}
+    {% endif %}
+    {% do dbt_cortex_agent.cortex_agent__assert_expected_identity(safe_agent_fqn, expected_fqns[model.unique_id]) %}
+  {% endif %}
   {% set spec = dbt_cortex_agent.cortex_agent__materialization_spec(sql, model.name) %}
   {% set spec_json = tojson(spec) %}
   {% set profile_json = tojson({'display_name': agent_display_name}) %}

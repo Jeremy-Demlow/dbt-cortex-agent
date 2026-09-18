@@ -1,9 +1,77 @@
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 import yaml
 
+from dbt_cortex_agent.manifest import cortex_agents
+
 ROOT = Path(__file__).parents[1]
+
+# Evidence: TC-032-01
+
+
+@pytest.mark.parametrize("resolved_schema", ["DEV_AGENTS", "CUSTOM_AGENTS", "DEV"])
+def test_materialization_uses_resolved_identity(macro_harness, resolved_schema):
+    relation = SimpleNamespace(
+        database="RESOLVED_DB", schema=resolved_schema, identifier="NAMED_AGENT"
+    )
+    configuration = {"database": "RAW_DB", "schema": "AGENTS", "meta": {}}
+    deployed = []
+    statements = []
+
+    def statement(name, caller):
+        statements.append(caller().strip())
+        return ""
+
+    macro_harness.context.update(
+        this=relation,
+        config=configuration,
+        target=SimpleNamespace(name="sandbox"),
+        model=SimpleNamespace(name="assistant"),
+        sql="models:\n  orchestration: test-model\n",
+        pre_hooks=[],
+        post_hooks=[],
+        run_hooks=lambda *args, **kwargs: "",
+        statement=statement,
+        var=lambda name, default=None: {
+            "cortex_agent_allowed_targets": ["sandbox"],
+            "cortex_agent_allowed_databases": ["RESOLVED_DB"],
+        }.get(name, default),
+    )
+    macro_harness.override("cortex_agent__assert_staged_skills_ready", lambda spec: None)
+    macro_harness.override("cortex_agent__skills_hash", lambda spec: "hash")
+    macro_harness.override("cortex_agent__apply_deploy", lambda *args: deployed.append(args))
+    node = {
+        "name": "assistant",
+        "database": relation.database,
+        "schema": relation.schema,
+        "alias": relation.identifier,
+        "config": {**configuration, "materialized": "cortex_agent"},
+    }
+    expected = cortex_agents({"nodes": {"model.fixture.assistant": node}})[0]["physical_fqn"]
+
+    assert macro_harness.call("materialization_cortex_agent") == {"relations": []}
+    assert deployed[0][0] == expected
+    assert len(statements) == 2
+    assert all(sql.startswith(f"ALTER AGENT {expected} SET ") for sql in statements)
+
+
+@pytest.mark.parametrize("expected", [None, [], "", False, {}, {"model.x.agent": None}])
+def test_supplied_invalid_identity_map_cannot_disable_guard(macro_harness, expected):
+    macro_harness.context.update(
+        this=SimpleNamespace(database="DB", schema="AGENTS", identifier="AGENT"),
+        model=SimpleNamespace(name="agent", unique_id="model.x.agent"),
+        config={"meta": {}},
+        target=SimpleNamespace(name="sandbox"),
+        var=lambda name, default=None: expected,
+        run_query=lambda *args: pytest.fail("unexpected SQL"),
+        run_hooks=lambda *args, **kwargs: pytest.fail("unexpected hook"),
+    )
+    with pytest.raises(ValueError, match="mapping|Unexpected Agent"):
+        macro_harness.call("materialization_cortex_agent")
+
 
 # Evidence: TC-023-02 TC-023-04 TC-023-05 TC-023-07 TC-023-09 TC-023-12 TC-025-10
 
@@ -41,10 +109,10 @@ def test_materialization_is_the_agent_lifecycle_authority():
     assert "MODIFY LIVE VERSION SET SPECIFICATION" in lifecycle
     assert 'run_query("ALTER AGENT " ~ agent_fqn ~ " COMMIT COMMENT = $$"' in lifecycle
     assert "cortex_agent__route_alias_for_fqn" in lifecycle
-    assert "CORTEX_AGENT_DEPLOY_PHASE=version_committed" in lifecycle  # pragma: allowlist secret
-    assert "CORTEX_AGENT_DEPLOY_PHASE=metadata_reconciled" in lifecycle  # pragma: allowlist secret
-    assert "CORTEX_AGENT_DEPLOY_PHASE=alias_reconciled" in lifecycle  # pragma: allowlist secret
-    assert "CORTEX_AGENT_DEPLOY_PHASE=live_reconciled" in lifecycle  # pragma: allowlist secret
+    assert "cortex_agent__deploy_phase(agent_fqn, 'version_committed')" in lifecycle
+    assert "cortex_agent__deploy_phase(agent_fqn, 'metadata_reconciled')" in lifecycle
+    assert "cortex_agent__deploy_phase(agent_fqn, 'alias_reconciled')" in lifecycle
+    assert "cortex_agent__deploy_phase(agent_fqn, 'live_reconciled')" in lifecycle
 
     versioning = (ROOT / "macros/cortex_agents/agent_versioning.sql").read_text(encoding="utf-8")
     alias_phase = versioning[

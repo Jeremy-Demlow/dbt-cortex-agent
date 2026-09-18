@@ -5,6 +5,7 @@ import json
 import re
 import time
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,12 +13,18 @@ from typing import Any
 
 from ..config import Config
 from ..dbt_runner import CommandRunner, run_dbt_operation, run_dbt_parse
-from ..domain import finite_number, is_controlled_operation_error
+from ..domain import finite_number, is_controlled_operation_error, managed_resource
 from ..identifiers import fqn, identifier
 from ..manifest import assert_resource_databases_allowed
 from ..skills import assert_apply_safety
-from .dataset import annotate_rows, validate_table
-from .results import build_candidate, write_candidate, write_diagnostic
+from .dataset import (
+    DatasetSnapshot,
+    annotate_rows,
+    read_snapshot,
+    validate_metric_policy,
+    validate_table,
+)
+from .results import build_candidate, validate_observations, write_candidate, write_diagnostic
 
 TERMINAL_SUCCESS = {"COMPLETED", "SUCCEEDED", "DONE"}
 TERMINAL_FAILURE = {"FAILED", "ERROR", "CANCELLED", "INVOCATION_FAILED", "INVOCATION_ERROR"}
@@ -168,6 +175,11 @@ def _plan_from_payload(  # noqa: C901
         raise ValueError("Evaluation plan dataset token and config filename template are required")
     if not identity.get("target_role"):
         raise ValueError("Evaluation plan target_role is required")
+    thresholds, tolerances = validate_metric_policy(
+        metric_names,
+        _numeric_policy(payload.get("thresholds"), "thresholds"),
+        _numeric_policy(payload.get("regression_tolerances"), "regression_tolerances"),
+    )
     return EvalPlan(
         schema_version=PLAN_SCHEMA_VERSION,
         agent_name=agent_name,
@@ -189,10 +201,8 @@ def _plan_from_payload(  # noqa: C901
         dataset_name_token=token,
         config_filename_template=filename_template,
         metric_names=metric_names,
-        thresholds=_numeric_policy(payload.get("thresholds"), "thresholds"),
-        regression_tolerances=_numeric_policy(
-            payload.get("regression_tolerances"), "regression_tolerances"
-        ),
+        thresholds=thresholds,
+        regression_tolerances=tolerances,
         ordered_ground_truth_refs=refs,
         suite_signature=expected_signature,
         plan_identity=dict(identity),
@@ -417,22 +427,20 @@ def _upload_config(cursor, plan: EvalPlan, filename: str, content: str) -> str:
 
 
 def _results_complete(rows: list[dict[str, Any]], plan: EvalPlan) -> bool:
-    expected_inputs = len(plan.ordered_ground_truth_refs)
-    expected_metrics = {name.lower() for name in plan.metric_names}
-    metrics_by_input: dict[str, set[str]] = {}
-    for row in rows:
-        input_query = row.get("input")
-        metric_name = row.get("metric_name")
-        if not input_query or not metric_name:
-            continue
-        metrics_by_input.setdefault(str(input_query), set()).add(str(metric_name).lower())
-    return len(metrics_by_input) == expected_inputs and all(
-        metrics == expected_metrics for metrics in metrics_by_input.values()
-    )
+    try:
+        validate_observations(rows, plan.ordered_ground_truth_refs, plan.metric_names)
+    except ValueError:
+        return False
+    return True
 
 
 def _fetch_rows(
-    cursor, plan: EvalPlan, run_name: str, retries: int, sleep: Callable[[float], None]
+    cursor,
+    plan: EvalPlan,
+    run_name: str,
+    retries: int,
+    sleep: Callable[[float], None],
+    snapshot: DatasetSnapshot,
 ) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     database, schema, agent = plan.agent_fqn.split(".")
@@ -444,6 +452,8 @@ def _fetch_rows(
         )
         columns = [str(item[0]).lower() for item in cursor.description]
         rows = [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+        if rows and all(row.get("input") for row in rows):
+            annotate_rows(snapshot, rows)
         if _results_complete(rows, plan):
             return rows
         if attempt < retries:
@@ -494,6 +504,26 @@ def _default_connect(connection: str):
     return snowflake.connector.connect(connection_name=connection)
 
 
+def _pre_start_provenance(
+    cursor, plan: EvalPlan, initial_provenance: dict[str, Any], snapshot: DatasetSnapshot
+) -> dict[str, Any]:
+    provenance = _assert_agent_exists_with_default(cursor, plan)
+    if provenance["default_version"] != initial_provenance["default_version"]:
+        raise RuntimeError(
+            f"Agent {plan.agent_fqn} DEFAULT version changed before evaluation START"
+        )
+    if read_snapshot(cursor, plan.table_fqn, plan.ordered_ground_truth_refs) != snapshot:
+        raise RuntimeError("Evaluation dataset source changed before evaluation START")
+    return provenance
+
+
+def _dataset_source_changed(cursor, plan: EvalPlan, snapshot: DatasetSnapshot) -> bool:
+    try:
+        return read_snapshot(cursor, plan.table_fqn, plan.ordered_ground_truth_refs) != snapshot
+    except ValueError:
+        return True
+
+
 def validate_evaluation_apply(
     config: Config,
     plans: list[EvalPlan] | tuple[EvalPlan, ...],
@@ -515,6 +545,7 @@ def validate_evaluation_apply(
     if transient_retries < 0:
         raise ValueError("Transient retries must be non-negative")
     for plan in plans:
+        validate_metric_policy(plan.metric_names, plan.thresholds, plan.regression_tolerances)
         resource_databases = {
             plan.agent_fqn.split(".", 1)[0],
             plan.table_fqn.split(".", 1)[0],
@@ -564,15 +595,18 @@ def run_evaluation(
     warehouse = plan.target_warehouse or config.warehouse
     if not warehouse:
         raise ValueError("Applied evaluation requires a resolved warehouse")
-    conn = connect(config.connection)
-    cursor = conn.cursor()
-    try:
+    with ExitStack() as resources:
+        conn = resources.enter_context(managed_resource(connect(config.connection)))
+        cursor = resources.enter_context(managed_resource(conn.cursor()))
         cursor.execute(f"USE ROLE {plan.target_role}")
         cursor.execute(f"USE WAREHOUSE {identifier(warehouse, 'warehouse')}")
         cursor.execute(f"USE DATABASE {plan.result_database}")
         cursor.execute(f"USE SCHEMA {plan.result_schema}")
         initial_provenance = _assert_agent_exists_with_default(cursor, plan)
-        validate_table(cursor, plan.table_fqn, plan.metric_names, plan.ordered_ground_truth_refs)
+        snapshot = validate_table(
+            cursor, plan.table_fqn, plan.metric_names, plan.ordered_ground_truth_refs
+        )
+        dataset_source_changed = False
         final_run = base_run
         status = PollResult("FAILED", "evaluation was not started")
         rows: list[dict[str, Any]] = []
@@ -584,11 +618,7 @@ def run_evaluation(
             stage_path = _upload_config(
                 cursor, plan, filename, render_eval_config(plan, dataset_name)
             )
-            pre_start = _assert_agent_exists_with_default(cursor, plan)
-            if pre_start["default_version"] != initial_provenance["default_version"]:
-                raise RuntimeError(
-                    f"Agent {plan.agent_fqn} DEFAULT version changed before evaluation START"
-                )
+            pre_start = _pre_start_provenance(cursor, plan, initial_provenance, snapshot)
             cursor.execute(
                 "CALL EXECUTE_AI_EVALUATION('START', OBJECT_CONSTRUCT('run_name', %s), %s)",
                 (final_run, stage_path),
@@ -603,7 +633,9 @@ def run_evaluation(
             )
             expected_records = len(plan.ordered_ground_truth_refs)
             if status.succeeded or status.observed_status in PARTIAL_COMPLETION:
-                rows = _fetch_rows(cursor, plan, final_run, retries=2, sleep=sleep)
+                rows = _fetch_rows(
+                    cursor, plan, final_run, retries=2, sleep=sleep, snapshot=snapshot
+                )
                 actual_records = _result_record_count(rows)
                 if status.succeeded and not _results_complete(rows, plan):
                     status = replace(
@@ -619,20 +651,29 @@ def run_evaluation(
                         expected_records=expected_records,
                         actual_records=actual_records,
                     )
-            if status.succeeded or not _is_retryable_result(status) or retry == transient_retries:
+            dataset_source_changed = _dataset_source_changed(cursor, plan, snapshot)
+            if dataset_source_changed and not status.succeeded:
+                status = replace(status, status="DATASET_SOURCE_CHANGED")
+            if (
+                dataset_source_changed
+                or status.succeeded
+                or not _is_retryable_result(status)
+                or retry == transient_retries
+            ):
                 break
         if not status.succeeded:
             write_diagnostic(_failure_diagnostic(plan, final_run, status), config.artifact_dir)
             raise RuntimeError(f"Evaluation {final_run} ended in {status.status}")
         if not rows or not any(row.get("metric_name") for row in rows):
             raise RuntimeError(f"Evaluation {final_run} returned no scored metric rows")
-        annotate_rows(cursor, plan.table_fqn, rows)
         post_completion = _assert_agent_exists_with_default(cursor, plan)
         if pre_start is None:
             raise RuntimeError("Evaluation provenance was not captured before START")
         provenance = {
             "agent_fqn": plan.agent_fqn,
             "plan_identity": plan.plan_identity,
+            "dataset_snapshot": [list(entry) for entry in snapshot],
+            "dataset_source_changed": dataset_source_changed,
             "evaluated_version": pre_start["default_version"],
             "pre_start": pre_start,
             "post_completion": post_completion,
@@ -642,6 +683,3 @@ def run_evaluation(
         }
         candidate = build_candidate(plan=plan, run_name=final_run, rows=rows, provenance=provenance)
         return write_candidate(candidate, config.artifact_dir)
-    finally:
-        cursor.close()
-        conn.close()

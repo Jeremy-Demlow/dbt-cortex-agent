@@ -133,7 +133,13 @@ def test_drop_apply_distinguishes_newly_dropped_from_already_absent(
     existed, monkeypatch, capsys, config
 ) -> None:
     result = {"dropped": existed, "before": {"exists": existed}, "after": {"exists": False}}
-    monkeypatch.setattr("dbt_cortex_agent.commands.agent.drop_agent", lambda *_: result)
+    calls = []
+
+    def drop(current_config, name, expected_agent_fqn):
+        calls.append((name, expected_agent_fqn))
+        return result
+
+    monkeypatch.setattr("dbt_cortex_agent.commands.agent.drop_agent", drop)
 
     assert (
         _handle_drop(
@@ -145,6 +151,7 @@ def test_drop_apply_distinguishes_newly_dropped_from_already_absent(
     )
 
     assert json.loads(capsys.readouterr().out)["result"]["dropped"] is existed
+    assert calls == [(AGENT["name"], AGENT["physical_fqn"])]
 
 
 def test_deploy_failure_preserves_completed_phase_evidence(monkeypatch, capsys, config) -> None:
@@ -176,6 +183,28 @@ def test_deploy_failure_preserves_completed_phase_evidence(monkeypatch, capsys, 
         "skills_uploaded",
         "verified",
     ]
+
+
+def test_drop_partial_failure_retains_evidence_and_exits_two(monkeypatch, capsys, config):
+    result = {
+        "agent_fqn": AGENT["physical_fqn"],
+        "status": "partial_failure",
+        "drop_status": "completed",
+        "dropped": True,
+        "before": {"exists": True},
+        "after": None,
+        "error": "inspection unavailable",
+    }
+    monkeypatch.setattr("dbt_cortex_agent.commands.agent.drop_agent", lambda *_: result)
+    assert (
+        _handle_drop(
+            _args("drop", apply=True, confirm_agent=AGENT["physical_fqn"]), config, MANIFEST
+        )
+        == 2
+    )
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["result"] == result
+    assert "Semantic Views" in payload["retained"]
 
 
 def test_smoke_expected_tool_failure_preserves_response_and_exit_two(
@@ -230,3 +259,46 @@ def test_smoke_existing_raw_artifact_fails_before_invocation(monkeypatch, config
     )
     with pytest.raises(FileExistsError, match="already exists"):
         _handle_smoke(args, config, MANIFEST)
+
+
+@pytest.mark.parametrize("json_output", [False, True])
+@pytest.mark.parametrize("artifact_written", [False, True])
+def test_smoke_runtime_error_retains_partial_response_and_real_artifact(
+    monkeypatch,
+    capsys,
+    config,
+    json_output,
+    artifact_written,
+):
+    from dbt_cortex_agent.invoke import AgentInvocationError
+
+    response = {"answer": "partial", "tool_uses": [], "errors": ["stream failed"], "metadata": {}}
+    failure = AgentInvocationError("stream failed", response)
+    artifact = config.artifact_dir / "raw-events" / "events.jsonl"
+    if artifact_written:
+        failure.raw_event_path = artifact
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.agent.invoke_agent",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(failure),
+    )
+    args = _args(
+        "smoke",
+        question="question",
+        expect_tool=None,
+        agent_object=None,
+        agent_version=None,
+        endpoint=None,
+        raw_events="events.jsonl",
+        apply=True,
+        json=json_output,
+    )
+    assert _handle_smoke(args, config, MANIFEST) == 2
+    output = capsys.readouterr().out
+    if json_output:
+        payload = json.loads(output)
+        assert payload["response"] == response
+        assert payload["passed"] is False
+        assert payload["raw_event_artifact"] == (str(artifact) if artifact_written else None)
+    else:
+        assert "FAIL" in output and "partial" in output
+        assert "stream failed" in output

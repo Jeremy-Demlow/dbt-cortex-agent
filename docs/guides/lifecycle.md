@@ -14,7 +14,9 @@ dbt compile --project-dir . --profiles-dir . --target sandbox \
 ```
 
 Compile renders and validates the full native Agent YAML without invoking the
-custom materialization or connecting to Snowflake.
+custom materialization. It writes local artifacts and can open the Snowflake
+adapter, including with `--no-introspect`; do not claim it is offline. Use parse
+and local deterministic tests when connection access is not approved.
 
 ## Use package-native deployment
 
@@ -42,6 +44,18 @@ project must configure non-empty
 selected target/database must match them. Stage-backed skills must already have
 valid local `SKILL.md` files and an existing configured stage.
 
+The `+agent` closure must not contain an unselected `cortex_agent` model.
+Preview rejects such ancestors, including indirect and metadata-disabled Agent
+models, before skill planning. Explicitly select every enabled Agent ancestor
+and review the resulting Agent, skill and resource-database plan; remove an
+unintended Agent dependency rather than relying on its metadata-disabled flag.
+Apply passes `cortex_agent_expected_fqns`, keyed by manifest `unique_id`, to dbt.
+Each Agent materialization checks its resolved `this` against the exact planned
+FQN before its pre-hooks, stage reads or DDL. Unexpected IDs and identity drift
+fail closed. This is not a graph lock or atomic build: approved uploads,
+ordinary ancestor models, project on-run-start hooks or parallel nodes may have
+already run. Keep consumer project hooks separately reviewed.
+
 Direct `skill plan`, `skill upload`, and `dbt build --select +orders_assistant`
 remain lower-level primitives for operators who deliberately own their own
 sequencing. They are not required for the normal adopter path, and a wrapper
@@ -63,6 +77,21 @@ For a changed full specification, the `cortex_agent` materialization:
 An unchanged spec and skill hash skips version churn by finding the newest
 matching managed version independently of serving DEFAULT. This remains true
 after rollback.
+
+If initial CREATE succeeds but its version hash comment is not written (or
+CREATE acknowledgement/inspection is lost), retry stops with **explicit recovery
+required**. The package's initial object comment identifies unfinished creation;
+it is not evidence of exact immutable spec or historical stage content. Current
+desired YAML and current stage hashes cannot prove what was created.
+`force_agent_recreate` does not bypass this stop. Inspect native immutable
+versions and retained skill-content evidence before any manual metadata repair;
+never invent hashes to unblock a retry. If equivalence cannot be established,
+explicitly approved retirement/recreation requires reviewing lost history,
+grants and routing. No automatic recovery is claimed for removal of the initial
+creation marker or concurrent writers. Existing external Agents without that
+marker retain the intentional LIVE/COMMIT adoption path. Once initial version
+metadata is present, alias/LIVE retry reuses the managed version without another
+COMMIT, including when the metadata write acknowledgement was lost.
 
 ## Smoke is a separate runtime boundary
 

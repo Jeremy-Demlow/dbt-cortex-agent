@@ -9,7 +9,7 @@ Python coordinates file-based skills, runtime smoke, and evaluations.
 | Resolved graph and `meta` contracts | Local files and manifest consumption |
 | Agent model validation and materialization | Skill file planning and upload |
 | Agent DDL, physical naming, versions, aliases, profile, and comments | REST/SSE runtime and skill smoke |
-| LIVE versions, immutable versions, aliases, and grants | Polling, bounded retry, and result collection |
+| LIVE versions, immutable versions, and aliases | Polling, bounded retry, and result collection |
 | Same-Agent eval-plan rendering | Local artifacts, accepted baselines, and comparisons |
 | Materialization and evaluation-plan macros | Paid evaluation coordination |
 
@@ -18,4 +18,5 @@ model-backed Agents. It must not provision infrastructure such as internal
 stages. Agent lifecycle enters Snowflake only through `dbt build` and the
 `cortex_agent` materialization. Python may validate and upload local skill files
 to an existing managed stage, invoke runtime clients, coordinate evaluation, and
-persist local evidence.
+persist local evidence. Grants and infrastructure remain adopter-owned; historical
+access metadata is not an implemented grant lifecycle.

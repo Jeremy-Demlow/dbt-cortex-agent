@@ -7,16 +7,40 @@ from typing import Any
 
 from ..config import Config
 from ..dbt_runner import CommandRunner, run_dbt_build
-from ..domain import CONTROLLED_OPERATION_ERRORS
-from .gate import baseline_path, gate_candidate
+from ..domain import is_controlled_operation_error
+from .compare import compare_results
+from .gate import baseline_path
 from .lifecycle import EvalPlan, build_plan, run_evaluation, validate_evaluation_apply
-from .results import load_result
+from .results import eligibility_failures, load_result
 
 
 @dataclass(frozen=True)
 class VerifySelection:
     plan: EvalPlan
     baseline: Path
+
+
+def _bind_candidate(candidate: dict[str, Any], plan: EvalPlan) -> None:
+    expected = {
+        "plan_schema_version": plan.schema_version,
+        "plan_identity": plan.plan_identity,
+        "suite_signature": plan.suite_signature,
+        "agent": plan.agent_name,
+        "suite": plan.suite_name,
+        "eval_model": plan.eval_model,
+        "agent_fqn": plan.agent_fqn,
+        "dataset_fqn": plan.table_fqn,
+        "stage_fqn": plan.stage_fqn,
+        "ordered_ground_truth_refs": plan.ordered_ground_truth_refs,
+        "metric_names": plan.metric_names,
+        "thresholds": plan.thresholds,
+        "regression_tolerances": plan.regression_tolerances,
+    }
+    mismatched = [field for field, value in expected.items() if candidate.get(field) != value]
+    if mismatched:
+        raise ValueError(
+            "Evaluation candidate does not match current plan: " + ", ".join(mismatched)
+        )
 
 
 def build_verify_selections(
@@ -100,6 +124,9 @@ def verify_evaluations(
     quality_failed = False
     for selection_index, (item, plan_payload) in enumerate(zip(selections, planned, strict=True)):
         plan = item.plan
+        candidate_path = None
+        execution = "failed"
+        gate_state = "not_run"
         try:
             build = run_dbt_build(
                 config.dbt_executable,
@@ -120,7 +147,10 @@ def verify_evaluations(
                 parse=True,
                 runner=command_runner,
             )
-            if current_plan.suite_signature != plan.suite_signature:
+            if (
+                current_plan.suite_signature != plan.suite_signature
+                or current_plan.plan_identity != plan.plan_identity
+            ):
                 raise RuntimeError(
                     f"Evaluation plan changed while materializing {plan.eval_model}; "
                     "retry from preview"
@@ -137,19 +167,24 @@ def verify_evaluations(
             )
             if candidate_path is None:
                 raise RuntimeError("Applied evaluation produced no candidate")
+            execution = "completed"
+            gate_state = "error"
             candidate = load_result(candidate_path, "candidate")
+            _bind_candidate(candidate, current_plan)
             if item.baseline.is_file():
-                gate = gate_candidate(candidate_path, baseline=item.baseline)
+                gate = compare_results(load_result(item.baseline, "baseline"), candidate)
                 passed = bool(gate["passed"])
             else:
-                passed = bool(candidate.get("passed")) and candidate.get("status") == "completed"
-        except CONTROLLED_OPERATION_ERRORS as exc:
+                passed = not eligibility_failures(candidate)
+        except Exception as exc:
+            if not is_controlled_operation_error(exc):
+                raise
             results.append(
                 {
                     **plan_payload,
-                    "candidate": None,
-                    "execution": "failed",
-                    "gate": "not_run",
+                    "candidate": str(candidate_path) if candidate_path is not None else None,
+                    "execution": execution,
+                    "gate": gate_state,
                     "passed": None,
                     "error": str(exc),
                 }

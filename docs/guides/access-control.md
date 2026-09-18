@@ -1,27 +1,22 @@
 # Access control
 
-Declare roles that should receive Agent-object usage:
+Grants are adopter-owned infrastructure. This package does not ship a public
+grant macro or an Agent grant CLI command. Historical `access.usage_roles` and
+`access.monitor_roles` declarations are not an implemented grant contract;
+adding them does not grant access during deployment. No grant feature is added
+by this documentation correction.
 
-```yaml
-access:
-  usage_roles:
-    - ORDERS_AGENT_USER
-  monitor_roles:
-    - ORDERS_AGENT_MONITOR
-```
+Have the account security owner provision and verify the operation-specific
+privileges on the manifest-resolved objects before applying commands:
 
-Preview and apply:
+- Runtime callers need `USAGE ON AGENT` plus appropriate database/schema,
+  warehouse, and referenced-resource privileges.
+- Evaluation operators normally need Agent `USAGE` and `MONITOR` (or ownership),
+  eval-table access, a pre-existing evaluation stage, warehouse access, and the
+  account's Agent Evaluation privileges.
+- Deployment uses the approved invoking dbt role. The materialization does not
+  switch roles or grant role inheritance.
 
-```bash
-dbt run-operation cortex_agent__grant_usage \
-  --args '{"agent_name":"orders_assistant","dry_run":true}'
-
-dbt run-operation cortex_agent__grant_usage --target sandbox \
-  --args '{"agent_name":"orders_assistant","dry_run":false}'
-```
-
-The apply path is sandbox-guarded and idempotent. It grants `USAGE ON AGENT` to
-`usage_roles` and `MONITOR ON AGENT` to `monitor_roles`. Evaluation roles normally
-need both privileges, so list the evaluation role under both keys.
-Database/schema, warehouse, semantic-view, search-service, procedure, stage, and
-Cortex privileges remain consumer responsibilities.
+Database/schema, warehouse, semantic-view, search-service, procedure, stage, MCP,
+and Cortex privileges remain consumer responsibilities. Metadata is not proof of
+effective RBAC. See [Snowflake setup](../getting-started/snowflake-setup.md).
