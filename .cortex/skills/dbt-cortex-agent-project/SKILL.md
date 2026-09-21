@@ -12,19 +12,21 @@ lifecycle logic.
 
 ## Authority and invariants
 
-- Detect the installed `dbt-cortex-agent` version and require the Python and dbt
-  package surfaces to identify the same immutable release. Package-native
-  `agent deploy` and `eval verify` require `0.0.5` or later; lifecycle and generic
-  scaffold commands require `0.0.6`; on an older release,
-  say so and use only the commands that release actually ships.
+- This workflow targets `0.0.9`. Detect the installed `dbt-cortex-agent` version
+  and require Python and dbt to identify the same immutable release. If they differ
+  or another version is installed, stop and review that version's documentation;
+  do not silently upgrade or apply this workflow to historical contracts.
 - Define each Agent as a dbt model with `materialized='cortex_agent'`; dbt compile
   renders it and the `agent deploy` workflow invokes dbt build as the only Agent
   deployment authority.
 - dbt Core with `dbt-snowflake` is authoritative for parse, graph, manifest, and release
   proof. Fusion/fdbt may provide advisory feedback but never replaces dbt Core evidence.
-- dbt owns Agent/eval definitions, rendering, physical naming, lifecycle macros, versions,
-  aliases, grants, and eval plans. One enabled exposure resolves one physical Agent; optional
-  evaluation metadata targets that same Agent. The CLI coordinates those contracts.
+- dbt owns Agent/eval definitions, rendering, resolved physical naming, lifecycle macros,
+  versions, aliases, and eval plans. One enabled Agent model resolves one physical Agent;
+  optional evaluation targets that same Agent. The CLI coordinates those contracts.
+- Infrastructure and grants are adopter-owned. Do not invent an Agent grant macro or
+  assume metadata grants access. CoWork visibility and consumer-role verification are
+  separate infrastructure/consumer operations, not additional Agent deployments.
 - Let manifest-dependent commands run their normal fresh parse. Never bypass parsing.
 - Discover target, database, schemas, connection, warehouse, role, Agent names, semantic
   views, and safety allowlists from the project and user. Do not invent environment values.
@@ -33,6 +35,10 @@ lifecycle logic.
 - An Agent does not require a Semantic View. Treat Analyst, Search, skills, MCP,
   evaluation, and experimental configuration as optional capabilities. Preserve
   experimental mappings, but do not invent private-preview-specific scaffold options.
+- Load the checked-out release's `docs/reference/agent-metadata.md`,
+  `docs/guides/lifecycle.md`, and capability-specific guides before authoring.
+  These paths are relative to the package repository root, not the consumer project.
+  If unavailable locally, obtain matching release documentation rather than guessing.
 
 ## Workflow
 
@@ -42,7 +48,7 @@ Use Cortex Code file and search tools to inspect, without editing:
 
 1. Repository instructions and contribution rules.
 2. `dbt_project.yml`, dependency declarations, profile/target conventions, and dbt version.
-3. Semantic-view models, Agent exposures, eval models, tests, and generated manifest if present.
+3. Semantic-view models, Agent models, eval models, tests, and generated manifest if present.
 4. Existing Agent definitions or exported specifications supplied by the user.
 5. Current Git status so unrelated work is preserved.
 
@@ -91,13 +97,16 @@ Optionally add `--semantic-view-model <MODEL>` or `--with-eval`. Neither is requ
 
 Use when a dbt semantic-view model already represents the governed domain.
 
-Plan an Agent exposure under the consumer project's conventions with:
+Use the package scaffold, not an exposure or a second metadata specification:
 
-- `config.meta.cortex_agent.enabled: true`;
-- `depends_on` containing `ref('<SEMANTIC_VIEW_MODEL>')`;
-- an Analyst tool whose `semantic_view_model` is that dbt model name, not a hardcoded FQN;
-- objective-aligned orchestration and response instructions;
-- project-selected physical naming and usage roles only when evidence provides them.
+```bash
+dbt-cortex-agent agent scaffold --project-dir <PROJECT_DIR> --agent <AGENT> --semantic-view-model <MODEL> --json
+```
+
+After STOP 1, apply the same command with `--apply`. Keep its no-output `ref()`
+dependency and rendered semantic-view FQN in native `tool_resources`. Put
+instructions and tools in the model's YAML body. Derive physical identity from
+the resolved model database/schema/alias, including dbt schema-generation rules.
 
 #### C. Fixed Orders starter
 
@@ -113,36 +122,52 @@ dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-sou
 
 #### D. Existing Agent migration
 
-Use when an Agent exists outside dbt. Read its provided definition and map it into one exposure;
+Use when an Agent exists outside dbt. Read its provided definition and map it into one Agent model;
 do not write a lifecycle importer or infer missing business meaning.
 
 Create a migration table for review:
 
 | Existing concern | dbt-owned destination |
 |---|---|
-| Instructions | `config.meta.cortex_agent.instructions` |
-| Analyst tool | `tools[].semantic_view_model` plus `depends_on` |
-| Search/tool config | supported exposure tool metadata |
-| Physical name | `snowflake_name` or target naming map |
-| Usage roles | `access.usage_roles` |
-| Skills/MCP | supported Agent metadata; use capability-specific proof where built-in evaluation cannot invoke them |
-| Versions/aliases/grants | existing package lifecycle commands after approval |
+| Instructions, models, orchestration | Native YAML body, including explicit `models.orchestration` |
+| Analyst tool | Native `tools` and `tool_resources`, plus no-output `ref()` dependencies |
+| Search/tools/experimental configuration | Preserve supported native YAML fields without lossy translation |
+| Physical name | dbt model database/schema/alias; verify resolved FQN matches the migration plan |
+| Display name/comment/deploy alias | Top-level `config.meta.agent_display_name`, `agent_comment`, `deploy_alias` |
+| Usage roles | Reviewed adopter infrastructure; not Agent metadata |
+| Skills | Native top-level `skills` plus matching `config.meta.cortex_agent.skills` for local upload planning |
+| MCP | Preserve native configuration and separately verify external prerequisites and attachment behavior |
+| Versions/aliases | Package lifecycle commands after separate approval; do not promise historical version import |
 
 Flag unsupported or unavailable fields. Preserve the existing live Agent until dbt render and an
 approved migration plan prove parity; never mutate it during discovery or authoring.
+Compare rendered native YAML with the provided specification structurally. Explicitly
+review profile, physical identity, tools, experimental fields, and intended changes.
+For local skills, require matching name/source type/stage path in both declarations,
+provisioned stages, and actual local files. Fresh parse does not render arbitrary Jinja
+or reliably supply compiled bodies. Do not infer an empty upload plan means no skills.
 
 #### E. Optional evaluation authoring
 
 Add this route only when representative questions and ground truth exist. It is optional: an Agent
 can be authored, rendered, deployed, and smoked without an eval model. Plan a table model with
 `config.meta.cortex_eval`, stable question IDs/refs, metrics, thresholds, and regression tolerances.
-The suite's `agent` field names the same enabled exposure; never create, deploy, clone, or suffix a
+The suite's `agent` field names the same enabled Agent model; never create, deploy, clone, or suffix a
 second Agent for evaluation. Each row must emit one `OUTPUT` VARIANT. Use
 `ground_truth_output` for answer correctness and `ground_truth_invocations` for tool metrics;
 expected tool names must match declared native tool names exactly.
 
 Skills and MCP behavior require separate smoke/integration proof because native Agent Evaluation
 does not cover them.
+
+#### F. Existing Agent lifecycle
+
+For inspect/promote/rollback/retire requests, do not scaffold or author evaluation.
+Load the lifecycle guide. Present a minimal STOP 1 packet for fresh-parse artifacts
+and any dependency installation, then proceed to Step 6 after that approval.
+No authoring/scaffold steps are needed, but parsing still writes local artifacts.
+Confirm the desired version/alias or retirement objective rather than requiring new
+business ground truth. Preserve all existing immutable versions during routing.
 
 ### 4. Present the local change plan
 
@@ -179,7 +204,8 @@ For route C, manual command parity is the reviewed preview plus `--apply`:
 dbt-cortex-agent init --project-dir <PROJECT_DIR> --starter orders --package-source <PACKAGE_GIT_URL> --revision <PACKAGE_TAG> --target <TARGET> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
 ```
 
-For routes B, D, or E, use Cortex Code file tools to make only the approved metadata/model/test
+For route B, retain `--semantic-view-model <MODEL>` when adding `--apply` to its preview.
+For routes D or E, use Cortex Code file tools to make only the approved metadata/model/test
 changes. Do not generate scripts. Add the pinned package dependency and explicit safety vars only
 when absent; preserve adopter configuration.
 
@@ -197,8 +223,13 @@ dbt-cortex-agent agent deploy --project-dir <PROJECT_DIR> --target <TARGET> --ag
 Run the applicable commands through Cortex Code. The deploy command above is a preview: it does
 not mutate Snowflake without `--apply`. Report parse, validation, rendered identities/specs, planned
 mutation, and failures. Do not paper over dbt Core failures with advisory Fusion/fdbt output.
+These commands can write local artifacts. Compile is non-mutating, not necessarily
+offline: adapters/macros may connect or query. Review macros and approve credentialed
+reads/compute before compile; do not run unknown effectful macros under a local-only
+approval. Add discovered profile/connection context where required. Quote substituted
+paths and values; use absolute project, candidate, and baseline paths.
 
-If route D is selected, preview its authoritative plan without spend:
+Only if route E is selected, preview its authoritative plan without paid evaluation:
 
 ```bash
 dbt-cortex-agent eval verify --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --suite <SUITE> --baseline-dir <BASELINE_DIR> --allow-target <TARGET> --allow-database <DATABASE> --json
@@ -217,8 +248,39 @@ dbt-cortex-agent agent deploy --project-dir <PROJECT_DIR> --target <TARGET> --ag
 Runtime smoke manual parity:
 
 ```bash
-dbt-cortex-agent agent smoke --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --question <QUESTION> --connection <CONNECTION> --database <DATABASE> --schema <AGENT_SCHEMA> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
+dbt-cortex-agent agent smoke --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --version '<VERSION>' --question '<QUESTION>' --expect-tool <TOOL> --connection <CONNECTION> --database <DATABASE> --schema <AGENT_SCHEMA> --role <ROLE> --warehouse <WAREHOUSE> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
 ```
+
+Read version state first; replace `<VERSION>` with the observed immutable `VERSION$N`.
+Use a bounded question and an exact declared tool name. Omit `--expect-tool` only when
+the reviewed scenario intentionally needs no tool. Record consumer-role runtime
+separately from deploy-role proof; API success does not establish CoWork UI success.
+
+For route F, inspect current state with this read-only Snowflake operation (it also
+parses locally; use reviewed connection context):
+
+```bash
+dbt-cortex-agent agent versions --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --connection <CONNECTION> --database <DATABASE> --role <ROLE> --warehouse <WAREHOUSE> --json
+```
+
+Choose exactly one applicable preview:
+
+```bash
+dbt-cortex-agent agent promote --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --version '<VERSION>' --alias <ALIAS> --connection <CONNECTION> --database <DATABASE> --role <ROLE> --warehouse <WAREHOUSE> --allow-target <TARGET> --allow-database <DATABASE> --json
+dbt-cortex-agent agent rollback --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --to-version '<VERSION>' --alias <ALIAS> --connection <CONNECTION> --database <DATABASE> --role <ROLE> --warehouse <WAREHOUSE> --allow-target <TARGET> --allow-database <DATABASE> --json
+dbt-cortex-agent agent drop --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --connection <CONNECTION> --database <DATABASE> --role <ROLE> --warehouse <WAREHOUSE> --allow-target <TARGET> --allow-database <DATABASE> --json
+```
+
+Promotion/rollback require an observed committed version. Add `--set-default` to
+both preview and apply only when unversioned serving must move. After STOP 2, add
+`--apply` to the exact reviewed command. Retirement additionally requires
+`--confirm-agent <PHYSICAL_FQN>` matching the preview; explain that deletion removes
+the Agent and its versions, not its data, stages, skills, or local files. Do not
+delete/recreate an Agent merely to repair drift. Reinspect versions after routing
+or absence after retirement. On partial failure, retain observed state and completed
+phases, then request approval for a bounded retry; never claim transactional rollback.
+Interrupted initial creation without persisted managed hashes requires explicit
+recovery, not blind force/redeploy.
 
 State which objects or runtime are affected, selected context, allowlists, and expected proof.
 Present one boundary packet containing the objective, exact command, complete Snowflake scope,
@@ -226,7 +288,7 @@ expected proof, risks, and the single-command resume condition.
 
 ## STOP 2 — Snowflake mutation or runtime
 
-Do not add or execute `--apply` for Agent deploy, skill smoke, or Agent smoke until the user
+Do not execute `--apply` for deployment, routing, retirement, skill smoke, or Agent smoke until the user
 explicitly approves the exact command and Snowflake context. Approval of local
 writes or a dry run does not satisfy this stop.
 
@@ -236,10 +298,13 @@ present a revised packet, and stop again.
 ### 7. Prepare optional paid evaluation
 
 Require the already deployed Agent selected by the model, evaluation-stage access, explicit
-connection/role/warehouse, matching target/resource databases, and complete allowlists. The
+connection/role/warehouse, target-resolved resource identities, and complete allowlists. The
 package workflow materializes and tests the eval model before paid execution. Never propose a
 second Agent deployment for this step. Show the exact suite,
 metrics, row scope, prerequisites, and command:
+
+`--database` selects connection context, not the only permitted resource database.
+Repeat `--allow-database` for every reviewed Agent/dependency/stage/evaluation database.
 
 ```bash
 dbt-cortex-agent eval verify --project-dir <PROJECT_DIR> --target <TARGET> --agent <AGENT> --suite <SUITE> --baseline-dir <BASELINE_DIR> --connection <CONNECTION> --database <DATABASE> --role <ROLE> --warehouse <WAREHOUSE> --allow-target <TARGET> --allow-database <DATABASE> --apply --json
@@ -259,13 +324,31 @@ without moving a baseline.
 
 ### 8. Prepare optional baseline decision
 
-First preview policy effects with the candidate:
+First inspect the exact returned candidate and the selected baseline destination.
+Require completed status, intrinsic pass, complete scored evidence, and no observed
+Agent-version or dataset drift. Report infrastructure failures and quality rejections
+separately. Do not use a directory glob to pick the newest candidate.
+
+If an established baseline exists in the chosen directory, compare it explicitly:
 
 ```bash
-dbt-cortex-agent eval gate <CANDIDATE_JSON> --json
+dbt-cortex-agent eval gate <CANDIDATE_JSON> --baseline-dir <BASELINE_DIR> --json
+```
+
+If no baseline exists, skip the baseline gate; use the candidate's intrinsic
+threshold/provenance evidence and report that regression is not yet established.
+For either case, preview acceptance:
+
+```bash
 dbt-cortex-agent eval accept-baseline <CANDIDATE_JSON> --baseline-dir <BASELINE_DIR> --json
 ```
 
+This preview does not prove acceptance eligibility or report an exact destination
+when `baseline` is null. Review the artifact and derive the destination from the
+baseline root plus target/database/schema/object/suite identity:
+`<BASELINE_DIR>/<target>/<database>/<schema>/<object>/<suite>.json`.
+Use the candidate's resolved identity, not its logical Agent name. Check whether
+that file exists before approval.
 Explain threshold/regression evidence, destination, overwrite status, and why movement is justified.
 Never respond to a failure by rerunning until green or silently widening tolerance.
 Present one boundary packet containing the objective, exact artifact and command, policy scope,
@@ -283,6 +366,11 @@ manual parity command:
 ```bash
 dbt-cortex-agent eval accept-baseline <CANDIDATE_JSON> --baseline-dir <BASELINE_DIR> --apply --json
 ```
+
+For replacement, obtain explicit overwrite approval and use the same command with
+`--force --apply`. `--force` is invalid in preview and never authorizes a failed
+candidate or policy relaxation. Preserve the previous baseline through the adopter's
+review/version-control policy and report the exact written path.
 
 ## Stopping points
 
@@ -303,3 +391,9 @@ Report:
 - parse/validate/render/package-deploy-preview/eval-verify-preview results;
 - approvals received and boundaries not crossed;
 - remaining blockers or optional next boundary.
+
+Distinguish instruction/command tests, generated-project tests, observed assistant
+behavior, and live proof. Passing package tests does not prove skill routing or
+approval adherence in an actual assistant transcript. This is a repository-local
+skill; installing the Python wheel does not register it in Cortex Code or publish
+it to a skill catalog.

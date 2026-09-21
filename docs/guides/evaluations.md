@@ -86,9 +86,9 @@ provenance, and writes a candidate JSON under `target/dbt_cortex_agent` unless
 
 The default artifact root is resolved relative to `--project-dir`. An applied
 run writes
-`target/dbt_cortex_agent/candidates/<agent>/<suite>/<run_name>.json`. Accepted
+`target/dbt_cortex_agent/candidates/<target>/<database>/<schema>/<object>/<suite>/<run_name>.json`. Accepted
 baselines default to
-`target/dbt_cortex_agent/baselines/<agent>/<suite>.json`; `--artifact-dir` moves
+`target/dbt_cortex_agent/baselines/<target>/<database>/<schema>/<object>/<suite>.json`; `--artifact-dir` moves
 both defaults, while `--baseline-dir` overrides the baseline root for the
 baseline command being run.
 

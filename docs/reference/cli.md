@@ -216,7 +216,7 @@ target/database matching the dbt-rendered plan. Applied execution sets the
 plan's authoritative target role before warehouse, database, and schema.
 The command does not deploy or alter the Agent and does not materialize the eval model.
 Applied candidates default to
-`<artifact-dir>/candidates/<agent>/<suite>/<run_name>.json`.
+`<artifact-dir>/candidates/<target>/<database>/<schema>/<object>/<suite>/<run_name>.json`.
 
 ### `dbt-cortex-agent eval compare BASELINE CANDIDATE`
 
@@ -228,7 +228,7 @@ exit `1` when comparison fails.
 Preview or write a baseline. Options: shared options, `--baseline-dir`, `--apply`,
 and `--force`; `--force` requires `--apply`.
 The default target is
-`<artifact-dir>/baselines/<agent>/<suite>.json`.
+`<artifact-dir>/baselines/<target>/<database>/<schema>/<object>/<suite>.json`.
 
 ### `dbt-cortex-agent eval gate CANDIDATE`
 
