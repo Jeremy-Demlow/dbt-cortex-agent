@@ -109,8 +109,8 @@ The release preflight requires the supplied semantic `v*` tag to point at `HEAD`
 matching Python/dbt versions, and a dated changelog entry. Push and pull request events never invoke
 the release workflow.
 
-Version `0.0.9` was published on 2026-09-18 at merge commit
-`330b863af3d9e585efb6b85365702b2b6bbb5fdd`.
+Version `0.0.9` was published on 2026-09-18. The release run below records
+the immutable tag and commit provenance.
 [Package CI 35397847239](https://github.com/Jeremy-Demlow/dbt-cortex-agent/actions/runs/35397847239)
 passed the Python and dbt installed-wheel matrix;
 these are clean-install CI checks, not proof of every adopter environment.

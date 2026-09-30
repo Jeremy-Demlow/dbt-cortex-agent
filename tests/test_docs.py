@@ -227,6 +227,6 @@ def test_release_setup_documents_protected_environment_and_unqualified_work():
     assert "## UNRELEASED" not in changelog
     assert "Published on 2026-09-18" in changelog
     assert "pending qualification and publication" not in changelog
-    assert "330b863af3d9e585efb6b85365702b2b6bbb5fdd" in text
+    assert "release run 35400838944" in text
     assert "paid native Agent Evaluation" in text
     assert "not part of its immutable source tag" in " ".join(text.split())
