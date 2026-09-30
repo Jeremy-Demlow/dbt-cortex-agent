@@ -17,9 +17,10 @@ evidence. It does not implement a second Agent specification or DDL authority.
 
 ## Install one immutable version on two surfaces
 
-The 0.0.9 candidate is pending qualification and publication. The coordinates
-below are the intended release contract, not a claim that the tag or PyPI
-distribution is already available. See [releasing](docs/guides/releasing.md).
+Version 0.0.9 was published on 2026-09-18 after the protected exact-wheel
+qualification. The coordinates below identify that immutable release. The
+repository-local adoption skill was corrected after the tag; see
+[releasing](docs/guides/releasing.md) for the proof and distribution boundary.
 
 Install the Python companion from PyPI:
 
@@ -115,10 +116,12 @@ For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
 It discovers an existing dbt project, establishes objective/levers/data/proof,
 and guides an existing semantic view, the fixed Orders starter, or an existing
-Agent into dbt-owned metadata. It is script-free, shows manual 0.0.9 command
+Agent into a dbt-owned model. It is script-free, shows manual 0.0.9 command
 parity, and stops separately before local writes, Snowflake mutation/runtime,
 paid evaluation, and baseline movement. The checked-in skill is not a claim of
-catalog publication or live Snowflake verification.
+catalog publication, wheel installation, or assistant-invocation proof. The
+corrected skill on `main` was merged after immutable tag `v0.0.9`; use the
+matching repository version explicitly if adopting its guided workflow.
 
 ## Controlled deploy
 

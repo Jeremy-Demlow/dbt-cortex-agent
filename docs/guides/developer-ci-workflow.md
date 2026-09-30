@@ -41,8 +41,9 @@ source of Agent state.
 
 ## Install one release
 
-The 0.0.9 candidate is pending qualification and publication. These pins describe
-the intended release; use them only after the matching tag and distribution exist.
+Version 0.0.9 was published on 2026-09-18. These pins identify its
+qualified release artifacts; changing a dbt model still requires its own
+adopter verification.
 
 ```bash
 python -m pip install 'dbt-cortex-agent[runtime]==0.0.9'

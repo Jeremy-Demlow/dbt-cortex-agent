@@ -1,16 +1,18 @@
 # Compatibility
 
-This matrix defines the compatibility targets for the `dbt_cortex_agent` 0.0.9
-candidate on both install surfaces. Current exact-wheel qualification is pending;
-historical verification below is not proof for this candidate.
+This matrix defines the compatibility targets for the published
+`dbt_cortex_agent` 0.0.9 release on both install surfaces. The protected
+exact-wheel lifecycle proof and two dbt installed-wheel CI lines passed;
+these do not establish live behavior on every accepted patch.
 
 The project-local Cortex Code adoption skill uses the same 0.0.9 CLI/parser and
 metadata contracts. dbt Core with `dbt-snowflake` remains authoritative for its
 proof steps; Fusion/fdbt output is advisory. The skill adds no runtime dependency,
 is script-free, and adds no global installation or live-verification claim.
-It is included in the same v0.0.9 candidate scope as the generic and Orders scaffolds,
-single-Agent render/deploy, general Agent smoke, and immutable-SHA doctor
-validation.
+The skill in the immutable v0.0.9 tag predates the corrected instructions
+merged later to repository `main`; neither Python installation nor the
+published wheel registers the corrected skill. Runtime scaffold, Agent
+smoke, and doctor behavior are independent of that skill text.
 
 ## Required
 

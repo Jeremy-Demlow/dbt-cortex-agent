@@ -2,8 +2,8 @@
 
 Requirements are the product contract. A requirement is complete only when its acceptance criteria
 have reproducible verification evidence. Historical version-specific requirements remain indexed as
-provenance. The current release candidate is `0.0.9`, pending qualification and
-publication; REQ-021 through REQ-028 remain
+provenance. Version `0.0.9` was published on 2026-09-18 after exact-wheel
+qualification; REQ-021 through REQ-028 remain
 the historical `0.0.6` foundation, extended by the current corrective release.
 Current proof scope and uncovered acceptance gaps are explicit in
 [`tests/requirement_evidence.json`](../tests/requirement_evidence.json). Collected
@@ -42,7 +42,7 @@ historical live reports, and pending qualification are not interchangeable.
 | [REQ-029](REQ-029_macro_eval_execution_safety.md) | Executable and injection-safe dbt evaluation macros | In progress; structural checks only, executed macro proof pending |
 | [REQ-030](REQ-030_runtime_failure_evidence.md) | Runtime assertion evidence and honest exception classification | Locally verified; task 5 offline, current exact-wheel qualification pending |
 | [REQ-031](REQ-031_shared_controlled_failure_contract.md) | Shared controlled-operation classification and routing inspection | In progress; task 5 locally verified, connector/inspection/release gaps |
-| [REQ-032](REQ-032_resolved_mutation_identity.md) | Resolved Agent identity, fresh-manifest consumption, and independent-review deploy approval fixes | In progress; review fixes locally verified, current live qualification pending |
+| [REQ-032](REQ-032_resolved_mutation_identity.md) | Resolved Agent identity, fresh-manifest consumption, and independent-review deploy approval fixes | In progress; protected lifecycle and adopter deploy passed, adversarial drift paths remain simulated |
 
 See [user stories](user_stories.md), [test cases](../tests/test_cases.md), and
 [regression coverage](../tests/regression.md) for the linked behavioral evidence.

@@ -1,6 +1,6 @@
 # REQ-032: Resolved Mutation Identity
 
-**Status:** In progress; task 1 and independent-review deployment fixes locally verified, current live qualification pending.
+**Status:** In progress; 0.0.9 protected lifecycle and adopter deploy passed, adversarial identity drift remains simulated.
 
 ## Summary
 
@@ -73,8 +73,10 @@ qualification, installations, remote execution, and independent subagent executi
 
 ## Verification
 
-Pending focused offline pytest and local critique. dbt parse/compile and live
-deployment are not claimed by these deterministic mocked-boundary tests.
+The identity-drift and mismatch cases below are deterministic simulated-boundary
+tests, not live adversarial mutation tests. Subsequent 0.0.9 release
+qualification exercised actual dbt parse, build, and protected lifecycle; it
+does not prove every possible concurrent graph or identity change.
 
 ## Independent-Review Blocker Slice (2026-09-18)
 
@@ -142,6 +144,12 @@ UV_OFFLINE=1 uv --directory /Users/jdemlow/00_Code/github/dbt-cortex-agent run -
 - `git diff --check` passed. All prior task 1-7 work remains in the dirty tree.
   No network, installs, Snowflake, commits or branches were used.
 
-This is focused offline proof, not full-suite, clean-wheel, supported-dbt matrix,
-native spec equivalence, historical stage-content, concurrency or live release
-qualification. The separate CREATE recovery result is recorded in REQ-023.
+This slice's 631-test result was focused offline proof. Later package CI
+[35397847239](https://github.com/Jeremy-Demlow/dbt-cortex-agent/actions/runs/35397847239)
+passed both supported dbt installed-wheel lines; protected exact-wheel release
+[35400838944](https://github.com/Jeremy-Demlow/dbt-cortex-agent/actions/runs/35400838944)
+passed lifecycle/cleanup and publication. The adopter's
+[main deployment 35404687460](https://github.com/Jeremy-Demlow/agentmanagementdbt/actions/runs/35404687460)
+deployed both Agents and captured immutable provenance. These runs do not
+exercise concurrent graph drift, so that acceptance gap remains open. The
+separate CREATE recovery result is recorded in REQ-023.

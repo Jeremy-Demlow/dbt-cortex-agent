@@ -109,11 +109,19 @@ The release preflight requires the supplied semantic `v*` tag to point at `HEAD`
 matching Python/dbt versions, and a dated changelog entry. Push and pull request events never invoke
 the release workflow.
 
-The current `0.0.9` candidate is dated 2026-09-18 and pending qualification and
-publication. Its dated changelog and updated install examples do not mean it is
-already released. Do not rewrite the existing `0.0.8` distribution or move `v0.0.8`.
-The owner approved finishing commit, push, qualification, and release after gates;
-this preparation slice performs only local version edits and offline checks.
-Exact-wheel clean-install qualification on both supported dbt lines, protected live
-proof, and publication remain pending. Git mutation and network/live execution are
-outside this slice; a local passing test suite does not satisfy those gates.
+Version `0.0.9` was published on 2026-09-18 at merge commit
+`330b863af3d9e585efb6b85365702b2b6bbb5fdd`.
+[Package CI 35397847239](https://github.com/Jeremy-Demlow/dbt-cortex-agent/actions/runs/35397847239)
+passed the Python and dbt installed-wheel matrix;
+these are clean-install CI checks, not proof of every adopter environment.
+[release run 35400838944](https://github.com/Jeremy-Demlow/dbt-cortex-agent/actions/runs/35400838944)
+passed build, protected exact-wheel lifecycle proof/cleanup, and PyPI publish.
+The reference adopter separately passed both native evaluation suites against
+unchanged accepted baselines in local live runs. Post-merge Agent deployment
+and evaluation-dataset builds passed in
+[main run 35404687460](https://github.com/Jeremy-Demlow/agentmanagementdbt/actions/runs/35404687460).
+The release gate itself did not run paid native Agent Evaluation, and none of
+these results proves an authenticated CoWork UI session or assistant skill routing.
+The corrected repository-local skill was merged after `v0.0.9` and is not part
+of its immutable source tag. Never move `v0.0.9` to include later documentation;
+use a future release if immutable distribution of the corrected skill is required.
