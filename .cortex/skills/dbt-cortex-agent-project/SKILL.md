@@ -10,6 +10,11 @@ edits, and verification; every executable package step also shows the exact manu
 command. This skill is guidance only: do not create wrapper scripts or duplicate Agent
 lifecycle logic.
 
+This file is a repository-local skill. Use it from a checkout containing this
+corrected file, not by assuming that `pip install`, `dbt deps`, or immutable tag
+`v0.0.9` installs or registers it. The corrected guidance was merged to the
+repository after that tag. It has not been published in a skill catalog.
+
 ## Authority and invariants
 
 - This workflow targets `0.0.9`. Detect the installed `dbt-cortex-agent` version

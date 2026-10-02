@@ -61,7 +61,7 @@
 
 ## REQ-028
 
-- As a release reviewer, I can distinguish 0.0.9 candidate identity and local checks from pending exact-wheel/live qualification and publication, without rewriting 0.0.8 evidence.
+- As a release reviewer, I can distinguish 0.0.9's published exact-wheel/live qualification from the earlier local candidate checks without rewriting 0.0.8 evidence.
 - As a developer, I can follow one executable path from scaffold to CI/CD without repository-specific wrappers.
 - As a platform owner, I can identify each privilege, approval, mutation, runtime, and spend boundary.
 - As an article author, I can trace every technical claim to repeatable package evidence.

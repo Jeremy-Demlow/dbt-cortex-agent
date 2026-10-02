@@ -5,7 +5,8 @@ history records design experiments, not supported package versions.
 
 ## 0.0.9 — 2026-09-18
 
-Candidate pending qualification and publication; this heading is not release proof.
+Published on 2026-09-18 after protected exact-wheel qualification and PyPI
+trusted publishing ([release workflow](https://github.com/Jeremy-Demlow/dbt-cortex-agent/actions/runs/35400838944)).
 
 - Bind deployment, routing, retirement, and fresh-manifest consumption to resolved
   Agent identity, including default dbt schema generation.
@@ -20,8 +21,9 @@ Candidate pending qualification and publication; this heading is not release pro
 - Replace comment-token governance with collected proof links and explicit gaps.
 - Correct grant, role, skill, and effect-boundary guidance; retain both database
   observations and independent cleanup outcomes in live-proof attestations.
-- Local checks are not current exact-wheel/live qualification. Version 0.0.8
-  and its immutable tag remain unchanged; no new release is published here.
+- The release's exact wheel passed protected multi-database lifecycle proof;
+  paid native Agent Evaluation is separate and was not part of that release gate.
+  Version 0.0.8 and its immutable tag remain unchanged.
 
 ## 0.0.8 — 2026-09-09
 

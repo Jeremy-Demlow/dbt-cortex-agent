@@ -5,9 +5,14 @@ provides metadata contracts and macros; the Python distribution provides the
 `dbt-cortex-agent` CLI. Pin both to the same release source. The GitHub tag and
 release and PyPI distribution use the same version.
 
-The 0.0.9 candidate is pending qualification and publication. Commands below
-describe the intended release coordinates, not currently published artifacts.
-See the [release guide](../guides/releasing.md) for remaining gates.
+Version 0.0.9 was published on 2026-09-18. The commands below install its
+immutable PyPI and Git-tag artifacts. The repository-local adoption skill
+was corrected after the tag; see the [release guide](../guides/releasing.md).
+For guided Cortex Code use, open a checkout of this repository's current `main`
+containing `.cortex/skills/dbt-cortex-agent-project/SKILL.md` and confirm the
+skill is available in that project. The package installations below do not
+register that skill or make it available globally. A future immutable source
+release is needed if adopters must pin the corrected skill and package together.
 
 ## 1. Install the dbt package
 

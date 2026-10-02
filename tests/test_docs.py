@@ -161,7 +161,8 @@ def test_current_release_identity_is_consistent_across_public_docs():
         assert f"revision: v{expected}" in text
     assert cli_reference.startswith(f"# CLI reference (v{expected})")
     for text in (readme, installation):
-        assert "pending qualification and publication" in text
+        assert "published on 2026-09-18" in text
+        assert "pending qualification and publication" not in text
 
 
 def test_product_docs_do_not_invoke_absent_grants_or_promise_role_switching():
@@ -224,8 +225,8 @@ def test_release_setup_documents_protected_environment_and_unqualified_work():
     changelog = (ROOT / "CHANGELOG.md").read_text()
     assert "## 0.0.9 — 2026-09-18" in changelog
     assert "## UNRELEASED" not in changelog
-    assert "pending qualification and publication" in changelog
-    assert "`0.0.9` candidate" in text
-    assert "pending qualification and" in text
-    assert "publication" in text
-    assert "do not rewrite" in text.lower()
+    assert "Published on 2026-09-18" in changelog
+    assert "pending qualification and publication" not in changelog
+    assert "release run 35400838944" in text
+    assert "paid native Agent Evaluation" in text
+    assert "not part of its immutable source tag" in " ".join(text.split())

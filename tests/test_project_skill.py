@@ -144,6 +144,8 @@ def test_project_skill_is_single_file_and_release_aware():
     assert frontmatter["name"] == "dbt-cortex-agent-project"
     assert len(TEXT.splitlines()) < 500
     assert not (SKILL.parent / "scripts").exists()
+    assert "not by assuming that `pip install`, `dbt deps`, or immutable tag" in TEXT
+    assert "not been published in a skill catalog" in TEXT
 
 
 def test_project_skill_preserves_materialization_ownership():
