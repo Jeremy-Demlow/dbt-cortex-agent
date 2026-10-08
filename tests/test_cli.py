@@ -211,7 +211,7 @@ def test_current_release_identity_is_consistent():
     assert __version__ == "0.0.10"
     assert 'name = "dbt-cortex-agent"\nversion = "0.0.10"' in lock
     assert "revision: v0.0.10" in readme
-    assert "## 0.0.10 — 2026-10-07" in changelog
+    assert "## 0.0.10 — 2026-10-08" in changelog
 
 
 def test_runtime_is_the_only_connector_extra():

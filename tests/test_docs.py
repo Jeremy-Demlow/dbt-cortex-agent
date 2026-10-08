@@ -224,7 +224,7 @@ def test_release_setup_documents_protected_environment_and_unqualified_work():
     changelog = (ROOT / "CHANGELOG.md").read_text()
     assert "## 0.0.9 — 2026-09-18" in changelog
     assert "## UNRELEASED" not in changelog
-    assert "## 0.0.10 — 2026-10-07" in changelog
+    assert "## 0.0.10 — 2026-10-08" in changelog
     assert "Published on 2026-09-18" in changelog
     assert "Candidate pending qualification and publication" in changelog
     assert "`0.0.10` candidate is pending qualification and publication" in " ".join(text.split())
