@@ -40,6 +40,7 @@
     {% do dbt_cortex_agent.cortex_agent__assert_expected_identity(safe_agent_fqn, expected_fqns[model.unique_id]) %}
   {% endif %}
   {% set spec = dbt_cortex_agent.cortex_agent__materialization_spec(sql, model.name) %}
+  {% set spec = dbt_cortex_agent.cortex_agent__resolve_skill_sources(spec, (metadata.get('cortex_agent') or {}).get('skills') or []) %}
   {% set spec_json = tojson(spec) %}
   {% set profile_json = tojson({'display_name': agent_display_name}) %}
 

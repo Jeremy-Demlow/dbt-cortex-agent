@@ -153,14 +153,30 @@
     {{ exceptions.raise_compiler_error("Eval model '" ~ model_name ~ "' must define at least one question") }}
   {% endif %}
 
+  {% set system_metrics = ['answer_correctness', 'logical_consistency', 'tool_selection_accuracy', 'tool_execution_accuracy'] %}
   {% for metric in metrics %}
     {% if metric is string %}
     {% elif metric is mapping %}
       {% if not metric.get('name') %}
         {{ exceptions.raise_compiler_error("Eval model '" ~ model_name ~ "' has a custom metric missing name") }}
       {% endif %}
-      {% if not metric.get('prompt') %}
-        {{ exceptions.raise_compiler_error("Custom metric '" ~ metric.get('name') ~ "' missing prompt") }}
+      {% if metric.get('name') in system_metrics %}
+        {# A system metric written as a mapping pins its judge version. #}
+        {% for key in metric.keys() %}
+          {% if key not in ['name', 'version'] %}
+            {{ exceptions.raise_compiler_error("System metric '" ~ metric.get('name') ~ "' accepts only name and version, got '" ~ key ~ "'") }}
+          {% endif %}
+        {% endfor %}
+        {% if metric.get('version') is not string or not modules.re.match('^(auto|v[1-9][0-9]*(_[0-9]+)?)$', metric.get('version')) %}
+          {{ exceptions.raise_compiler_error("System metric '" ~ metric.get('name') ~ "' version must be auto, v<major>, or v<major>_<minor>") }}
+        {% endif %}
+      {% else %}
+        {% if not metric.get('prompt') %}
+          {{ exceptions.raise_compiler_error("Custom metric '" ~ metric.get('name') ~ "' missing prompt") }}
+        {% endif %}
+        {% if 'model' in metric and (metric.get('model') is not string or not (metric.get('model') | trim)) %}
+          {{ exceptions.raise_compiler_error("Custom metric '" ~ metric.get('name') ~ "' model must be a nonblank string") }}
+        {% endif %}
       {% endif %}
     {% else %}
       {{ exceptions.raise_compiler_error("Eval model '" ~ model_name ~ "' has an unsupported metric entry") }}

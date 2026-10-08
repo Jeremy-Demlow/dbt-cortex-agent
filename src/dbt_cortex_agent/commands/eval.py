@@ -9,7 +9,24 @@ from ..eval.gate import gate_candidate
 from ..eval.lifecycle import build_plan, run_evaluation
 from ..eval.results import load_result
 from ..eval.verify import build_verify_selections, verify_evaluations
+from ..identifiers import version
 from .common import add_allowlists, emit_json, require_explicit_connection
+
+
+def _committed_version(value: str) -> str:
+    try:
+        return version(value, "--version")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
+def _add_version(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--version",
+        dest="agent_version",
+        type=_committed_version,
+        help="committed VERSION$N to evaluate (default: the version DEFAULT resolves to)",
+    )
 
 
 def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentParser) -> None:
@@ -33,6 +50,7 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
     run.add_argument("--agent", required=True, help="logical Agent name")
     run.add_argument("--suite", required=True, help="evaluation suite name")
     run.add_argument("--run-name", help="explicit evaluation run name")
+    _add_version(run)
     run.add_argument(
         "--poll-attempts", type=int, default=60, help="maximum status polls (default: 60)"
     )
@@ -67,6 +85,7 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
         help="evaluation suite; repeatable",
     )
     verify.add_argument("--baseline-dir")
+    _add_version(verify)
     verify.add_argument("--poll-attempts", type=int, default=60)
     verify.add_argument("--poll-interval", type=float, default=30)
     verify.add_argument("--transient-retries", type=int, default=1)
@@ -127,6 +146,7 @@ def _handle_verify(args: argparse.Namespace, config: Config) -> int:
         poll_attempts=args.poll_attempts,
         poll_interval=args.poll_interval,
         transient_retries=args.transient_retries,
+        agent_version=args.agent_version,
     )
     emit_json(result)
     if result["outcome"] == "infrastructure_failed":
@@ -142,6 +162,7 @@ def _handle_run(args: argparse.Namespace, config: Config) -> int:
         "agent": plan.agent_name,
         "suite": plan.suite_name,
         "agent_object": plan.agent_fqn,
+        "agent_version": args.agent_version,
         "eval_model": plan.eval_model,
         "dataset": plan.table_fqn,
         "stage": plan.stage_fqn,
@@ -161,6 +182,7 @@ def _handle_run(args: argparse.Namespace, config: Config) -> int:
         transient_retries=args.transient_retries,
         allowed_targets=args.allow_target,
         allowed_databases=args.allow_database,
+        agent_version=args.agent_version,
     )
     candidate = load_result(output) if output else None
     payload = {

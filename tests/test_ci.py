@@ -153,11 +153,11 @@ def test_current_product_versions_and_project_names_align():
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
 
     assert package["project"]["name"].replace("-", "_") == project["name"]
-    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.9"
-    assert '__version__ = "0.0.9"' in init_source
-    assert 'name = "dbt-cortex-agent"\nversion = "0.0.9"' in lock
-    assert package["project"]["urls"]["Documentation"].endswith("/tree/v0.0.9/docs")
-    assert '" --version)" = "0.0.9"' in _workflow_text()
+    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.10"
+    assert '__version__ = "0.0.10"' in init_source
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.10"' in lock
+    assert package["project"]["urls"]["Documentation"].endswith("/tree/v0.0.10/docs")
+    assert '" --version)" = "0.0.10"' in _workflow_text()
 
 
 def test_requirements_ignore_exceptions_remain_narrow():
@@ -276,6 +276,20 @@ def test_release_workflow_has_no_long_lived_pypi_credentials():
         "username:",
     )
     assert all(value not in text for value in forbidden)
+
+
+def test_release_proof_retention_is_separate_from_pypi_publication():
+    workflow = yaml.safe_load(_release_workflow_text())
+    retention = workflow["jobs"]["retain-proof"]
+    assert retention["needs"] == "publish"
+    assert retention["permissions"] == {"contents": "write"}
+    text = json.dumps(retention)
+    assert "release-live-qualification" in text
+    assert "release-live-attestation.json" in text
+    assert "gh release upload" in text
+    assert '--repo \\"$GITHUB_REPOSITORY\\"' in text
+    assert "--clobber" not in text
+    assert "id-token" not in text
 
 
 def test_release_documentation_covers_trusted_publisher_and_checklist():

@@ -12,7 +12,14 @@ from ..manifest import (
     select_agents,
     skill_declarations,
 )
-from ..skills import assert_apply_safety, build_upload_plan, upload_skills
+from ..skills import (
+    DIGEST_VAR,
+    assert_apply_safety,
+    build_upload_plan,
+    skill_digests,
+    upload_payload,
+    upload_skills,
+)
 from .common import add_allowlists, emit_json, fresh_manifest, require_explicit_connection
 
 
@@ -63,15 +70,7 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
 
 
 def _plan_payload(plan: list) -> list[dict]:
-    return [
-        {
-            "stage_path": item.stage_path,
-            "local_dir": str(item.local_dir),
-            "skills": list(item.skill_names),
-            "agents": list(item.agent_names),
-        }
-        for item in plan
-    ]
+    return [upload_payload(item) for item in plan]
 
 
 def _handle_upload(args: argparse.Namespace, config: Config, manifest: dict) -> int:
@@ -94,6 +93,8 @@ def _handle_upload(args: argparse.Namespace, config: Config, manifest: dict) -> 
         "command": f"skill {args.skill_command}",
         "applied": applied,
         "uploads": _plan_payload(plan),
+        # Direct `dbt build` of immutable skills needs these vars; agent deploy passes them.
+        "dbt_vars": {DIGEST_VAR: skill_digests(plan)},
         "phases": outcome.to_dict(),
     }
     if error:
@@ -107,8 +108,9 @@ def _handle_upload(args: argparse.Namespace, config: Config, manifest: dict) -> 
     else:
         for item in plan:
             print(
-                f"{item.stage_path} <- {item.local_dir} "
-                f"(skills={','.join(item.skill_names)}; agents={','.join(item.agent_names)})"
+                f"{item.deployed_path} <- {item.local_dir} "
+                f"(mode={item.mode}; skills={','.join(item.skill_names)}; "
+                f"agents={','.join(item.agent_names)})"
             )
     return 2 if error else 0
 

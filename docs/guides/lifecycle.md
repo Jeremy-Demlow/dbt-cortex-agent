@@ -42,7 +42,9 @@ closure, preflights and uploads declared skills, and invokes dbt build. The
 project must configure non-empty
 `cortex_agent_allowed_targets` and `cortex_agent_allowed_databases`, and the
 selected target/database must match them. Stage-backed skills must already have
-valid local `SKILL.md` files and an existing configured stage.
+valid local `SKILL.md` files and an existing configured stage. Immutable stage
+skills (the default) are uploaded to content folders and read back before dbt
+build; see [skill modes](skills.md#skill-modes-and-rollback).
 
 The `+agent` closure must not contain an unselected `cortex_agent` model.
 Preview rejects such ancestors, including indirect and metadata-disabled Agent
@@ -50,6 +52,10 @@ models, before skill planning. Explicitly select every enabled Agent ancestor
 and review the resulting Agent, skill and resource-database plan; remove an
 unintended Agent dependency rather than relying on its metadata-disabled flag.
 Apply passes `cortex_agent_expected_fqns`, keyed by manifest `unique_id`, to dbt.
+Apply selects each Agent as `+fqn:<full manifest fqn>`; a bare model name would
+also select every node whose fqn starts with it, such as a project of the same
+name. A build that exits successfully without reconciling LIVE for every planned
+Agent is reported as a failure, not as verified.
 Each Agent materialization checks its resolved `this` against the exact planned
 FQN before its pre-hooks, stage reads or DDL. Unexpected IDs and identity drift
 fail closed. This is not a graph lock or atomic build: approved uploads,
@@ -67,7 +73,8 @@ For a changed full specification, the `cortex_agent` materialization:
 
 1. validates the rendered YAML mapping and explicit orchestration;
 2. derives the physical FQN from the dbt model relation;
-3. enforces target, database, and staged-skill readiness;
+3. resolves immutable skills to their verified content folders and enforces
+   target, database, and staged-skill readiness;
 4. hashes the deterministic specification and staged skill state;
 5. creates `VERSION$1` directly from the first specification, or modifies LIVE
    and commits one later immutable `VERSION$N` when content changed;
@@ -76,7 +83,9 @@ For a changed full specification, the `cortex_agent` materialization:
 
 An unchanged spec and skill hash skips version churn by finding the newest
 matching managed version independently of serving DEFAULT. This remains true
-after rollback.
+after rollback. Rolling back DEFAULT restores the earlier version's skill text
+only for immutable and Git skills; an `overwrite` skill serves its current
+files to every version.
 
 If initial CREATE succeeds but its version hash comment is not written (or
 CREATE acknowledgement/inspection is lost), retry stops with **explicit recovery

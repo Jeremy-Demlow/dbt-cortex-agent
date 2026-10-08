@@ -1,6 +1,6 @@
 # End-to-end architecture flow
 
-The published `dbt_cortex_agent` 0.0.9 release has two package surfaces and one metadata authority:
+The `dbt_cortex_agent` 0.0.10 candidate has two package surfaces and one metadata authority:
 
 - **dbt package:** full-body Agent materialization, eval contracts, graph
   resolution, deterministic rendering, lifecycle DDL, and versioning;

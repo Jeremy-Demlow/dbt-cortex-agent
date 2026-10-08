@@ -8,9 +8,19 @@ from typing import Any
 import yaml
 
 from .domain import SnowflakeObjectName
-from .identifiers import fqn, identifier, stage_path
+from .identifiers import fqn, git_commit_path, identifier, stage_path
 
 SUPPORTED_MANIFEST_SCHEMA_VERSIONS = {"v12"}
+
+# How a committed Agent version keeps the skill text it was deployed with:
+# immutable stage skills deploy to a content-addressed child folder, overwrite
+# stage skills replace one mutable folder in place, and Git skills pin a commit.
+SKILL_MODE_IMMUTABLE = "immutable"
+SKILL_MODE_OVERWRITE = "overwrite"
+SKILL_MODE_GIT = "git"
+STAGE_SKILL_MODES = (SKILL_MODE_IMMUTABLE, SKILL_MODE_OVERWRITE)
+# Snowflake accepts GIT_INTEGRATION in Agent specifications and rejects GIT as invalid.
+GIT_SOURCE_TYPE = "git_integration"
 
 
 @dataclass(frozen=True)
@@ -19,7 +29,8 @@ class SkillDeclaration:
     skill_name: str
     source_type: str
     stage_path: str
-    local_dir: Path
+    local_dir: Path | None
+    mode: str = SKILL_MODE_IMMUTABLE
 
 
 @dataclass(frozen=True)
@@ -132,10 +143,34 @@ def _skill_text(value: Any, label: str) -> str:
     return value
 
 
-def _skill_contract(value: Any, label: str) -> dict[str, tuple[str, str]]:
+def _skill_mode(skill: dict[str, Any], source_type: str, label: str, metadata: bool) -> str:
+    if not metadata:
+        return ""
+    declared = skill.get("mode")
+    if source_type == GIT_SOURCE_TYPE:
+        if declared is not None:
+            raise ValueError(f"{label} Git skills are pinned by commit path and take no mode")
+        return SKILL_MODE_GIT
+    if declared is None:
+        return SKILL_MODE_IMMUTABLE if source_type == "stage" else ""
+    if source_type != "stage" or declared not in STAGE_SKILL_MODES:
+        raise ValueError(
+            f"{label} mode must be one of {', '.join(STAGE_SKILL_MODES)} for stage skills"
+        )
+    return str(declared)
+
+
+def _skill_contract(
+    value: Any, label: str, *, metadata: bool = False
+) -> dict[str, tuple[str, str, str]]:
+    """Return name -> (source type, normalized base path, mode).
+
+    Model bodies carry no mode, so their mode is empty; callers compare model
+    skills on type and path only.
+    """
     if not isinstance(value, list):
         raise ValueError(f"{label} must be a list of skill declarations")
-    contract: dict[str, tuple[str, str]] = {}
+    contract: dict[str, tuple[str, str, str]] = {}
     for skill in value:
         if not isinstance(skill, dict) or not isinstance(skill.get("source"), dict):
             raise ValueError(f"{label} requires skill mappings with a source mapping")
@@ -144,10 +179,18 @@ def _skill_contract(value: Any, label: str) -> dict[str, tuple[str, str]]:
         path = _skill_text(source.get("path"), label)
         if name in contract:
             raise ValueError(f"{label} declares duplicate skill name {name!r}")
+        if source_type == SKILL_MODE_GIT:
+            raise ValueError(
+                f"{label} skill {name!r}: Snowflake rejects source type GIT in Agent "
+                "specifications; use GIT_INTEGRATION"
+            )
         if source_type == "stage":
             stage_fqn, suffix = stage_path_parts(path)
             path = f"@{stage_fqn}/{suffix}"
-        contract[name] = (source_type, path)
+        elif source_type == GIT_SOURCE_TYPE:
+            repository, commit, folder = git_commit_path(path, f"{label} Git path")
+            path = f"@{repository}/commits/{commit}/{folder}"
+        contract[name] = (source_type, path, _skill_mode(skill, source_type, label, metadata))
     return contract
 
 
@@ -179,7 +222,7 @@ def _agent_skill_contract(agent: dict[str, Any], node: dict[str, Any]) -> dict:
     if isinstance(capabilities, dict) and "skills" in capabilities:
         raise ValueError(f"{label} is required; capabilities.skills metadata is unsupported")
     configured = agent["meta"].get("skills", [])
-    contract = _skill_contract(configured, label)
+    contract = _skill_contract(configured, label, metadata=True)
     spec, detectable = _skill_spec_evidence(node)
     if spec is None:
         if detectable and not contract:
@@ -191,7 +234,9 @@ def _agent_skill_contract(agent: dict[str, Any], node: dict[str, Any]) -> dict:
     declared = _skill_contract(spec.get("skills", []), f"Agent {agent['name']!r} model skills")
     if declared and "skills" not in agent["meta"]:
         raise ValueError(f"{label} is required for local skill uploads; YAML alone is insufficient")
-    if contract != declared:
+    if {name: value[:2] for name, value in contract.items()} != {
+        name: value[:2] for name, value in declared.items()
+    }:
         raise ValueError(f"{label} does not match model skills (name, source type, or path)")
     return contract
 
@@ -299,12 +344,13 @@ def select_agents(
 def skill_declarations(
     manifest: dict[str, Any], project_dir: str | Path, agent_names: list[str] | None = None
 ) -> list[SkillDeclaration]:
+    """Stage and Git skill declarations; only stage skills have a local folder."""
     declarations: list[SkillDeclaration] = []
     for agent in select_agents(manifest, agent_names):
         node = manifest["nodes"][agent["unique_id"]]
         skills = _agent_skill_contract(agent, node)
-        for skill_name, (source_type, path) in skills.items():
-            if source_type != "stage":
+        for skill_name, (source_type, path, mode) in skills.items():
+            if source_type not in {"stage", GIT_SOURCE_TYPE}:
                 continue
             declarations.append(
                 SkillDeclaration(
@@ -312,7 +358,10 @@ def skill_declarations(
                     skill_name=skill_name,
                     source_type=source_type,
                     stage_path=path,
-                    local_dir=local_skill_dir(project_dir, path),
+                    local_dir=local_skill_dir(project_dir, path)
+                    if source_type == "stage"
+                    else None,
+                    mode=mode,
                 )
             )
     return declarations

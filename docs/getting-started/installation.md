@@ -1,18 +1,17 @@
 # Installation
 
-Version 0.0.9 has two install surfaces with one immutable release identity: the dbt package
+Version 0.0.10 has two install surfaces with one immutable release identity: the dbt package
 provides metadata contracts and macros; the Python distribution provides the
 `dbt-cortex-agent` CLI. Pin both to the same release source. The GitHub tag and
 release and PyPI distribution use the same version.
 
-Version 0.0.9 was published on 2026-09-18. The commands below install its
-immutable PyPI and Git-tag artifacts. The repository-local adoption skill
-was corrected after the tag; see the [release guide](../guides/releasing.md).
-For guided Cortex Code use, open a checkout of this repository's current `main`
-containing `.cortex/skills/dbt-cortex-agent-project/SKILL.md` and confirm the
+The 0.0.10 candidate is pending qualification and publication. Commands below
+describe the intended release coordinates, not currently published artifacts.
+See the [release guide](../guides/releasing.md) for remaining gates.
+For guided Cortex Code use, open a checkout of this repository at the matching
+tag containing `.cortex/skills/dbt-cortex-agent-project/SKILL.md` and confirm the
 skill is available in that project. The package installations below do not
-register that skill or make it available globally. A future immutable source
-release is needed if adopters must pin the corrected skill and package together.
+register that skill or make it available globally.
 
 ## 1. Install the dbt package
 
@@ -22,10 +21,10 @@ consumer project's `packages.yml`:
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.9
+    revision: v0.0.10
 ```
 
-There is no dbt Hub coordinate in 0.0.9. Use the immutable tag, not a branch.
+There is no dbt Hub coordinate in 0.0.10. Use the immutable tag, not a branch.
 For local package development only,
 replace the Git declaration with an explicit `local:` path.
 
@@ -34,7 +33,7 @@ Analyst tools also require a compatible semantic-view package, such as:
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.9
+    revision: v0.0.10
   - package: Snowflake-Labs/dbt_semantic_view
     version: 1.0.5
 ```
@@ -57,28 +56,28 @@ selected with `--snow-executable` or `SNOW_EXECUTABLE`.
 Install the CLI and connector-backed runtime support from PyPI:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.0.9'
+pipx install 'dbt-cortex-agent[runtime]==0.0.10'
 dbt-cortex-agent --version
 ```
 
 For a managed Python environment, the pip equivalent is:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.9'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.10'
 ```
 
 The base distribution can omit `[runtime]` when connector-backed skill smoke and
 paid evaluation are not needed. `runtime` is the only connector extra; the
 former `invoke` and `eval` extras no longer exist; both map to `runtime`.
 
-After publication, PyPI version `0.0.9` and Git tag `v0.0.9` identify the same immutable release.
+After publication, PyPI version `0.0.10` and Git tag `v0.0.10` identify the same immutable release.
 After `dbt deps`, run `dbt-cortex-agent doctor --project-dir . --json`.
 `doctor` compares the CLI version with the declared dependency revision and the
 installed consumer dbt package version so mixed releases fail visibly. A full
 40-character Git SHA is accepted only when
-`dbt_packages/dbt_cortex_agent/dbt_project.yml` reports version `0.0.9`; the
+`dbt_packages/dbt_cortex_agent/dbt_project.yml` reports version `0.0.10`; the
 package source root is not installation evidence. Branch revisions and missing
-or mismatched installed metadata fail closed. A semantic `v0.0.9` declaration
+or mismatched installed metadata fail closed. A semantic `v0.0.10` declaration
 continues to match the CLI version directly.
 
 ## 4. Configure an existing dbt project
@@ -89,7 +88,7 @@ and deployment configuration requires a target plus at least one allowed databas
 ```bash
 dbt-cortex-agent init --project-dir . \
   --package-source 'https://github.com/Jeremy-Demlow/dbt-cortex-agent.git' \
-  --revision v0.0.9 --target sandbox --allow-target sandbox \
+  --revision v0.0.10 --target sandbox --allow-target sandbox \
   --allow-database ANALYTICS_DEV --agent-schema AGENTS --eval-schema EVAL
 ```
 

@@ -160,8 +160,110 @@ def test_staged_skill_paths_are_validated_before_list():
     lifecycle = (ROOT / "macros/cortex_agents/agent_render.sql").read_text(encoding="utf-8")
 
     assert "macro cortex_agent__stage_path" in lifecycle
-    assert lifecycle.count("dbt_cortex_agent.cortex_agent__stage_path(") == 2
+    assert lifecycle.count("dbt_cortex_agent.cortex_agent__stage_path(") == 4
     assert "part in ['.', '..']" in lifecycle
+
+
+DIGEST = "sha256-0123456789abcdef"
+COMMIT_PATH = "@DB.AGENTS.REPO/commits/" + "b" * 40 + "/skills/one"
+
+
+def _resolve(macro_harness, skills, declared=(), digests=None):
+    variables = {} if digests is None else {"cortex_agent_skill_digests": digests}
+    macro_harness.context["var"] = lambda name, default=None: variables.get(name, default)
+    spec = {"models": {"orchestration": "auto"}, "skills": skills}
+    return macro_harness.call("cortex_agent__resolve_skill_sources", spec, list(declared))
+
+
+def _stage_skill(path="@db.agents.skill_stage/library/one", source_type="STAGE"):
+    return {"name": "one", "source": {"type": source_type, "path": path}}
+
+
+def test_immutable_is_the_default_and_resolves_to_the_verified_folder(macro_harness):
+    digests = {"@DB.AGENTS.SKILL_STAGE/library/one": DIGEST}
+    resolved = _resolve(macro_harness, [_stage_skill()], digests=digests)
+    assert resolved["skills"][0]["source"] == {
+        "type": "STAGE",
+        "path": f"@db.agents.skill_stage/library/one/{DIGEST}",
+    }
+    assert resolved["models"] == {"orchestration": "auto"}
+
+
+@pytest.mark.parametrize(
+    "digests", [None, {}, {"@DB.AGENTS.SKILL_STAGE/library/one": "../library/other"}]
+)
+def test_immutable_skill_without_a_verified_digest_fails_closed(macro_harness, digests):
+    with pytest.raises(ValueError, match="immutable stage skill"):
+        _resolve(macro_harness, [_stage_skill()], digests=digests)
+
+
+def test_digest_map_must_be_a_mapping(macro_harness):
+    with pytest.raises(ValueError, match="must be a mapping"):
+        _resolve(macro_harness, [_stage_skill()], digests=["sha256-0123456789abcdef"])
+
+
+def test_overwrite_mode_keeps_the_mutable_path(macro_harness):
+    declared = [{**_stage_skill(), "mode": "overwrite"}]
+    resolved = _resolve(macro_harness, [_stage_skill()], declared)
+    assert resolved["skills"][0]["source"]["path"] == "@db.agents.skill_stage/library/one"
+
+
+def test_git_skills_must_pin_a_full_commit(macro_harness):
+    resolved = _resolve(macro_harness, [_stage_skill(COMMIT_PATH, "GIT_INTEGRATION")])
+    assert resolved["skills"][0]["source"]["path"] == COMMIT_PATH
+    tag_path = "@DB.AGENTS.REPO/tags/latest/skills/one"
+    with pytest.raises(ValueError, match="40-character commit SHA"):
+        _resolve(macro_harness, [_stage_skill(tag_path, "GIT_INTEGRATION")])
+
+
+def test_plain_git_source_type_is_rejected_before_snowflake(macro_harness):
+    # Live finding: CREATE AGENT rejects "GIT" as an invalid specification.
+    with pytest.raises(ValueError, match="use GIT_INTEGRATION"):
+        _resolve(macro_harness, [_stage_skill(COMMIT_PATH, "GIT")])
+
+
+class _Rows(list):
+    def __init__(self, columns, rows):
+        super().__init__(rows)
+        self.column_names = columns
+        self.rows = rows
+
+
+@pytest.mark.parametrize("tagged", [True, False])
+def test_git_skill_commit_must_be_tagged_before_versioning(macro_harness, tagged):
+    # Live finding: commits/<sha> resolves only for fetched branch or tag heads.
+    queries = []
+
+    def run_query(sql):
+        queries.append(sql)
+        if sql.startswith("LIST "):
+            return _Rows(["name"], [["repo/commits/x/skills/one/SKILL.md"]])
+        commit = "b" * 40 if tagged else "c" * 40
+        return _Rows(["name", "path", "commit_hash"], [["v1", "/tags/v1", commit]])
+
+    macro_harness.context["run_query"] = run_query
+    spec = {"skills": [_stage_skill(COMMIT_PATH, "GIT_INTEGRATION")]}
+    if tagged:
+        macro_harness.call("cortex_agent__assert_staged_skills_ready", spec)
+    else:
+        with pytest.raises(ValueError, match="no tag in DB.AGENTS.REPO points to"):
+            macro_harness.call("cortex_agent__assert_staged_skills_ready", spec)
+    assert queries[-1] == "SHOW GIT TAGS IN DB.AGENTS.REPO"
+
+
+def test_skill_free_spec_is_unchanged(macro_harness):
+    spec = {"models": {"orchestration": "auto"}}
+    macro_harness.context["var"] = lambda name, default=None: default
+    assert macro_harness.call("cortex_agent__resolve_skill_sources", spec, []) == spec
+
+
+def test_skill_sources_are_resolved_before_the_spec_is_hashed():
+    materialization = (ROOT / "macros/materializations/cortex_agent.sql").read_text(
+        encoding="utf-8"
+    )
+    resolved = materialization.index("cortex_agent__resolve_skill_sources(spec")
+    assert resolved < materialization.index("tojson(spec)")
+    assert resolved < materialization.index("cortex_agent__assert_staged_skills_ready(spec)")
 
 
 def test_no_change_build_skips_commit_and_can_reconcile_alias():

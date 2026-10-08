@@ -14,7 +14,7 @@ from typing import Any
 from ..config import Config
 from ..dbt_runner import CommandRunner, run_dbt_operation, run_dbt_parse
 from ..domain import finite_number, is_controlled_operation_error, managed_resource
-from ..identifiers import fqn, identifier
+from ..identifiers import fqn, identifier, version
 from ..manifest import assert_resource_databases_allowed
 from ..skills import assert_apply_safety
 from .dataset import (
@@ -24,6 +24,7 @@ from .dataset import (
     validate_metric_policy,
     validate_table,
 )
+from .dataset import metric_names as parse_metric_names
 from .results import build_candidate, validate_observations, write_candidate, write_diagnostic
 
 TERMINAL_SUCCESS = {"COMPLETED", "SUCCEEDED", "DONE"}
@@ -163,12 +164,18 @@ def _plan_from_payload(  # noqa: C901
     config_agent = config_template.get("evaluation", {}).get("agent_params", {}).get("agent_name")
     if config_agent != identity.get("agent_fqn"):
         raise ValueError("Evaluation plan native config Agent must match signed agent_fqn")
+    if "agent_version" in config_template.get("evaluation", {}).get("agent_params", {}):
+        raise ValueError(
+            "Evaluation plan must not sign agent_version; choose the version at run time"
+        )
     refs = [str(value) for value in refs]
     if not refs or any(not value for value in refs) or len(refs) != len(set(refs)):
         raise ValueError("Evaluation plan ordered_ground_truth_refs must be non-empty and unique")
     metric_names = [str(value) for value in metric_names]
     if not metric_names or len(metric_names) != len(set(metric_names)):
         raise ValueError("Evaluation plan metric_names must be non-empty and unique")
+    if parse_metric_names(list(config_template.get("metrics") or [])) != metric_names:
+        raise ValueError("Evaluation plan metric_names must match the native config metrics")
     token = payload.get("dataset_name_token")
     filename_template = payload.get("config_filename_template")
     if not isinstance(token, str) or not token or not isinstance(filename_template, str):
@@ -266,8 +273,16 @@ def build_plan(
     return _extract_plan(rendered.stdout, agent_name, suite_name)
 
 
-def render_eval_config(plan: EvalPlan, dataset_name: str) -> str:
-    rendered = json.dumps(plan.native_eval_config, separators=(",", ":"))
+def render_eval_config(plan: EvalPlan, dataset_name: str, agent_version: str | None = None) -> str:
+    config = plan.native_eval_config
+    if agent_version is not None:
+        # The version is chosen per run, not signed, so one suite can score any
+        # committed version and baselines stay comparable across versions.
+        config = json.loads(json.dumps(config))
+        config["evaluation"]["agent_params"]["agent_version"] = version(
+            agent_version, "evaluation Agent version"
+        )
+    rendered = json.dumps(config, separators=(",", ":"))
     if rendered.count(plan.dataset_name_token) != 2:
         raise ValueError("dbt evaluation plan must contain exactly two dataset-name tokens")
     return rendered.replace(plan.dataset_name_token, dataset_name)
@@ -465,6 +480,52 @@ def _result_record_count(rows: list[dict[str, Any]]) -> int:
     return len({str(row.get("input")) for row in rows if row.get("input")})
 
 
+def _observed_run(
+    cursor, plan: EvalPlan, run_name: str, retries: int, sleep: Callable[[float], None]
+) -> dict[str, Any]:
+    """Read the Agent version and judges Snowflake recorded for this run.
+
+    The staged config only states what was requested. Run trace spans record
+    the version that was invoked and, per metric, the judge that scored it.
+    """
+    database, schema, agent = plan.agent_fqn.split(".")
+    versions: set[str] = set()
+    judges: dict[str, dict[str, str | None]] = {}
+    for attempt in range(retries + 1):
+        cursor.execute(
+            "SELECT"
+            ' record_attributes:"snow.ai.observability.object.version.name"::VARCHAR,'
+            ' record_attributes:"ai.observability.eval.metric_name"::VARCHAR,'
+            ' record_attributes:"ai.observability.eval.llm_judge_name"::VARCHAR,'
+            ' record_attributes:"ai.observability.eval.metric_major_version"::VARCHAR,'
+            ' record_attributes:"ai.observability.eval.metric_minor_version"::VARCHAR'
+            " FROM TABLE(SNOWFLAKE.LOCAL.GET_AI_OBSERVABILITY_EVENTS(%s,%s,%s,'CORTEX AGENT'))"
+            ' WHERE record_attributes:"snow.ai.observability.run.name"::VARCHAR = %s'
+            " GROUP BY ALL",
+            (database, schema, agent, run_name),
+        )
+        versions, judges = set(), {}
+        for agent_version, metric, judge, major, minor in cursor.fetchall():
+            if agent_version:
+                versions.add(str(agent_version).upper())
+            if metric and metric in plan.metric_names:
+                judges[str(metric)] = {
+                    "judge": str(judge) if judge else None,
+                    "version": f"v{major}_{minor}" if major is not None else None,
+                }
+        if versions and set(judges) == set(plan.metric_names):
+            break
+        if attempt < retries:
+            sleep(1)
+    return {
+        "evaluated_version": next(iter(versions)) if len(versions) == 1 else None,
+        "observed_versions": sorted(versions),
+        "observed_metric_judges": {
+            name: judges.get(name, {"judge": None, "version": None}) for name in plan.metric_names
+        },
+    }
+
+
 def _agent_provenance(cursor, plan: EvalPlan) -> dict[str, Any]:
     cursor.execute(f"DESCRIBE AGENT {plan.agent_fqn}")
     columns = [str(item[0]).lower() for item in cursor.description]
@@ -504,11 +565,26 @@ def _default_connect(connection: str):
     return snowflake.connector.connect(connection_name=connection)
 
 
+def _assert_version_committed(cursor, plan: EvalPlan, agent_version: str) -> None:
+    cursor.execute(f"SHOW VERSIONS IN AGENT {plan.agent_fqn}")
+    columns = [str(item[0]).lower() for item in cursor.description]
+    name_index = columns.index("name") if "name" in columns else 1
+    names = {str(row[name_index]).upper() for row in cursor.fetchall()}
+    if agent_version not in names:
+        raise RuntimeError(f"Agent {plan.agent_fqn} has no committed {agent_version} to evaluate")
+
+
 def _pre_start_provenance(
-    cursor, plan: EvalPlan, initial_provenance: dict[str, Any], snapshot: DatasetSnapshot
+    cursor,
+    plan: EvalPlan,
+    initial_provenance: dict[str, Any],
+    snapshot: DatasetSnapshot,
+    agent_version: str | None = None,
 ) -> dict[str, Any]:
     provenance = _assert_agent_exists_with_default(cursor, plan)
-    if provenance["default_version"] != initial_provenance["default_version"]:
+    if agent_version is not None:
+        _assert_version_committed(cursor, plan, agent_version)
+    elif provenance["default_version"] != initial_provenance["default_version"]:
         raise RuntimeError(
             f"Agent {plan.agent_fqn} DEFAULT version changed before evaluation START"
         )
@@ -572,11 +648,15 @@ def run_evaluation(
     transient_retries: int = 1,
     allowed_targets: list[str] | None = None,
     allowed_databases: list[str] | None = None,
+    agent_version: str | None = None,
     connect: Callable[[str], Any] = _default_connect,
     sleep: Callable[[float], None] = time.sleep,
 ) -> Path | None:
     if not apply:
         return None
+    requested_version = (
+        version(agent_version, "evaluation Agent version") if agent_version is not None else None
+    )
     validate_evaluation_apply(
         config,
         [plan],
@@ -616,9 +696,11 @@ def run_evaluation(
             dataset_name = f"{final_run}_dataset"
             filename = plan.config_filename_template.replace("__RUN_NAME__", final_run)
             stage_path = _upload_config(
-                cursor, plan, filename, render_eval_config(plan, dataset_name)
+                cursor, plan, filename, render_eval_config(plan, dataset_name, requested_version)
             )
-            pre_start = _pre_start_provenance(cursor, plan, initial_provenance, snapshot)
+            pre_start = _pre_start_provenance(
+                cursor, plan, initial_provenance, snapshot, requested_version
+            )
             cursor.execute(
                 "CALL EXECUTE_AI_EVALUATION('START', OBJECT_CONSTRUCT('run_name', %s), %s)",
                 (final_run, stage_path),
@@ -669,17 +751,27 @@ def run_evaluation(
         post_completion = _assert_agent_exists_with_default(cursor, plan)
         if pre_start is None:
             raise RuntimeError("Evaluation provenance was not captured before START")
+        observed = _observed_run(cursor, plan, final_run, retries=2, sleep=sleep)
         provenance = {
             "agent_fqn": plan.agent_fqn,
             "plan_identity": plan.plan_identity,
             "dataset_snapshot": [list(entry) for entry in snapshot],
             "dataset_source_changed": dataset_source_changed,
-            "evaluated_version": pre_start["default_version"],
+            "requested_version": requested_version,
+            "evaluated_version": observed["evaluated_version"],
+            "evaluated_version_source": "run_trace",
+            "observed_versions": observed["observed_versions"],
             "pre_start": pre_start,
             "post_completion": post_completion,
             "default_version_changed": (
                 pre_start["default_version"] != post_completion["default_version"]
             ),
         }
-        candidate = build_candidate(plan=plan, run_name=final_run, rows=rows, provenance=provenance)
+        candidate = build_candidate(
+            plan=plan,
+            run_name=final_run,
+            rows=rows,
+            provenance=provenance,
+            observed_metric_judges=observed["observed_metric_judges"],
+        )
         return write_candidate(candidate, config.artifact_dir)

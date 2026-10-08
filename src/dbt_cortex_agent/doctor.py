@@ -120,8 +120,12 @@ def run_doctor(  # noqa: C901
             )
         )
         try:
-            skills = skill_declarations(manifest, config.project_dir)
-            missing = [str(item.local_dir) for item in skills if not item.local_dir.is_dir()]
+            skills = [
+                item.local_dir
+                for item in skill_declarations(manifest, config.project_dir)
+                if item.local_dir is not None
+            ]
+            missing = [str(local_dir) for local_dir in skills if not local_dir.is_dir()]
             diagnostics.append(
                 Diagnostic(
                     "configured local skills",
@@ -133,7 +137,8 @@ def run_doctor(  # noqa: C901
             diagnostics.append(Diagnostic("configured local skills", "FAIL", str(exc)))
 
     project = load_yaml_mapping(config.project_dir / "dbt_project.yml", strict=False)
-    variables = project.get("vars") if isinstance(project.get("vars"), dict) else {}
+    declared_vars = project.get("vars")
+    variables = declared_vars if isinstance(declared_vars, dict) else {}
     legacy_target = variables.get("cortex_agent_deploy_target")
     allowed_targets = variables.get("cortex_agent_allowed_targets") or (
         [legacy_target] if legacy_target else []

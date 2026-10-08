@@ -43,15 +43,100 @@
   {% set skills = agent.get('skills', agent.get('capabilities', {}).get('skills', [])) %}
   {% for skill in skills %}
     {% set source = skill.get('source', {}) %}
-    {% if (source.get('type') | string | lower) == 'stage' %}
+    {% set source_type = source.get('type') | string | lower %}
+    {% if source_type in ['stage', 'git_integration'] %}
       {% set safe_path = dbt_cortex_agent.cortex_agent__stage_path(source.get('path'), "Skill '" ~ skill.get('name') ~ "' stage path") %}
       {% set ls_result = run_query("LIST " ~ safe_path ~ " PATTERN='.*SKILL[.]md'") %}
-      {% if ls_result.rows | length == 0 %}
-        {{ exceptions.raise_compiler_error("Refusing to deploy agent '" ~ agent.get('snowflake_name', '<agent>') ~ "': staged skill '" ~ skill.get('name') ~ "' has no SKILL.md at " ~ source.get('path') ~ ". Upload the declared skill with dbt-cortex-agent skill upload --apply, or set var('cortex_agent_validate_staged_skills', false) to override.") }}
+      {% if ls_result.rows | length == 0 and source_type == 'git_integration' %}
+        {{ exceptions.raise_compiler_error("Refusing to deploy agent '" ~ agent.get('snowflake_name', '<agent>') ~ "': Git skill '" ~ skill.get('name') ~ "' has no SKILL.md at " ~ source.get('path') ~ ". Push and tag the commit, have the repository owner run ALTER GIT REPOSITORY ... FETCH, and confirm the deploy role has READ on the repository.") }}
+      {% elif ls_result.rows | length == 0 %}
+        {{ exceptions.raise_compiler_error("Refusing to deploy agent '" ~ agent.get('snowflake_name', '<agent>') ~ "': staged skill '" ~ skill.get('name') ~ "' has no SKILL.md at " ~ source.get('path') ~ ". Deploy with dbt-cortex-agent agent deploy --apply, or upload the declared skill with dbt-cortex-agent skill upload --apply first.") }}
+      {% endif %}
+      {% if source_type == 'git_integration' %}
+        {% do dbt_cortex_agent.cortex_agent__assert_tagged_commit(safe_path, "Skill '" ~ skill.get('name') ~ "'") %}
       {% endif %}
     {% endif %}
   {% endfor %}
   {{ return(none) }}
+{% endmacro %}
+
+{% macro cortex_agent__assert_tagged_commit(path, label) %}
+  {# Snowflake resolves commits/<sha> only while that commit is a fetched branch
+     or tag head, so a pin to a branch commit can stop resolving once the branch
+     moves. Only a tagged commit keeps a committed Agent version readable. #}
+  {% set repository = path[1:].split('/', 1)[0] %}
+  {% set commit = path.split('/')[2] | lower %}
+  {% set tags = run_query("SHOW GIT TAGS IN " ~ repository) %}
+  {% set columns = tags.column_names | map('lower') | list %}
+  {% if 'commit_hash' not in columns %}
+    {{ exceptions.raise_compiler_error(label ~ ": cannot read Git tags for " ~ repository) }}
+  {% endif %}
+  {% set index = columns.index('commit_hash') %}
+  {% for row in tags.rows %}
+    {% if (row[index] | string | lower) == commit %}
+      {{ return(none) }}
+    {% endif %}
+  {% endfor %}
+  {{ exceptions.raise_compiler_error(label ~ " pins commit " ~ commit ~ ", which no tag in " ~ repository ~ " points to. Tag the commit and FETCH; untagged commits stop resolving once their branch moves.") }}
+{% endmacro %}
+
+{% macro cortex_agent__resolve_skill_sources(agent, declared_skills) %}
+  {# Point each skill at a folder a committed Agent version can keep reading.
+     Snowflake reads skills live, so a version only keeps its skill text if its
+     path never changes content:
+     - immutable stage skills (the default) resolve to <base>/<content digest>;
+       only the dbt-cortex-agent CLI supplies the digest, after it uploads and
+       verifies that folder, so a direct build without it fails closed;
+     - overwrite stage skills keep the mutable base path (opt-in);
+     - GIT_INTEGRATION skills must already name a full, tagged commit SHA. #}
+  {% set modes = {} %}
+  {% for declared in declared_skills or [] %}
+    {% if declared is mapping and declared.get('name') %}
+      {% do modes.update({declared.get('name'): declared.get('mode') or 'immutable'}) %}
+    {% endif %}
+  {% endfor %}
+  {% set digests = var('cortex_agent_skill_digests', {}) %}
+  {% if digests is not mapping %}
+    {{ exceptions.raise_compiler_error('cortex_agent_skill_digests must be a mapping of skill base path to content digest') }}
+  {% endif %}
+  {% if 'skills' not in agent %}
+    {{ return(agent) }}
+  {% endif %}
+  {% set resolved = [] %}
+  {% for skill in agent.get('skills') or [] %}
+    {% set source = skill.get('source', {}) if skill is mapping else {} %}
+    {% set source_type = source.get('type') | string | lower %}
+    {% set label = "Skill '" ~ skill.get('name') ~ "'" %}
+    {% if source_type == 'stage' %}
+      {% set mode = modes.get(skill.get('name'), 'immutable') %}
+      {% set base = dbt_cortex_agent.cortex_agent__stage_path(source.get('path'), label ~ ' stage path') %}
+      {% if mode == 'immutable' %}
+        {% set key = '@' ~ (base[1:].split('/', 1)[0] | upper) ~ '/' ~ base.split('/', 1)[1] %}
+        {% set digest = digests.get(key) %}
+        {% if digest is not string or not modules.re.match('^sha256-[0-9a-f]{16}$', digest) %}
+          {{ exceptions.raise_compiler_error(label ~ " is an immutable stage skill and needs its verified content digest for " ~ key ~ ". Deploy with dbt-cortex-agent agent deploy, pass the dbt_vars printed by skill upload --apply, or declare mode: overwrite to serve the mutable folder.") }}
+        {% endif %}
+        {% set source = dict(source, path=base ~ '/' ~ digest) %}
+      {% elif mode != 'overwrite' %}
+        {{ exceptions.raise_compiler_error(label ~ " mode must be immutable or overwrite, got '" ~ mode ~ "'") }}
+      {% endif %}
+    {% elif source_type == 'git_integration' %}
+      {% do dbt_cortex_agent.cortex_agent__git_commit_path(source.get('path'), label ~ ' Git path') %}
+    {% elif source_type == 'git' %}
+      {{ exceptions.raise_compiler_error(label ~ ": Snowflake rejects source type GIT in Agent specifications; use GIT_INTEGRATION") }}
+    {% endif %}
+    {% do resolved.append(dict(skill, source=source) if skill is mapping else skill) %}
+  {% endfor %}
+  {{ return(dict(agent, skills=resolved)) }}
+{% endmacro %}
+
+{% macro cortex_agent__git_commit_path(value, label='Git skill path') %}
+  {# Branch and tag paths move after each FETCH, so only a full commit pins content. #}
+  {% set text = dbt_cortex_agent.cortex_agent__stage_path(value, label) %}
+  {% if not modules.re.match('^@[^/]+/commits/[0-9a-fA-F]{40}/[^/]', text) %}
+    {{ exceptions.raise_compiler_error(label ~ " must look like @DATABASE.SCHEMA.REPOSITORY/commits/<40-character commit SHA>/<folder>, got '" ~ text ~ "'") }}
+  {% endif %}
+  {{ return(text) }}
 {% endmacro %}
 
 {% macro cortex_agent__debug_assert_skill_path(path) %}

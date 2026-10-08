@@ -1,11 +1,37 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from ..domain import finite_number
 
 TOOL_METRICS = {"tool_selection_accuracy", "tool_execution_accuracy"}
+SYSTEM_METRICS = {"answer_correctness", "logical_consistency", *TOOL_METRICS}
+_METRIC_VERSION = re.compile(r"^(auto|v[1-9][0-9]*(_[0-9]+)?)$")
 DatasetSnapshot = tuple[tuple[str, str, str], ...]
+
+
+def _system_metric_mapping(name: str, metric: dict[str, Any]) -> None:
+    extra = sorted(set(metric) - {"name", "version"})
+    if extra:
+        raise ValueError(
+            f"System metric {name!r} accepts only name and version, got: {', '.join(extra)}"
+        )
+    version = metric.get("version")
+    if not isinstance(version, str) or not _METRIC_VERSION.fullmatch(version):
+        raise ValueError(
+            f"System metric {name!r} version must be auto, v<major>, or v<major>_<minor>"
+        )
+
+
+def _custom_metric_mapping(name: str, metric: dict[str, Any]) -> None:
+    ranges = metric.get("score_ranges")
+    if ranges is not None and set(ranges) != {"min_score", "median_score", "max_score"}:
+        raise ValueError(f"Custom metric {name!r} must define all three score_ranges")
+    if not str(metric.get("prompt") or "").strip():
+        raise ValueError(f"Custom metric {name!r} requires a prompt")
+    if "model" in metric and (not isinstance(metric["model"], str) or not metric["model"].strip()):
+        raise ValueError(f"Custom metric {name!r} model must be a nonblank string")
 
 
 def metric_names(metrics: list[Any]) -> list[str]:
@@ -15,11 +41,10 @@ def metric_names(metrics: list[Any]) -> list[str]:
             name = metric
         elif isinstance(metric, dict) and metric.get("name"):
             name = str(metric["name"])
-            ranges = metric.get("score_ranges")
-            if ranges is not None and set(ranges) != {"min_score", "median_score", "max_score"}:
-                raise ValueError(f"Custom metric {name!r} must define all three score_ranges")
-            if not str(metric.get("prompt") or "").strip():
-                raise ValueError(f"Custom metric {name!r} requires a prompt")
+            if name in SYSTEM_METRICS:
+                _system_metric_mapping(name, metric)
+            else:
+                _custom_metric_mapping(name, metric)
         else:
             raise ValueError(f"Invalid metric declaration: {metric!r}")
         if not name.strip():
@@ -31,6 +56,19 @@ def metric_names(metrics: list[Any]) -> list[str]:
     if duplicates:
         raise ValueError(f"Evaluation metric names must be unique: {', '.join(duplicates)}")
     return names
+
+
+def metric_judges(metrics: list[Any]) -> dict[str, str]:
+    """Name the judge each metric is scored by, so runs on different judges never compare."""
+    judges: dict[str, str] = {}
+    for metric in metrics:
+        if isinstance(metric, str):
+            judges[metric] = "auto"
+        elif str(metric.get("name")) in SYSTEM_METRICS:
+            judges[str(metric["name"])] = str(metric.get("version") or "auto")
+        else:
+            judges[str(metric["name"])] = f"model:{metric.get('model') or 'auto'}"
+    return judges
 
 
 def validate_eval_meta(

@@ -10,14 +10,13 @@ edits, and verification; every executable package step also shows the exact manu
 command. This skill is guidance only: do not create wrapper scripts or duplicate Agent
 lifecycle logic.
 
-This file is a repository-local skill. Use it from a checkout containing this
-corrected file, not by assuming that `pip install`, `dbt deps`, or immutable tag
-`v0.0.9` installs or registers it. The corrected guidance was merged to the
-repository after that tag. It has not been published in a skill catalog.
+This file is a repository-local skill. Use it from a checkout of the matching
+release tag, not by assuming that `pip install`, `dbt deps`, or immutable tag
+`v0.0.10` installs or registers it. It has not been published in a skill catalog.
 
 ## Authority and invariants
 
-- This workflow targets `0.0.9`. Detect the installed `dbt-cortex-agent` version
+- This workflow targets `0.0.10`. Detect the installed `dbt-cortex-agent` version
   and require Python and dbt to identify the same immutable release. If they differ
   or another version is installed, stop and review that version's documentation;
   do not silently upgrade or apply this workflow to historical contracts.
@@ -151,6 +150,10 @@ review profile, physical identity, tools, experimental fields, and intended chan
 For local skills, require matching name/source type/stage path in both declarations,
 provisioned stages, and actual local files. Fresh parse does not render arbitrary Jinja
 or reliably supply compiled bodies. Do not infer an empty upload plan means no skills.
+Stage skills default to `mode: immutable`: each deploy commits a content-addressed
+folder, so rollback restores skill text, and direct `dbt build` needs the `dbt_vars`
+from `skill upload --apply`. `mode: overwrite` keeps one live folder that rollback does
+not restore. A `git_integration` skill must pin a tagged `commits/<sha>` path.
 
 #### E. Optional evaluation authoring
 

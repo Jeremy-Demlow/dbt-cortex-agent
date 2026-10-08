@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import subprocess
 from argparse import Namespace
 from functools import partial
+from pathlib import Path
 
 import pytest
 import yaml
@@ -16,12 +18,68 @@ from dbt_cortex_agent.dbt_runner import CommandRunner
 from dbt_cortex_agent.deployment import apply_deploy_plan, build_deploy_plan
 from dbt_cortex_agent.domain import DurablePhaseError
 from dbt_cortex_agent.invoke import smoke_skills
-from dbt_cortex_agent.manifest import SkillDeclaration
+from dbt_cortex_agent.manifest import SkillDeclaration, skill_declarations
 from dbt_cortex_agent.skills import (
     assert_apply_safety,
     build_upload_plan,
+    skill_digests,
+    skill_inventory,
     upload_skills,
 )
+
+
+def _copy_destination(command):
+    return command[-6]
+
+
+def _reconciled_output(agent_fqn):
+    marker = {"agent_fqn": agent_fqn, "phase": "live_reconciled"}
+    return "CORTEX_AGENT_DEPLOY_PHASE=" + json.dumps(marker)
+
+
+class FakeStage:
+    """Snow CLI double: answers DESCRIBE and LIST and records copied file content."""
+
+    def __init__(self, files=None, *, fail_copy=None, drop_on_copy=()):
+        self.files = dict(files or {})  # (stage fqn, path under stage) -> (size, md5)
+        self.calls = []
+        self.fail_copy = fail_copy
+        self.drop_on_copy = set(drop_on_copy)
+
+    def __call__(self, command, **kwargs):
+        self.calls.append(command)
+        if command[1] == "sql" and command[-1].startswith("LIST "):
+            stage, prefix = command[-1][len("LIST @") :].split("/", 1)
+            rows = [
+                {"name": f"{name.split('.')[-1].lower()}/{path}", "size": size, "md5": md5}
+                for (name, path), (size, md5) in sorted(self.files.items())
+                if name == stage and path.startswith(prefix)
+            ]
+            return subprocess.CompletedProcess(command, 0, json.dumps(rows), "")
+        if command[1] == "build":
+            return subprocess.CompletedProcess(
+                command, 0, _reconciled_output("DB.AGENTS.AGENT"), ""
+            )
+        if command[1:3] == ["stage", "copy"]:
+            if self.fail_copy:
+                failure = self.fail_copy(command)
+                if failure is not None:
+                    return failure
+            stage, folder = _copy_destination(command)[1:].rstrip("/").split("/", 1)
+            source = Path(command[-7]).parent
+            for path in source.rglob("*"):
+                relative = path.relative_to(source).as_posix()
+                key = (stage, f"{folder}/{relative}")
+                if not path.is_file() or relative in self.drop_on_copy:
+                    continue
+                if key in self.files and "--no-overwrite" in command:
+                    continue
+                data = path.read_bytes()
+                self.files[key] = (len(data), hashlib.md5(data).hexdigest())
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    def copies(self):
+        return [call for call in self.calls if call[1:3] == ["stage", "copy"]]
 
 
 def _manifest(skills):
@@ -33,6 +91,7 @@ def _manifest(skills):
                 "unique_id": f"model.test.{name}",
                 "resource_type": "model",
                 "name": name,
+                "fqn": ["test", "agents", name, name],
                 "database": "DB",
                 "schema": "AGENTS",
                 "alias": name.upper(),
@@ -91,7 +150,7 @@ def test_plan_rejects_duplicate_skill_name_before_mutation(tmp_path):
     with pytest.raises(ValueError, match="duplicate skill name"):
         build_upload_plan(_manifest({"agent_a": [shared, shared]}), tmp_path)
 
-    non_stage = {"name": "shared", "source": {"type": "git", "path": "repo/tag/skill"}}
+    non_stage = {"name": "shared", "source": {"type": "workspace", "path": "repo/tag/skill"}}
     with pytest.raises(ValueError, match="duplicate skill name"):
         build_upload_plan(_manifest({"agent_a": [shared, non_stage]}), tmp_path)
 
@@ -138,18 +197,17 @@ def test_upload_validates_existing_stage_before_copy(tmp_path):
         _manifest({"agent": [_skill("shared", "@DB.AGENTS.SKILL_STAGE/library/shared")]}),
         tmp_path,
     )
-    calls = []
+    stage = FakeStage()
 
-    def fake_run(command, **kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 0, "ok", "")
+    upload_skills(plan, _config(tmp_path), CommandRunner(stage))
 
-    upload_skills(plan, _config(tmp_path), CommandRunner(fake_run))
-
+    calls = stage.calls
     assert calls[0][0:2] == ["custom-snow", "sql"]
     assert calls[0][-1] == "DESCRIBE STAGE DB.AGENTS.SKILL_STAGE"
     assert all("CREATE STAGE" not in " ".join(call) for call in calls)
-    assert calls[1][0:3] == ["custom-snow", "stage", "copy"]
+    assert calls[1][-1] == f"LIST {plan[0].deployed_path}/"
+    assert calls[2][0:3] == ["custom-snow", "stage", "copy"]
+    assert calls[3][-1] == f"LIST {plan[0].deployed_path}/"
 
 
 def test_upload_fails_before_copy_when_stage_is_missing(tmp_path):
@@ -186,20 +244,17 @@ def test_upload_preflights_stages_across_databases_before_copy(tmp_path):
     manifest["nodes"]["model.test.agent_a"]["database"] = "DB_A"
     manifest["nodes"]["model.test.agent_b"]["database"] = "DB_B"
     plan = build_upload_plan(manifest, tmp_path)
-    calls = []
+    stage = FakeStage()
 
-    def fake_run(command, **kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 0, "ok", "")
+    upload_skills(plan, _config(tmp_path), CommandRunner(stage))
 
-    upload_skills(plan, _config(tmp_path), CommandRunner(fake_run))
-
+    calls = stage.calls
     assert [call[-1] for call in calls[:2]] == [
         "DESCRIBE STAGE DB_A.AGENTS.SKILL_STAGE",
         "DESCRIBE STAGE DB_B.AGENTS.SKILL_STAGE",
     ]
     assert all(call[1] == "sql" for call in calls[:2])
-    assert all(call[1:3] == ["stage", "copy"] for call in calls[2:])
+    assert len(stage.copies()) == 2 and calls.index(stage.copies()[0]) > 2
 
 
 def test_apply_safety_requires_both_allowlists(tmp_path):
@@ -269,7 +324,7 @@ def test_model_metadata_mismatch_fails_before_local_file_check(tmp_path, field):
         model_skills[0]["name"] = "different"
     elif field in {"type", "path"}:
         model_skills[0]["source"][field] = (
-            "git" if field == "type" else "@DB.AGENTS.SKILL_STAGE/library/other"
+            "workspace" if field == "type" else "@DB.AGENTS.SKILL_STAGE/library/other"
         )
     elif field == "missing":
         model_skills = []
@@ -340,28 +395,28 @@ def test_legacy_capabilities_location_fails_actionably(tmp_path, location):
 def test_later_copy_preserves_each_destination_and_stops(tmp_path, failure_kind):
     skills = _local_skills(tmp_path)
     plan = build_upload_plan(_manifest({"agent": skills}), tmp_path)
-    calls = []
 
-    def run(command, **kwargs):
-        calls.append(command)
-        if command[1:3] == ["stage", "copy"] and command[-5].endswith("/three/"):
-            if failure_kind == "oserror":
-                raise OSError("copy unavailable")
-            if failure_kind == "timeout":
-                raise subprocess.TimeoutExpired(command, 1)
-            return subprocess.CompletedProcess(command, 1, "", "later copy failed")
-        return subprocess.CompletedProcess(command, 0, "ok", "")
+    def fail(command):
+        if "/three/" not in _copy_destination(command):
+            return None
+        if failure_kind == "oserror":
+            raise OSError("copy unavailable")
+        if failure_kind == "timeout":
+            raise subprocess.TimeoutExpired(command, 1)
+        return subprocess.CompletedProcess(command, 1, "", "later copy failed")
 
+    stage = FakeStage(fail_copy=fail)
     with pytest.raises(DurablePhaseError) as caught:
-        upload_skills(plan, _config(tmp_path, role="APPROVED_ROLE"), CommandRunner(run))
+        upload_skills(plan, _config(tmp_path, role="APPROVED_ROLE"), CommandRunner(stage))
     phases = caught.value.outcome.to_dict()
     assert [(phase["stage_path"], phase["completed"]) for phase in phases] == [
-        (plan[0].stage_path, True),
-        (plan[1].stage_path, False),
+        (plan[0].deployed_path, True),
+        (plan[1].deployed_path, False),
     ]
     assert "partial effects possible" in phases[1]["detail"]
-    assert len(calls) == 3
-    assert all(command[command.index("--role") + 1] == "APPROVED_ROLE" for command in calls)
+    assert len(stage.copies()) == 2
+    assert all("/two/" not in _copy_destination(command) for command in stage.copies())
+    assert all(command[command.index("--role") + 1] == "APPROVED_ROLE" for command in stage.calls)
 
 
 @pytest.mark.parametrize("domain", ["skill", "agent"])
@@ -371,13 +426,20 @@ def test_cli_later_copy_retains_outcomes_and_role_override(
 ):
     skills = _local_skills(tmp_path)
     manifest = _manifest({"agent": skills})
-    calls = []
     key = tmp_path / "synthetic.p8"
     key.write_text("synthetic key fixture")
+    stage = FakeStage(
+        fail_copy=lambda command: (
+            subprocess.CompletedProcess(command, 1, "", "later copy failed")
+            if "/three/" in _copy_destination(command)
+            else None
+        )
+    )
+    calls = stage.calls
 
     def run(self, command, **kwargs):
-        calls.append(command)
         if command[1:3] == ["connection", "list"]:
+            calls.append(command)
             payload = [
                 {
                     "connection_name": "named",
@@ -391,10 +453,8 @@ def test_cli_later_copy_retains_outcomes_and_role_override(
                 }
             ]
             return subprocess.CompletedProcess(command, 0, json.dumps(payload), "")
-        if command[1:3] == ["stage", "copy"] and command[-5].endswith("/three/"):
-            return subprocess.CompletedProcess(command, 1, "", "later copy failed")
         assert command[1] != "build", "deploy must stop after partial upload"
-        return subprocess.CompletedProcess(command, 0, "ok", "")
+        return stage(command, **kwargs)
 
     def fresh(config, **kwargs):
         assert config.role == "APPROVED_ROLE"
@@ -425,19 +485,26 @@ def test_cli_later_copy_retains_outcomes_and_role_override(
     assert main([*argv, *(["--json"] if json_output else [])]) == 2
     output = capsys.readouterr()
     assert output.err == ""
+    deployed = [path for path, _ in _deployed_paths(tmp_path, manifest)]
     if json_output or domain == "agent":
         payload = json.loads(output.out)
         phases = [phase for phase in payload["phases"] if "stage_path" in phase]
         assert [(phase["stage_path"], phase["completed"]) for phase in phases] == [
-            (skills[0]["source"]["path"], True),
-            (skills[2]["source"]["path"], False),
+            (deployed[0], True),
+            (deployed[1], False),
         ]
         assert payload["status"] == "partial_failure"
     else:
-        assert f"{skills[0]['source']['path']}: completed=True" in output.out
-        assert f"{skills[2]['source']['path']}: completed=False" in output.out
-    assert len(calls) == 4
+        assert f"{deployed[0]}: completed=True" in output.out
+        assert f"{deployed[1]}: completed=False" in output.out
+    assert len(stage.copies()) == 2
     assert all(command[command.index("--role") + 1] == "APPROVED_ROLE" for command in calls[1:])
+
+
+def _deployed_paths(tmp_path, manifest):
+    return [
+        (item.deployed_path, item.skill_names) for item in build_upload_plan(manifest, tmp_path)
+    ]
 
 
 def test_skill_smoke_passes_role_through_command_and_runtime(tmp_path, monkeypatch, capsys):
@@ -496,13 +563,11 @@ def test_compiled_instruction_placeholders_do_not_invalidate_skill_contract(tmp_
 def test_copy_programming_errors_propagate(tmp_path, error_type):
     plan = build_upload_plan(_manifest({"agent": _local_skills(tmp_path)}), tmp_path)
 
-    def run(command, **kwargs):
-        if command[1:3] == ["stage", "copy"]:
-            raise error_type("programming defect")
-        return subprocess.CompletedProcess(command, 0, "ok", "")
+    def fail(command):
+        raise error_type("programming defect")
 
     with pytest.raises(error_type, match="programming defect"):
-        upload_skills(plan, _config(tmp_path), CommandRunner(run))
+        upload_skills(plan, _config(tmp_path), CommandRunner(FakeStage(fail_copy=fail)))
 
 
 def test_later_stage_preflight_failure_prevents_every_copy(tmp_path):
@@ -531,13 +596,15 @@ def test_deploy_retains_successful_destinations_after_build(tmp_path, build_fail
     manifest = _manifest({"agent": _local_skills(tmp_path)})
     config = _config(tmp_path, role="APPROVED_ROLE")
     plan = build_deploy_plan(manifest, config, ["agent"])
-    calls = []
+    stage = FakeStage()
 
     def run(command, **kwargs):
-        calls.append(command)
-        return subprocess.CompletedProcess(
-            command, int(build_fails and command[1] == "build"), "build output", ""
-        )
+        if command[1] == "build":
+            stage.calls.append(command)
+            return subprocess.CompletedProcess(
+                command, int(build_fails), _reconciled_output("DB.AGENTS.AGENT"), ""
+            )
+        return stage(command, **kwargs)
 
     if build_fails:
         with pytest.raises(DurablePhaseError) as caught:
@@ -547,10 +614,10 @@ def test_deploy_retains_successful_destinations_after_build(tmp_path, build_fail
         outcome = apply_deploy_plan(plan, config, runner=CommandRunner(run))
     destinations = [phase for phase in outcome.to_dict() if "stage_path" in phase]
     assert [phase["stage_path"] for phase in destinations] == [
-        item.stage_path for item in plan.skill_uploads
+        item.deployed_path for item in plan.skill_uploads
     ]
     assert all(phase["completed"] for phase in destinations)
-    assert calls[-1][1] == "build"
+    assert stage.calls[-1][1] == "build"
     assert outcome.phases[-1].completed is not build_fails
 
 
@@ -566,3 +633,273 @@ def test_skill_preview_does_not_upload_or_invoke(tmp_path, monkeypatch, capsys):
         args = build_parser().parse_args(["skill", action, "--agent", "agent", "--json"])
         assert handle(args, _config(tmp_path)) == 0
         assert json.loads(capsys.readouterr().out)["applied"] is False
+
+
+# Skill modes: committed Agent versions read skills live, so only a path whose
+# content never changes lets a rollback restore the skill text.
+
+GIT_PATH = "@DB.AGENTS.SKILLS_REPO/commits/" + "a" * 40 + "/skills/one"
+
+
+def _skill_dir(root, files):
+    root.mkdir(parents=True, exist_ok=True)
+    for name, text in files.items():
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text(text)
+    return root
+
+
+def test_inventory_digest_tracks_published_content_only(tmp_path):
+    first = _skill_dir(tmp_path / "a", {"SKILL.md": "# One\n", "scripts/run.py": "print(1)\n"})
+    second = _skill_dir(tmp_path / "b", {"scripts/run.py": "print(1)\n", "SKILL.md": "# One\n"})
+    (second / ".DS_Store").write_text("finder")
+    _skill_dir(second / ".cache", {"note.txt": "local only"})
+
+    files, digest = skill_inventory(first)
+    assert skill_inventory(second) == (files, digest)
+    assert digest.startswith("sha256-") and len(digest) == len("sha256-") + 16
+    assert [item.relative_path for item in files] == ["SKILL.md", "scripts/run.py"]
+
+    (second / "SKILL.md").write_text("# One, revised\n")
+    assert skill_inventory(second)[1] != digest
+    renamed = _skill_dir(tmp_path / "c", {"SKILL.md": "# One\n", "scripts/go.py": "print(1)\n"})
+    assert skill_inventory(renamed)[1] != digest
+
+
+def test_inventory_rejects_symlinks_and_unsafe_file_names(tmp_path):
+    linked = _skill_dir(tmp_path / "linked", {"SKILL.md": "# One\n"})
+    (linked / "alias.md").symlink_to(linked / "SKILL.md")
+    with pytest.raises(ValueError, match="symlink"):
+        skill_inventory(linked)
+    spaced = _skill_dir(tmp_path / "spaced", {"SKILL.md": "# One\n", "my notes.md": "x"})
+    with pytest.raises(ValueError, match="must use only"):
+        skill_inventory(spaced)
+
+
+def test_immutable_default_uploads_to_content_folder_and_reuses_it(tmp_path):
+    skills = _local_skills(tmp_path, ("one",))
+    plan = build_upload_plan(_manifest({"agent": skills}), tmp_path)
+    base = skills[0]["source"]["path"]
+    upload = plan[0]
+    assert upload.mode == "immutable"
+    assert upload.deployed_path == f"{base}/{upload.digest}"
+    assert skill_digests(plan) == {base: upload.digest}
+
+    stage = FakeStage()
+    first = upload_skills(plan, _config(tmp_path), CommandRunner(stage))
+    assert [phase.detail for phase in first.phases] == ["uploaded"]
+    assert [_copy_destination(command) for command in stage.copies()] == [
+        f"{upload.deployed_path}/"
+    ]
+    assert "--no-overwrite" in stage.copies()[0] and "--no-auto-compress" in stage.copies()[0]
+
+    second = upload_skills(plan, _config(tmp_path), CommandRunner(stage))
+    assert [phase.detail for phase in second.phases] == ["reused"]
+    assert len(stage.copies()) == 1
+
+
+def test_changed_skill_gets_new_folder_and_leaves_prior_folder_untouched(tmp_path):
+    skills = _local_skills(tmp_path, ("one",))
+    manifest = _manifest({"agent": skills})
+    stage = FakeStage()
+    before = build_upload_plan(manifest, tmp_path)[0]
+    upload_skills([before], _config(tmp_path), CommandRunner(stage))
+    prior_files = dict(stage.files)
+
+    (tmp_path / "skills/library/one/SKILL.md").write_text("# one, revised\n")
+    after = build_upload_plan(manifest, tmp_path)[0]
+    upload_skills([after], _config(tmp_path), CommandRunner(stage))
+
+    assert after.digest != before.digest
+    assert _copy_destination(stage.copies()[-1]) == f"{after.deployed_path}/"
+    assert {key: value for key, value in stage.files.items() if key in prior_files} == prior_files
+
+
+def test_interrupted_upload_is_completed_without_overwriting(tmp_path):
+    local = _skill_dir(tmp_path / "skills/library/one", {"SKILL.md": "# one\n", "ref.md": "r\n"})
+    plan = build_upload_plan(
+        _manifest({"agent": [_skill("one", "@DB.AGENTS.SKILL_STAGE/library/one")]}), tmp_path
+    )
+    folder = plan[0].deployed_path.split("/", 1)[1]
+    data = (local / "SKILL.md").read_bytes()
+    stage = FakeStage(
+        {
+            ("DB.AGENTS.SKILL_STAGE", f"{folder}/SKILL.md"): (
+                len(data),
+                hashlib.md5(data).hexdigest(),
+            )
+        }
+    )
+
+    outcome = upload_skills(plan, _config(tmp_path), CommandRunner(stage))
+
+    assert [phase.detail for phase in outcome.phases] == ["uploaded"]
+    assert "--no-overwrite" in stage.copies()[0]
+    assert ("DB.AGENTS.SKILL_STAGE", f"{folder}/ref.md") in stage.files
+
+
+@pytest.mark.parametrize("damage", ["different", "extra"])
+def test_content_folder_with_foreign_files_is_refused_not_overwritten(tmp_path, damage):
+    plan = build_upload_plan(_manifest({"agent": _local_skills(tmp_path, ("one",))}), tmp_path)
+    folder = plan[0].deployed_path.split("/", 1)[1]
+    name = "SKILL.md" if damage == "different" else "unexpected.py"
+    stage = FakeStage({("DB.AGENTS.SKILL_STAGE", f"{folder}/{name}"): (3, "0" * 32)})
+
+    with pytest.raises(DurablePhaseError, match="never overwritten"):
+        upload_skills(plan, _config(tmp_path), CommandRunner(stage))
+    assert stage.copies() == []
+
+
+def test_upload_that_does_not_read_back_exactly_fails_before_build(tmp_path):
+    _skill_dir(tmp_path / "skills/library/one", {"SKILL.md": "# one\n", "ref.md": "r\n"})
+    manifest = _manifest({"agent": [_skill("one", "@DB.AGENTS.SKILL_STAGE/library/one")]})
+    config = _config(tmp_path)
+    plan = build_deploy_plan(manifest, config, ["agent"])
+    stage = FakeStage(drop_on_copy={"ref.md"})
+
+    with pytest.raises(DurablePhaseError, match="do not match") as caught:
+        apply_deploy_plan(plan, config, runner=CommandRunner(stage))
+    assert all(call[1] != "build" for call in stage.calls)
+    assert caught.value.outcome.phases[-1].completed is False
+
+
+def test_deploy_passes_verified_digests_to_dbt(tmp_path):
+    skills = _local_skills(tmp_path, ("one", "two"))
+    skills[1]["mode"] = "overwrite"
+    manifest = _manifest({"agent": skills})
+    config = _config(tmp_path)
+    plan = build_deploy_plan(manifest, config, ["agent"])
+    stage = FakeStage()
+
+    apply_deploy_plan(plan, config, runner=CommandRunner(stage))
+
+    build = stage.calls[-1]
+    variables = json.loads(build[build.index("--vars") + 1])
+    immutable = next(item for item in plan.skill_uploads if item.mode == "immutable")
+    assert variables["cortex_agent_skill_digests"] == {immutable.stage_path: immutable.digest}
+
+
+def test_overwrite_mode_is_explicit_and_reports_rollback_risk(tmp_path, monkeypatch, capsys):
+    skills = _local_skills(tmp_path, ("one",))
+    skills[0]["mode"] = "overwrite"
+    manifest = _manifest({"agent": skills})
+    plan = build_upload_plan(manifest, tmp_path)
+    assert plan[0].deployed_path == skills[0]["source"]["path"]
+    assert skill_digests(plan) == {}
+
+    stage = FakeStage()
+    upload_skills(plan, _config(tmp_path), CommandRunner(stage))
+    assert "--overwrite" in stage.copies()[0]
+    assert _copy_destination(stage.copies()[0]) == f"{skills[0]['source']['path']}/"
+
+    monkeypatch.setattr("dbt_cortex_agent.commands.skill.fresh_manifest", lambda *a, **k: manifest)
+    handle(
+        build_parser().parse_args(["skill", "plan", "--agent", "agent", "--json"]),
+        _config(tmp_path),
+    )
+    upload = json.loads(capsys.readouterr().out)["uploads"][0]
+    assert upload["mode"] == "overwrite"
+    assert upload["rollback_restores_skill_text"] is False
+    assert "rolling an Agent back" in upload["warning"]
+
+
+def test_shared_skill_path_requires_one_mode(tmp_path):
+    shared = _local_skills(tmp_path, ("shared",))[0]
+    overwrite = {**shared, "mode": "overwrite"}
+    with pytest.raises(ValueError, match="one mode"):
+        build_upload_plan(_manifest({"agent_a": [shared], "agent_b": [overwrite]}), tmp_path)
+
+
+@pytest.mark.parametrize(
+    "skill",
+    [
+        {**_skill("one", "@DB.AGENTS.SKILL_STAGE/library/one"), "mode": "versioned"},
+        {"name": "one", "source": {"type": "git_integration", "path": GIT_PATH}, "mode": "x"},
+        {
+            "name": "one",
+            "source": {"type": "git_integration", "path": "@DB.AGENTS.REPO/tags/latest/skills/one"},
+        },
+        {
+            "name": "one",
+            "source": {"type": "git_integration", "path": "@DB.AGENTS.REPO/commits/abc/o"},
+        },
+        {
+            "name": "one",
+            "source": {"type": "git_integration", "path": "@DB.AGENTS.REPO/branches/m/o"},
+        },
+        {"name": "one", "source": {"type": "git", "path": GIT_PATH}},
+    ],
+)
+def test_invalid_mode_or_unpinned_git_path_fails_planning(tmp_path, skill):
+    with pytest.raises(ValueError, match="mode|commit|GIT_INTEGRATION"):
+        build_upload_plan(_manifest({"agent": [skill]}), tmp_path)
+
+
+def test_git_skill_is_smoked_but_never_uploaded(tmp_path):
+    upper_sha = GIT_PATH.replace("a" * 40, "A" * 40)
+    git_skill = {"name": "one", "source": {"type": "git_integration", "path": upper_sha}}
+    manifest = _manifest({"agent": [git_skill]})
+    manifest["nodes"]["model.test.agent"]["compiled_code"] = yaml.safe_dump(
+        {"skills": [{"name": "one", "source": {"type": "GIT_INTEGRATION", "path": GIT_PATH}}]}
+    )
+
+    assert build_upload_plan(manifest, tmp_path) == []
+    [declaration] = skill_declarations(manifest, tmp_path)
+    assert (declaration.mode, declaration.local_dir) == ("git", None)
+    assert declaration.stage_path == GIT_PATH
+
+
+def test_model_body_mode_is_not_part_of_the_comparison(tmp_path):
+    skills = _local_skills(tmp_path, ("one",))
+    skills[0]["mode"] = "overwrite"
+    manifest = _manifest({"agent": skills})
+    body = [{"name": "one", "source": {"type": "STAGE", "path": skills[0]["source"]["path"]}}]
+    manifest["nodes"]["model.test.agent"]["compiled_code"] = yaml.safe_dump({"skills": body})
+    assert build_upload_plan(manifest, tmp_path)[0].mode == "overwrite"
+
+
+def test_deploy_commits_the_verified_folder_through_the_real_materialization(
+    tmp_path, macro_harness
+):
+    from types import SimpleNamespace
+
+    skills = _local_skills(tmp_path, ("one",))
+    manifest = _manifest({"agent": skills})
+    config = _config(tmp_path)
+    plan = build_deploy_plan(manifest, config, ["agent"])
+    stage = FakeStage()
+    deployed = []
+    macro_harness.context.update(
+        this=SimpleNamespace(database="DB", schema="AGENTS", identifier="AGENT"),
+        model=SimpleNamespace(name="agent", unique_id="model.test.agent"),
+        config={"meta": {"cortex_agent": {"skills": skills}}},
+        target=SimpleNamespace(name="sandbox"),
+        sql=yaml.safe_dump({"models": {"orchestration": "auto"}, "skills": skills}),
+        pre_hooks=[],
+        post_hooks=[],
+        run_hooks=lambda *args, **kwargs: "",
+        statement=lambda name, caller: "",
+    )
+    macro_harness.override("cortex_agent__assert_staged_skills_ready", lambda spec: None)
+    macro_harness.override("cortex_agent__skills_hash", lambda spec: "")
+    macro_harness.override("cortex_agent__apply_deploy", lambda *args: deployed.append(args))
+
+    def run(command, **kwargs):
+        if command[1] != "build":
+            return stage(command, **kwargs)
+        variables = json.loads(command[command.index("--vars") + 1])
+        variables.update(
+            cortex_agent_allowed_targets=["sandbox"], cortex_agent_allowed_databases=["DB"]
+        )
+        macro_harness.context["var"] = lambda name, default=None: variables.get(name, default)
+        macro_harness.call("materialization_cortex_agent")
+        return subprocess.CompletedProcess(command, 0, _reconciled_output("DB.AGENTS.AGENT"), "")
+
+    apply_deploy_plan(plan, config, runner=CommandRunner(run))
+
+    spec = json.loads(deployed[0][1])
+    assert spec["skills"][0]["source"]["path"] == plan.skill_uploads[0].deployed_path
+    assert (
+        "DB.AGENTS.SKILL_STAGE",
+        plan.skill_uploads[0].deployed_path.split("/", 1)[1] + "/SKILL.md",
+    ) in stage.files

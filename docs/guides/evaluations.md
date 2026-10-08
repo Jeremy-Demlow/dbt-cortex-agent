@@ -82,7 +82,65 @@ signature, proves the Agent exists with a DEFAULT version before upload/START,
 validates live table rows, records the pre-run DEFAULT Agent version,
 starts/polls the evaluation with bounded transient retry, records post-run
 provenance, and writes a candidate JSON under `target/dbt_cortex_agent` unless
-`--artifact-dir` overrides it. DEFAULT drift makes the result indeterminate.
+`--artifact-dir` overrides it. Without `--version`, DEFAULT drift makes the
+result indeterminate.
+
+## Choosing the Agent version and the judges
+
+Without `--version`, Snowflake evaluates whatever an unversioned request reaches:
+LIVE while the Agent has one version, DEFAULT after that.
+
+The candidate's `evaluated_version` is what Snowflake recorded, not what was
+requested. After the run, the CLI reads the run's trace spans through
+`SNOWFLAKE.LOCAL.GET_AI_OBSERVABILITY_EVENTS`
+(`snow.ai.observability.object.version.name`; the eval role already holds
+`MONITOR` on the Agent) and records `evaluated_version_source: run_trace` and
+`observed_versions`. A run whose traces show another version, more than one, or
+none is written as `indeterminate` and failed: its evidence is kept, but it
+cannot gate or become a baseline.
+
+Pass `--version VERSION$N` to `eval run` or `eval verify` to score one committed
+version instead. Only `VERSION$N` is accepted: aliases and the `LIVE`, `FIRST`,
+`LAST`, and `DEFAULT` shortcuts can point somewhere else on the next run. The CLI
+writes `agent_params.agent_version` into the staged config for that run only and
+checks `SHOW VERSIONS IN AGENT` before every START. The version is not part of the
+signed plan, so a baseline accepted on `VERSION$1` gates a candidate on
+`VERSION$2`. The candidate records `requested_version` and the traced
+`evaluated_version`; `eval verify` refuses a candidate whose `requested_version`
+differs from the one it asked for. A DEFAULT move during a pinned run is recorded in
+`default_version_changed` but does not void the result, because DEFAULT was not
+the version under test.
+
+Pin the judges in the suite metadata as well. A system metric written as a
+mapping takes `name` and `version` only (`auto`, `v<major>`, or
+`v<major>_<minor>`). A custom metric takes an optional `model`:
+
+```yaml
+metrics:
+  - name: answer_correctness
+    version: v3
+  - name: tool_selection_accuracy
+    version: v3
+  - name: boundary_adherence
+    model: claude-sonnet-4-6
+    score_ranges: {min_score: [1, 2], median_score: [3, 3], max_score: [4, 5]}
+    prompt: |
+      ...
+```
+
+Plain metric names and custom metrics without `model` use Snowflake's current
+default judge, which rolls forward when that judge's model is deprecated; `v3`
+also picks up later `v3_<minor>` releases. Pin `v<major>_<minor>` where scores
+must stay comparable. Because metric declarations are signed, changing a
+declaration changes the suite signature. Candidates record the declared
+selectors as `metric_judges` and, from the run's eval spans, the judge that
+actually scored each metric as `observed_metric_judges`
+(`{judge, version}`, for example `{"judge": "claude-sonnet-4-6", "version":
+"v3_0"}`; custom metrics report a judge and no version). When both artifacts
+have observed judges, `eval compare` uses them, so two runs that declared `v3`
+but were scored by different minor versions report `metric judges changed`
+instead of comparing their scores. Older artifacts fall back to the declared
+selectors.
 
 The default artifact root is resolved relative to `--project-dir`. An applied
 run writes
@@ -100,8 +158,10 @@ applied run. dbt parse and macro details remain in dbt output/logs; candidate an
 baseline files are the durable evaluation evidence.
 
 Candidate schema v2 includes the same `agent_fqn`, plan/suite signatures, ordered
-ground-truth refs, metrics, thresholds, regression tolerances, row evidence, and
-pre/post DEFAULT version provenance. It contains only single-Agent identity.
+ground-truth refs, metrics, thresholds, regression tolerances, row evidence,
+pre/post DEFAULT version provenance, the requested and traced Agent versions,
+and the declared and observed judge for each metric. It contains only
+single-Agent identity.
 
 ```bash
 dbt-cortex-agent eval gate candidate.json --json

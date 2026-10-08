@@ -1,6 +1,6 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` 0.0.9 is a Snowflake-only dbt package and Python companion for
+`dbt_cortex_agent` 0.0.10 is a Snowflake-only dbt package and Python companion for
 defining, versioning, evaluating, and operating Cortex Agents from dbt models.
 A `materialized='cortex_agent'` model body is the native Agent YAML
 specification.
@@ -17,33 +17,32 @@ evidence. It does not implement a second Agent specification or DDL authority.
 
 ## Install one immutable version on two surfaces
 
-Version 0.0.9 was published on 2026-09-18 after the protected exact-wheel
-qualification. The coordinates below identify that immutable release. The
-repository-local adoption skill was corrected after the tag; see
-[releasing](docs/guides/releasing.md) for the proof and distribution boundary.
+The 0.0.10 candidate is pending qualification and publication. The coordinates
+below are the intended release contract, not a claim that the tag or PyPI
+distribution is already available. See [releasing](docs/guides/releasing.md).
 
 Install the Python companion from PyPI:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.0.9'
+pipx install 'dbt-cortex-agent[runtime]==0.0.10'
 ```
 
 For a managed Python environment, use:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.9'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.10'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
-public HTTPS `v0.0.9` Git tag in `packages.yml`:
+public HTTPS `v0.0.10` Git tag in `packages.yml`:
 
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.9
+    revision: v0.0.10
 ```
 
-After publication, PyPI version `0.0.9` and Git tag `v0.0.9` identify the same immutable release
+After publication, PyPI version `0.0.10` and Git tag `v0.0.10` identify the same immutable release
 across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
 declared dbt dependency, and installed consumer dbt package versions align. A
@@ -116,12 +115,11 @@ For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
 It discovers an existing dbt project, establishes objective/levers/data/proof,
 and guides an existing semantic view, the fixed Orders starter, or an existing
-Agent into a dbt-owned model. It is script-free, shows manual 0.0.9 command
+Agent into a dbt-owned model. It is script-free, shows manual 0.0.10 command
 parity, and stops separately before local writes, Snowflake mutation/runtime,
 paid evaluation, and baseline movement. The checked-in skill is not a claim of
-catalog publication, wheel installation, or assistant-invocation proof. The
-corrected skill on `main` was merged after immutable tag `v0.0.9`; use the
-matching repository version explicitly if adopting its guided workflow.
+catalog publication, wheel installation, or assistant-invocation proof. Use the
+skill from a checkout of the matching release tag.
 
 ## Controlled deploy
 

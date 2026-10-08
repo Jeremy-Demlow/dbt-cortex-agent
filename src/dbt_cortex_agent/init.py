@@ -178,7 +178,7 @@ def _append_vars_text(text: str, additions: dict[str, Any]) -> str:
 def _starter_contents(starter: str) -> dict[str, str]:
     if starter != STARTER_ORDERS:
         raise ValueError(f"Unsupported starter: {starter}")
-    root = files("dbt_cortex_agent").joinpath("starters", starter)
+    root = files("dbt_cortex_agent").joinpath("starters").joinpath(starter)
     return {
         path: root.joinpath(path).read_text(encoding="utf-8").rstrip("\n") + "\n"
         for path in STARTER_PATHS

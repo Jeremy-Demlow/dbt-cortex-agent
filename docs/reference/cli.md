@@ -1,4 +1,4 @@
-# CLI reference (v0.0.9)
+# CLI reference (v0.0.10)
 
 `dbt-cortex-agent` is the single console entry. Manifest-dependent commands run
 a fresh `dbt parse` unless `--no-parse` is supplied for a controlled fixture.
@@ -58,7 +58,7 @@ the project working directory and child environment, including `DBT_PROFILES_DIR
 ### `dbt-cortex-agent init` — MUTATION with `--apply`
 
 Preview or append missing package/project-var entries. Options: shared options,
-`--package-source`, `--revision` (default `v0.0.9`), `--agent-schema`,
+`--package-source`, `--revision` (default `v0.0.10`), `--agent-schema`,
 `--eval-schema`, both repeatable allowlists, `--apply`, and `--run-dbt-deps`.
 Output is messages or JSON with `applied`, `changed_files`, and `messages`.
 By default, the command configures an existing dbt project only; it does not scaffold a dbt
@@ -95,11 +95,13 @@ YAML/JSON is comparison evidence only, never fallback discovery. See
 Preview or upload through Snow CLI. Options: shared options, repeatable `--agent`,
 both repeatable allowlists, and `--apply`.
 
-The resolved role is passed to stage preflight and copy. JSON includes per-copy
-`phases` with `stage_path` and `completed`. Partial upload errors emit retained
-evidence on stdout and exit `2`, as deploy does; they do not discard earlier
-successful destinations. Failed copies may have partial file effects. Subsequent
-destinations are not attempted and no rollback is implied.
+The resolved role is passed to stage preflight, `LIST` verification, and copy.
+JSON includes per-copy `phases` with the deployed `stage_path`, `completed`, and
+`detail`, plus `dbt_vars` for direct immutable builds. Partial upload errors emit
+retained evidence on stdout and exit `2`, as deploy does; they do not discard
+earlier successful destinations. Failed copies may have partial file effects.
+Subsequent destinations are not attempted and no rollback is implied. See
+[skill modes](../guides/skills.md#skill-modes-and-rollback).
 
 ### `dbt-cortex-agent skill smoke` — RUNTIME with `--apply`
 
@@ -195,6 +197,8 @@ consumes the exact candidate, and gates against an established baseline when
 present. Missing baselines use intrinsic thresholds and report
 `baseline_state=not_established`. Quality failure exits `1`; controlled
 configuration or runtime failure exits `2`. Baseline acceptance stays separate.
+`--version VERSION$N` scores that committed version in every selected suite
+instead of the version DEFAULT resolves to; see the evaluations guide.
 
 Verification loads a candidate once and binds its identity, signature, model,
 resources, refs, metrics, and policy to the current plan before gating that same
@@ -208,7 +212,9 @@ point uses `execution=failed`, `gate=not_run`; a completed quality rejection use
 ### `dbt-cortex-agent eval run` — PAID with `--apply`
 
 Render a plan or execute existing native prerequisites. Options: shared options,
-required `--agent`, required `--suite`, `--run-name`, `--poll-attempts` (60),
+required `--agent`, required `--suite`, `--run-name`, `--version VERSION$N`
+(committed version to evaluate; default is the version DEFAULT resolves to),
+`--poll-attempts` (60),
 `--poll-interval` (30), `--transient-retries` (1), and `--apply`. Applied
 execution requires `--connection` and the `runtime` extra.
 It also requires `--warehouse`, both repeatable allowlists, and a configured

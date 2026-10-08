@@ -139,7 +139,7 @@ def _config(tmp_path, manifest):
     )
 
 
-def _plan_payload(*, refs=None, tolerances=None, result_database="DB"):
+def _plan_payload(*, refs=None, tolerances=None, result_database="DB", metrics=None):
     token = "__DBT_CORTEX_AGENT_DATASET_NAME__"
     identity = {
         "agent_name": "orders_assistant",
@@ -168,7 +168,7 @@ def _plan_payload(*, refs=None, tolerances=None, result_database="DB"):
             "run_params": {"label": "orders_assistant/core", "description": "Core suite"},
             "source_metadata": {"type": "dataset", "dataset_name": token},
         },
-        "metrics": ["answer_correctness", "tool_selection_accuracy"],
+        "metrics": metrics or ["answer_correctness", "tool_selection_accuracy"],
     }
     payload = {
         "schema_version": 2,
@@ -746,11 +746,17 @@ def test_preview_never_connects(tmp_path):
 
 
 class LifecycleCursor:
+    # Version and judges that run traces report for the evaluated Agent.
+    traced_judge = ("claude-sonnet-4-6", "3", "0")
+
     def __init__(self):
         self.description = []
         self.rows = []
         self.starts = 0
         self.calls = []
+
+    def traced_version(self):
+        return "VERSION$9"
 
     def execute(self, sql, params=None):
         normalized = " ".join(sql.split()).upper()
@@ -801,6 +807,12 @@ class LifecycleCursor:
             ]
         elif normalized.startswith("SELECT INPUT_QUERY"):
             self.rows = [("Revenue?", "in_scope", "total_revenue")]
+        elif "GET_AI_OBSERVABILITY_EVENTS" in normalized:
+            version = self.traced_version()
+            self.rows = [(version, None, None, None, None)] + [
+                (version, metric, *self.traced_judge)
+                for metric in ("answer_correctness", "tool_selection_accuracy")
+            ]
         elif normalized.startswith("DESCRIBE AGENT"):
             self.description = [("aliases",)]
             self.rows = [(json.dumps({"DEFAULT": "VERSION$9", "VALIDATED": "VERSION$9"}),)]
@@ -1963,3 +1975,312 @@ def test_invalid_source_after_start_retains_original_binding_and_fails(tmp_path,
         ["Revenue?", "in_scope", "total_revenue"]
     ]
     assert candidate["results"][0]["ground_truth_ref"] == "total_revenue"
+
+
+# Version-targeted evaluation and pinned judges.
+
+PINNED_METRICS = [
+    {"name": "answer_correctness", "version": "v3"},
+    {"name": "tool_selection_accuracy", "version": "v3"},
+]
+
+
+class VersionedLifecycleCursor(LifecycleCursor):
+    """Lifecycle cursor that also lists committed versions and keeps staged configs."""
+
+    def __init__(self, versions=("VERSION$2", "VERSION$9"), defaults=("VERSION$9",), traced=None):
+        super().__init__()
+        self.versions = versions
+        self.defaults = list(defaults)
+        self.staged = []
+        self.traced = traced
+
+    def traced_version(self):
+        if self.traced is not None:
+            return self.traced
+        params = self.staged[-1]["evaluation"]["agent_params"] if self.staged else {}
+        return params.get("agent_version") or self.defaults[0]
+
+    def execute(self, sql, params=None):
+        super().execute(sql, params)
+        normalized = " ".join(sql.split()).upper()
+        if normalized.startswith("COPY INTO"):
+            self.staged.append(json.loads(params[0]))
+        elif normalized.startswith("SHOW VERSIONS IN AGENT"):
+            self.description = [("created_on",), ("name",)]
+            self.rows = [("2026-10-01", name) for name in (*self.versions, "")]
+        elif normalized.startswith("DESCRIBE AGENT"):
+            default = self.defaults.pop(0) if len(self.defaults) > 1 else self.defaults[0]
+            self.rows = [(json.dumps({"DEFAULT": default}),)]
+
+
+def _versioned_run(tmp_path, cursor, agent_version, *, metrics=None):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config,
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(refs=["total_revenue"], metrics=metrics),
+    )
+    connection = LifecycleConnection()
+    connection.cursor_value = cursor
+    return run_evaluation(
+        config,
+        plan,
+        apply=True,
+        run_name="pinned",
+        poll_attempts=1,
+        poll_interval=0,
+        transient_retries=1,
+        allowed_targets=["sandbox"],
+        allowed_databases=["DB"],
+        agent_version=agent_version,
+        connect=lambda _: connection,
+        sleep=lambda _: None,
+    )
+
+
+def test_pinned_version_is_staged_but_not_signed(tmp_path):
+    from dbt_cortex_agent.eval.lifecycle import render_eval_config
+
+    plan = build_plan(
+        _config(tmp_path, _manifest()),
+        agent_name="orders_assistant",
+        suite_name="core",
+        plan_payload=_plan_payload(),
+    )
+    signature = plan.suite_signature
+    staged = json.loads(render_eval_config(plan, "DS_1", "version$2"))
+    unpinned = json.loads(render_eval_config(plan, "DS_1"))
+
+    assert staged["evaluation"]["agent_params"]["agent_version"] == "VERSION$2"
+    assert "agent_version" not in unpinned["evaluation"]["agent_params"]
+    assert "agent_version" not in plan.native_eval_config["evaluation"]["agent_params"]
+    assert plan.suite_signature == signature
+
+
+def test_pinned_run_records_requested_and_resolved_version(tmp_path):
+    cursor = VersionedLifecycleCursor()
+    candidate = load_result(_versioned_run(tmp_path, cursor, "VERSION$2", metrics=PINNED_METRICS))
+
+    metadata = candidate["run_metadata"]
+    assert metadata["requested_version"] == metadata["evaluated_version"] == "VERSION$2"
+    assert metadata["pre_start"]["default_version"] == "VERSION$9"
+    assert [config["evaluation"]["agent_params"]["agent_version"] for config in cursor.staged] == [
+        "VERSION$2",
+        "VERSION$2",
+    ]
+    assert candidate["metric_judges"] == {
+        "answer_correctness": "v3",
+        "tool_selection_accuracy": "v3",
+    }
+
+
+def test_unpinned_run_records_default_as_evaluated_version(tmp_path):
+    cursor = VersionedLifecycleCursor()
+    candidate = load_result(_versioned_run(tmp_path, cursor, None))
+
+    assert candidate["run_metadata"]["requested_version"] is None
+    assert candidate["run_metadata"]["evaluated_version"] == "VERSION$9"
+    assert all("agent_version" not in c["evaluation"]["agent_params"] for c in cursor.staged)
+    assert candidate["metric_judges"] == {
+        "answer_correctness": "auto",
+        "tool_selection_accuracy": "auto",
+    }
+
+
+def test_pinned_run_fails_before_start_when_version_is_not_committed(tmp_path):
+    cursor = VersionedLifecycleCursor(versions=("VERSION$9",))
+    with pytest.raises(RuntimeError, match=r"no committed VERSION\$2"):
+        _versioned_run(tmp_path, cursor, "VERSION$2")
+    assert cursor.starts == 0
+
+
+def test_pinned_run_is_not_voided_when_default_moves(tmp_path):
+    # Reads: initial, pre-start for the failed try, pre-start for the retry, post-completion.
+    cursor = VersionedLifecycleCursor(defaults=("VERSION$9",) * 3 + ("VERSION$10",))
+    candidate = load_result(_versioned_run(tmp_path, cursor, "VERSION$2"))
+
+    assert candidate["run_metadata"]["default_version_changed"] is True
+    assert candidate["status"] == "completed"
+    assert candidate["passed"] is True
+
+
+def test_unpinned_run_still_stops_when_default_moves_before_start(tmp_path):
+    cursor = VersionedLifecycleCursor(defaults=("VERSION$9", "VERSION$10"))
+    with pytest.raises(RuntimeError, match="changed before evaluation START"):
+        _versioned_run(tmp_path, cursor, None)
+    assert cursor.starts == 0
+
+
+@pytest.mark.parametrize("selector", ["production", "DEFAULT", "LIVE", "VERSION$0"])
+def test_eval_version_must_be_committed_before_connecting(tmp_path, selector):
+    config = _config(tmp_path, _manifest())
+    plan = build_plan(
+        config, agent_name="orders_assistant", suite_name="core", plan_payload=_plan_payload()
+    )
+    with pytest.raises(ValueError, match=r"VERSION\$N"):
+        run_evaluation(
+            config,
+            plan,
+            apply=True,
+            agent_version=selector,
+            allowed_targets=["sandbox"],
+            allowed_databases=["DB"],
+            connect=lambda _: pytest.fail("connected"),
+        )
+
+
+def test_artifact_rejects_evaluated_version_that_differs_from_request(tmp_path):
+    from dbt_cortex_agent.eval.results import validate_result
+
+    candidate = load_result(_versioned_run(tmp_path, VersionedLifecycleCursor(), "VERSION$2"))
+    candidate["run_metadata"]["evaluated_version"] = "VERSION$9"
+    with pytest.raises(ValueError, match="must be indeterminate and failed"):
+        validate_result(candidate, "candidate")
+
+
+def test_plan_refuses_a_signed_agent_version(tmp_path):
+    payload = _plan_payload()
+    payload["native_eval_config"]["evaluation"]["agent_params"]["agent_version"] = "VERSION$1"
+    signed = json.loads(payload["signature_material"])
+    signed["native_eval_config"] = payload["native_eval_config"]
+    payload["signature_material"] = json.dumps(signed, separators=(",", ":"))
+    payload["suite_signature"] = hashlib.md5(payload["signature_material"].encode()).hexdigest()
+    with pytest.raises(ValueError, match="must not sign agent_version"):
+        build_plan(
+            _config(tmp_path, _manifest()),
+            agent_name="orders_assistant",
+            suite_name="core",
+            plan_payload=payload,
+        )
+
+
+def test_plan_metric_names_must_match_native_config(tmp_path):
+    with pytest.raises(ValueError, match="must match the native config metrics"):
+        build_plan(
+            _config(tmp_path, _manifest()),
+            agent_name="orders_assistant",
+            suite_name="core",
+            plan_payload=_plan_payload(metrics=["answer_correctness", "logical_consistency"]),
+        )
+
+
+def test_metric_declarations_accept_pinned_judges():
+    names, _, _ = validate_eval_meta(
+        {
+            "metrics": [
+                {"name": "answer_correctness", "version": "v3"},
+                {"name": "logical_consistency", "version": "v3_0"},
+                {"name": "tool_selection_accuracy", "version": "auto"},
+                {
+                    "name": "boundary_adherence",
+                    "model": "claude-sonnet-4-6",
+                    "prompt": "Score 1-5.",
+                    "score_ranges": {
+                        "min_score": [1, 2],
+                        "median_score": [3, 3],
+                        "max_score": [4, 5],
+                    },
+                },
+            ]
+        }
+    )
+    assert names == [
+        "answer_correctness",
+        "logical_consistency",
+        "tool_selection_accuracy",
+        "boundary_adherence",
+    ]
+
+
+@pytest.mark.parametrize(
+    "metric, message",
+    [
+        ({"name": "answer_correctness", "version": "3"}, "version must be auto"),
+        ({"name": "answer_correctness"}, "version must be auto"),
+        ({"name": "answer_correctness", "version": "v3", "prompt": "x"}, "accepts only name"),
+        ({"name": "quality", "prompt": "x", "model": " "}, "model must be a nonblank"),
+    ],
+)
+def test_metric_declarations_reject_malformed_judges(metric, message):
+    with pytest.raises(ValueError, match=message):
+        validate_eval_meta({"metrics": [metric]})
+
+
+def _versioned_candidate(tmp_path, name, agent_version, metrics=None, judge=None):
+    cursor = VersionedLifecycleCursor()
+    if judge is not None:
+        cursor.traced_judge = judge
+    return load_result(_versioned_run(tmp_path / name, cursor, agent_version, metrics=metrics))
+
+
+def test_baseline_on_one_version_compares_with_candidate_on_another(tmp_path):
+    baseline = build_baseline(_versioned_candidate(tmp_path, "base", "VERSION$9", PINNED_METRICS))
+    candidate = _versioned_candidate(tmp_path, "cand", "VERSION$2", PINNED_METRICS)
+
+    result = compare_results(baseline, candidate)
+    assert baseline["run_metadata"]["evaluated_version"] == "VERSION$9"
+    assert result["suite_change"] is None
+    assert result["passed"] is True
+
+
+def test_compare_refuses_runs_scored_by_different_judges(tmp_path):
+    # `auto` resolved to the v1 judge; `v3` resolves to the v3 judge.
+    v1_judge = ("claude-4-sonnet", "1", "0")
+    baseline = build_baseline(_versioned_candidate(tmp_path, "base", "VERSION$2", judge=v1_judge))
+    candidate = _versioned_candidate(tmp_path, "cand", "VERSION$2", PINNED_METRICS)
+
+    result = compare_results(baseline, candidate)
+    assert result["passed"] is False
+    assert result["suite_change"].startswith("metric judges changed")
+    assert baseline["observed_metric_judges"]["answer_correctness"] == {
+        "judge": "claude-4-sonnet",
+        "version": "v1_0",
+    }
+
+
+def test_observed_judges_decide_comparability_over_declared_selectors(tmp_path):
+    from dbt_cortex_agent.eval.compare import suite_change
+
+    baseline = build_baseline(_versioned_candidate(tmp_path, "base", "VERSION$2", PINNED_METRICS))
+    candidate = _versioned_candidate(tmp_path, "cand", "VERSION$2", PINNED_METRICS)
+    assert suite_change(baseline, candidate) is None
+    # Same declared `v3` selector, but Snowflake scored with a later minor version.
+    candidate["observed_metric_judges"]["answer_correctness"]["version"] = "v3_1"
+    assert suite_change(baseline, candidate).startswith("metric judges changed")
+
+
+def test_evaluated_version_comes_from_run_traces(tmp_path):
+    cursor = VersionedLifecycleCursor()
+    candidate = load_result(_versioned_run(tmp_path, cursor, "VERSION$2"))
+
+    metadata = candidate["run_metadata"]
+    assert metadata["evaluated_version_source"] == "run_trace"
+    assert metadata["observed_versions"] == ["VERSION$2"]
+    assert any("GET_AI_OBSERVABILITY_EVENTS" in call for call in cursor.calls)
+
+
+@pytest.mark.parametrize("traced", ["VERSION$9", ""])
+def test_pinned_run_that_traces_another_version_is_indeterminate(tmp_path, traced):
+    cursor = VersionedLifecycleCursor(traced=traced)
+    candidate = load_result(_versioned_run(tmp_path, cursor, "VERSION$2"))
+
+    assert candidate["status"] == "indeterminate"
+    assert candidate["passed"] is False
+    assert candidate["run_metadata"]["evaluated_version"] == (traced or None)
+    assert any("result is indeterminate" in item for item in candidate["threshold_failures"])
+
+
+def test_eval_cli_version_accepts_only_committed_versions():
+    from dbt_cortex_agent.cli import build_parser
+
+    parser = build_parser()
+    args = parser.parse_args(
+        ["eval", "run", "--agent", "a", "--suite", "s", "--version", "version$3"]
+    )
+    assert args.agent_version == "VERSION$3"
+    verify = parser.parse_args(["eval", "verify", "--agent", "a", "--suite", "s"])
+    assert verify.agent_version is None
+    with pytest.raises(SystemExit):
+        parser.parse_args(["eval", "run", "--agent", "a", "--suite", "s", "--version", "LIVE"])

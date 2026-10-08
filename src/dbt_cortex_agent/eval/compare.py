@@ -14,11 +14,22 @@ def metric_averages(result: dict[str, Any]) -> dict[str, float]:
     }
 
 
+def _judges_changed(baseline: dict[str, Any], candidate: dict[str, Any]) -> bool:
+    # Judges Snowflake recorded for each run are authoritative; declared
+    # selectors such as `auto` or `v3` can resolve differently over time.
+    for field in ("observed_metric_judges", "metric_judges"):
+        if field in baseline and field in candidate:
+            return bool(baseline[field] != candidate[field])
+    return False
+
+
 def suite_change(baseline: dict[str, Any], candidate: dict[str, Any]) -> str | None:
     if baseline.get("ordered_ground_truth_refs") != candidate.get("ordered_ground_truth_refs"):
         return "ordered ground-truth refs changed"
     if baseline.get("metric_names") != candidate.get("metric_names"):
         return "metric contract changed"
+    if _judges_changed(baseline, candidate):
+        return "metric judges changed; scores from different judges are not comparable"
     if baseline.get("thresholds") != candidate.get("thresholds"):
         return "threshold policy changed"
     if baseline.get("regression_tolerances") != candidate.get("regression_tolerances"):

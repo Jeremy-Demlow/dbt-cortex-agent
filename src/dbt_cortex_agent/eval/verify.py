@@ -20,7 +20,9 @@ class VerifySelection:
     baseline: Path
 
 
-def _bind_candidate(candidate: dict[str, Any], plan: EvalPlan) -> None:
+def _bind_candidate(
+    candidate: dict[str, Any], plan: EvalPlan, agent_version: str | None = None
+) -> None:
     expected = {
         "plan_schema_version": plan.schema_version,
         "plan_identity": plan.plan_identity,
@@ -37,6 +39,8 @@ def _bind_candidate(candidate: dict[str, Any], plan: EvalPlan) -> None:
         "regression_tolerances": plan.regression_tolerances,
     }
     mismatched = [field for field, value in expected.items() if candidate.get(field) != value]
+    if (candidate.get("run_metadata") or {}).get("requested_version") != agent_version:
+        mismatched.append("requested_version")
     if mismatched:
         raise ValueError(
             "Evaluation candidate does not match current plan: " + ", ".join(mismatched)
@@ -85,6 +89,7 @@ def verify_evaluations(
     poll_attempts: int,
     poll_interval: float,
     transient_retries: int,
+    agent_version: str | None = None,
     runner: CommandRunner | None = None,
     evaluate: Callable[..., Path | None] = run_evaluation,
     render_plan: Callable[..., EvalPlan] = build_plan,
@@ -97,6 +102,7 @@ def verify_evaluations(
             "eval_model": item.plan.eval_model,
             "baseline": str(item.baseline),
             "baseline_state": "established" if item.baseline.is_file() else "not_established",
+            "agent_version": agent_version,
         }
         for item in selections
     ]
@@ -164,13 +170,14 @@ def verify_evaluations(
                 transient_retries=transient_retries,
                 allowed_targets=allowed_targets,
                 allowed_databases=allowed_databases,
+                agent_version=agent_version,
             )
             if candidate_path is None:
                 raise RuntimeError("Applied evaluation produced no candidate")
             execution = "completed"
             gate_state = "error"
             candidate = load_result(candidate_path, "candidate")
-            _bind_candidate(candidate, current_plan)
+            _bind_candidate(candidate, current_plan, agent_version)
             if item.baseline.is_file():
                 gate = compare_results(load_result(item.baseline, "baseline"), candidate)
                 passed = bool(gate["passed"])

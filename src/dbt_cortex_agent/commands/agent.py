@@ -16,7 +16,7 @@ from ..manifest import (
     select_agents,
 )
 from ..scaffold import apply_scaffold_plan, build_scaffold_plan
-from ..skills import assert_apply_safety
+from ..skills import assert_apply_safety, upload_payload
 from .common import add_allowlists, emit_json, fresh_manifest, require_explicit_connection
 
 RETAINED_ON_DROP = (
@@ -286,15 +286,7 @@ def _handle_deploy(args: argparse.Namespace, config: Config, manifest: dict) -> 
         "applied": bool(args.apply),
         "target": config.target,
         "agents": list(plan.agents),
-        "skill_uploads": [
-            {
-                "stage_path": item.stage_path,
-                "local_dir": str(item.local_dir),
-                "skills": list(item.skill_names),
-                "agents": list(item.agent_names),
-            }
-            for item in plan.skill_uploads
-        ],
+        "skill_uploads": [upload_payload(item) for item in plan.skill_uploads],
         "dbt_selection": list(plan.dbt_selection),
         "resource_databases": list(plan.resource_databases),
         "phases": outcome.to_dict() if outcome else [],

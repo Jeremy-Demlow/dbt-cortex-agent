@@ -125,3 +125,16 @@ these results proves an authenticated CoWork UI session or assistant skill routi
 The corrected repository-local skill was merged after `v0.0.9` and is not part
 of its immutable source tag. Never move `v0.0.9` to include later documentation;
 use a future release if immutable distribution of the corrected skill is required.
+
+The `0.0.10` candidate is pending qualification and publication. It carries the
+corrected skill, immutable stage skills, fqn deploy selection, and traced
+evaluation provenance. Its protected lifecycle proof Agents declare no skills, so
+that gate exercises fqn selection and reconciliation, not skill modes; the
+immutable and `git_integration` skill modes were proven in separate approved live
+probes, and paid native Agent Evaluation remains outside the release gate.
+
+After PyPI publication, the release workflow retains the completed protected
+live attestation as `release-live-attestation.json` on the GitHub release.
+Matched-release adopters compare its wheel digest with PyPI and verify the
+registry publication provenance against the tag commit and release workflow.
+This durable evidence is needed after temporary Actions artifacts expire.

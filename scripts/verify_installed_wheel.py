@@ -18,6 +18,7 @@ import yaml
 from jinja2 import Environment, StrictUndefined
 
 AGENT = "orders_assistant"
+AGENT_SELECTION = [f"+fqn:wheel_verify_consumer.agents.{AGENT}.{AGENT}"]
 SUITE = "core"
 TARGET = "sandbox"
 DATABASE = "WHEEL_VERIFY_DB"
@@ -231,7 +232,7 @@ def validate_project_evidence(  # noqa: C901
         raise AssertionError(f"{evidence.name}: default schema Agent FQN drift: {fqn}")
     if (
         evidence.deploy.get("applied") is not False
-        or evidence.deploy.get("dbt_selection") != [f"+{AGENT}"]
+        or evidence.deploy.get("dbt_selection") != AGENT_SELECTION
         or [agent.get("physical_fqn") for agent in evidence.deploy.get("agents", [])] != [fqn]
     ):
         raise AssertionError(f"{evidence.name}: deploy preview Agent FQN drift")
@@ -383,7 +384,7 @@ def exercise_project(
         cwd=project_dir,
         env=env,
     )
-    if deploy.get("applied") is not False or deploy.get("dbt_selection") != [f"+{AGENT}"]:
+    if deploy.get("applied") is not False or deploy.get("dbt_selection") != AGENT_SELECTION:
         raise AssertionError(f"{project_dir.name}: invalid Agent deploy preview")
     compiled_agent, before = compiled_agent_evidence(project_dir)
     smoke = _cli_json(

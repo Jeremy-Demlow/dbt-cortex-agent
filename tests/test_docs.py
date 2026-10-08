@@ -50,7 +50,7 @@ def test_active_docs_describe_v001_materialization_boundary():
     ]
     combined = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
-    assert "0.0.9" in combined
+    assert "0.0.10" in combined
     assert "dbt build --select" in combined
     assert "Python must not render, create, alter, commit, alias, grant, promote" in combined
     assert "Legacy exposure declarations remain supported" not in combined
@@ -151,7 +151,7 @@ def test_non_mutating_quickstart_has_no_applied_remote_command():
 
 
 def test_current_release_identity_is_consistent_across_public_docs():
-    expected = "0.0.9"
+    expected = "0.0.10"
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     installation = (ROOT / "docs/getting-started/installation.md").read_text(encoding="utf-8")
     cli_reference = (ROOT / "docs/reference/cli.md").read_text(encoding="utf-8")
@@ -161,8 +161,7 @@ def test_current_release_identity_is_consistent_across_public_docs():
         assert f"revision: v{expected}" in text
     assert cli_reference.startswith(f"# CLI reference (v{expected})")
     for text in (readme, installation):
-        assert "published on 2026-09-18" in text
-        assert "pending qualification and publication" not in text
+        assert "pending qualification and publication" in text
 
 
 def test_product_docs_do_not_invoke_absent_grants_or_promise_role_switching():
@@ -225,8 +224,10 @@ def test_release_setup_documents_protected_environment_and_unqualified_work():
     changelog = (ROOT / "CHANGELOG.md").read_text()
     assert "## 0.0.9 — 2026-09-18" in changelog
     assert "## UNRELEASED" not in changelog
+    assert "## 0.0.10 — 2026-10-07" in changelog
     assert "Published on 2026-09-18" in changelog
-    assert "pending qualification and publication" not in changelog
+    assert "Candidate pending qualification and publication" in changelog
+    assert "`0.0.10` candidate is pending qualification and publication" in " ".join(text.split())
     assert "release run 35400838944" in text
     assert "paid native Agent Evaluation" in text
     assert "not part of its immutable source tag" in " ".join(text.split())

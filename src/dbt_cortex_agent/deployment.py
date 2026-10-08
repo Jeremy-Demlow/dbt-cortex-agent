@@ -15,7 +15,7 @@ from .domain import (
 )
 from .identifiers import identifier
 from .manifest import assert_resource_databases_allowed, select_agents
-from .skills import build_upload_plan, upload_skills
+from .skills import DIGEST_VAR, build_upload_plan, skill_digests, upload_skills
 
 DEPLOY_PHASE_PREFIX = "CORTEX_AGENT_DEPLOY_PHASE="
 
@@ -108,6 +108,20 @@ def _dependency_databases(
     return tuple(sorted(databases))
 
 
+def _agent_selector(manifest: dict[str, Any], unique_id: str) -> str:
+    # A bare model name also matches any node whose fqn starts with it (for
+    # example the project name), so select each Agent by its full manifest fqn.
+    node = (manifest.get("nodes") or {}).get(unique_id) or {}
+    parts = node.get("fqn")
+    if (
+        not isinstance(parts, list)
+        or not parts
+        or not all(isinstance(part, str) and part and "." not in part for part in parts)
+    ):
+        raise ValueError(f"dbt manifest node {unique_id!r} has no usable fqn; reparse the project")
+    return "+fqn:" + ".".join(parts)
+
+
 def build_deploy_plan(
     manifest: dict[str, Any], config: Config, agent_names: list[str] | None
 ) -> DeployPlan:
@@ -130,7 +144,7 @@ def build_deploy_plan(
     return DeployPlan(
         agents=agents,
         skill_uploads=uploads,
-        dbt_selection=tuple(f"+{name}" for name in names),
+        dbt_selection=tuple(_agent_selector(manifest, item["unique_id"]) for item in selected),
         resource_databases=tuple(sorted(resource_databases)),
     )
 
@@ -174,6 +188,14 @@ def apply_deploy_plan(
     outcome = OperationOutcome((*outcome.phases, *uploads.phases)).complete(
         LifecyclePhase.SKILLS_UPLOADED
     )
+    variables: dict[str, object] = {
+        "cortex_agent_expected_fqns": {
+            agent["unique_id"]: agent["physical_fqn"] for agent in plan.agents
+        }
+    }
+    digests = skill_digests(plan.skill_uploads)
+    if digests:
+        variables[DIGEST_VAR] = digests
     result = run_dbt_build(
         config.dbt_executable,
         config.project_dir,
@@ -181,14 +203,24 @@ def apply_deploy_plan(
         plan.dbt_selection,
         command_runner,
         config.dbt_env,
-        variables={
-            "cortex_agent_expected_fqns": {
-                agent["unique_id"]: agent["physical_fqn"] for agent in plan.agents
-            }
-        },
+        variables=variables,
     )
     output = "\n".join(value for value in (result.stdout, result.stderr) if value)
     outcome = _dbt_phases(output, outcome)
+    if result.returncode == 0:
+        reconciled = {
+            item.agent_fqn
+            for item in outcome.phases
+            if item.phase is LifecyclePhase.LIVE_RECONCILED and item.completed
+        }
+        missing = [agent["physical_fqn"] for agent in plan.agents]
+        missing = [fqn for fqn in missing if fqn not in reconciled]
+        if missing:
+            message = (
+                "dbt build succeeded but did not reconcile planned Agents: "
+                f"{', '.join(missing)}; check the dbt selection"
+            )
+            raise DurablePhaseError(message, outcome.fail(LifecyclePhase.VERIFIED, message))
     if result.returncode != 0:
         details = [value.strip() for value in (result.stdout, result.stderr) if value.strip()]
         detail = "\n".join(details) or "dbt build failed"

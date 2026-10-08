@@ -551,6 +551,7 @@ def test_verify_rejects_consistent_foreign_candidate_fields(tmp_path, field, val
         candidate[field] = value
         candidate["results"][0]["metric_name"] = value[0]
         candidate["summary"][value[0]] = candidate["summary"].pop("answer_correctness")
+        candidate["metric_judges"] = {value[0]: "auto"}
     else:
         candidate[field] = value
         candidate["results"][0]["ground_truth_ref"] = value[0]
@@ -661,3 +662,48 @@ def test_evaluation_acquisition_cleanup_preserves_primary(tmp_path, phase, error
     assert failure.value is primary
     assert closed == (["connection"] if phase == "cursor" else ["cursor", "connection"])
     assert failure.value.cleanup_errors
+
+
+def _pinned_candidate(requested):
+    plan = _plan()
+    candidate = _candidate(plan)
+    candidate["run_metadata"]["requested_version"] = requested
+    candidate["run_metadata"]["evaluated_version"] = requested or "VERSION$1"
+    return candidate
+
+
+@pytest.mark.parametrize("requested", ["VERSION$2", None])
+def test_verify_forwards_version_and_binds_it_to_the_candidate(tmp_path, requested):
+    candidate_path = tmp_path / "candidate.json"
+    candidate_path.write_text(json.dumps(_pinned_candidate("VERSION$2")))
+    seen = []
+
+    def evaluate(_config, _plan, **kwargs):
+        seen.append(kwargs["agent_version"])
+        return candidate_path
+
+    plan = _plan()
+    result = verify_evaluations(
+        _config(tmp_path),
+        (VerifySelection(plan, tmp_path / "baseline.json"),),
+        apply=True,
+        allowed_targets=["sandbox"],
+        allowed_databases=["DB"],
+        poll_attempts=1,
+        poll_interval=0,
+        transient_retries=0,
+        agent_version=requested,
+        runner=CommandRunner(
+            lambda command, **kwargs: subprocess.CompletedProcess(command, 0, "ok", "")
+        ),
+        evaluate=evaluate,
+        render_plan=lambda *_args, **_kwargs: plan,
+    )
+
+    assert seen == [requested]
+    if requested:
+        assert result["outcome"] == "passed"
+        assert result["suites"][0]["agent_version"] == "VERSION$2"
+    else:
+        assert result["outcome"] == "infrastructure_failed"
+        assert "requested_version" in result["error"]

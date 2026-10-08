@@ -66,7 +66,7 @@ def _evidence(tmp_path, *, include_eval, fqn=verifier.EXPECTED_AGENT_FQN):
         "digest",
         {
             "applied": False,
-            "dbt_selection": [f"+{verifier.AGENT}"],
+            "dbt_selection": verifier.AGENT_SELECTION,
             "agents": [{"physical_fqn": fqn}],
         },
     )

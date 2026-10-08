@@ -3,6 +3,38 @@
 This project had no public beta or stable release before `0.0.1`. Earlier Git
 history records design experiments, not supported package versions.
 
+## 0.0.10 — 2026-10-08
+
+Candidate pending qualification and publication; this heading is not release proof.
+
+- Add `--version VERSION$N` to `eval run` and `eval verify` to score one
+  committed Agent version. The version is staged per run, checked before START,
+  and recorded as `requested_version` and `evaluated_version`; a DEFAULT move no
+  longer voids a pinned run.
+- Accept pinned system metric judges (`{name, version}`) and a custom metric
+  `model`. Candidates record `metric_judges`, and comparison refuses runs scored
+  by different judges.
+- Record what Snowflake ran, not what was requested: `evaluated_version` and
+  `observed_metric_judges` come from the run's trace spans. A run that traces
+  another version, or none, is `indeterminate`; comparison prefers observed
+  judges, so a `v3` selector that resolved to a different minor version is
+  caught.
+- **Breaking:** stage skills default to `immutable`. Each deploy uploads a
+  skill to a content-addressed `<path>/sha256-<digest>` folder, reads it back
+  before dbt build, and commits that path, so rolling an Agent back also rolls
+  back its skill text. Snowflake reads skills live; previously every version read
+  the same overwritten folder. Declare `mode: overwrite` for the earlier
+  behavior, or a `git_integration` skill pinned to a tagged `commits/<sha>`.
+  Direct `dbt build` of an immutable skill now needs the `dbt_vars` printed by
+  `skill upload --apply`.
+- Remove the documented `cortex_agent_validate_staged_skills` var; nothing read it.
+- `agent deploy` selects each Agent by its full manifest fqn. `+<name>` also
+  matched a dbt project of the same name and built its other Agents (the
+  expected-FQN guard stopped them). A successful build that does not reconcile
+  every planned Agent now fails instead of reporting `verified`.
+- Ship the corrected repository-local adoption skill in the release tag; it now
+  describes skill modes.
+
 ## 0.0.9 — 2026-09-18
 
 Published on 2026-09-18 after protected exact-wheel qualification and PyPI

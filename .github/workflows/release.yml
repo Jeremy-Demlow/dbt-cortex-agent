@@ -139,3 +139,29 @@ jobs:
           path: dist/
       - name: Publish distributions with PyPI trusted publishing
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  retain-proof:
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Retain protected live qualification on the immutable release
+        uses: actions/download-artifact@v8
+        with:
+          name: release-live-qualification
+          path: release-proof
+      - name: Publish durable wheel qualification evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import pathlib, shutil
+          matches = list(pathlib.Path('release-proof').rglob('live-attestation.json'))
+          if len(matches) != 1:
+              raise SystemExit('Expected exactly one protected live attestation')
+          shutil.copyfile(matches[0], 'release-live-attestation.json')
+          PY
+          gh release upload "$RELEASE_TAG" release-live-attestation.json --repo "$GITHUB_REPOSITORY"

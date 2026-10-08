@@ -1,5 +1,8 @@
 import re
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -138,3 +141,48 @@ def test_eval_run_name_is_validated_before_sql_interpolation():
     assert "Evaluation run_name must contain only" in run
     assert "cortex_eval__assert_run_name(eval_run_name)" in run
     assert "cortex_eval__assert_run_name(eval_run_name)" in render
+
+
+def _validate_metrics(macro_harness, metrics):
+    node = SimpleNamespace(config={"materialized": "table"})
+    meta = {
+        "name": "core",
+        "agent": "assistant",
+        "metrics": metrics,
+        "questions": [{"id": "q1", "ground_truth_ref": "r1"}],
+    }
+    macro_harness.override("cortex_eval__get_eval", lambda _name: node)
+    macro_harness.override("cortex_eval__get_eval_meta", lambda _name: meta)
+    macro_harness.override("cortex_agent__get_agent", lambda _name: {})
+    macro_harness.override("cortex_agent__agent_meta", lambda _resource: {})
+    macro_harness.override("cortex_eval__native_supported_tool_names", lambda _name: [])
+    macro_harness.override("cortex_eval__unsupported_native_tool_claims", lambda _name: {})
+    macro_harness.override("cortex_eval__dataset_fqn", lambda _name: "DB.EVAL.DATA")
+    return macro_harness.call("cortex_eval__validate", "eval_core")
+
+
+def test_eval_contract_accepts_pinned_system_metrics_and_custom_judge_models(macro_harness):
+    assert _validate_metrics(
+        macro_harness,
+        [
+            "logical_consistency",
+            {"name": "answer_correctness", "version": "v3"},
+            {"name": "tool_execution_accuracy", "version": "v3_0"},
+            {"name": "boundary_adherence", "model": "claude-sonnet-4-6", "prompt": "Score 1-5."},
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "metric, message",
+    [
+        ({"name": "answer_correctness"}, "version must be auto"),
+        ({"name": "answer_correctness", "version": "latest"}, "version must be auto"),
+        ({"name": "answer_correctness", "version": "v3", "prompt": "x"}, "accepts only name"),
+        ({"name": "quality"}, "missing prompt"),
+        ({"name": "quality", "prompt": "x", "model": ""}, "model must be a nonblank"),
+    ],
+)
+def test_eval_contract_rejects_malformed_metric_judges(macro_harness, metric, message):
+    with pytest.raises(ValueError, match=message):
+        _validate_metrics(macro_harness, [metric])

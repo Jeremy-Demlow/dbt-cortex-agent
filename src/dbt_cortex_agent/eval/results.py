@@ -7,7 +7,14 @@ from typing import Any
 
 from ..artifacts import ARTIFACT_SCHEMA_VERSION, artifact_slug, contained_path
 from ..domain import finite_number
-from .dataset import TOOL_METRICS, annotate_rows, validate_metric_policy, validate_snapshot
+from ..identifiers import version
+from .dataset import (
+    TOOL_METRICS,
+    annotate_rows,
+    metric_judges,
+    validate_metric_policy,
+    validate_snapshot,
+)
 
 CURRENT_PLAN_SCHEMA_VERSION = 2
 
@@ -112,8 +119,32 @@ def threshold_failures(
     return failures
 
 
+def _version_mismatch(provenance: dict[str, Any]) -> str | None:
+    """Why the observed Agent version cannot stand for the intended one, if it cannot."""
+    if provenance.get("evaluated_version_source") != "run_trace":
+        return None
+    expected = provenance.get("requested_version") or (provenance.get("pre_start") or {}).get(
+        "default_version"
+    )
+    observed = provenance.get("evaluated_version")
+    if observed is None:
+        seen = provenance.get("observed_versions") or []
+        return (
+            f"evaluated Agent version not observed in run traces (saw {seen or 'none'}); "
+            "result is indeterminate"
+        )
+    if observed != expected:
+        return f"run traces show {observed}, not {expected}; result is indeterminate"
+    return None
+
+
 def build_candidate(
-    *, plan, run_name: str, rows: list[dict[str, Any]], provenance: dict[str, Any]
+    *,
+    plan,
+    run_name: str,
+    rows: list[dict[str, Any]],
+    provenance: dict[str, Any],
+    observed_metric_judges: dict[str, dict[str, str | None]] | None = None,
 ) -> dict[str, Any]:
     validate_metric_policy(plan.metric_names, plan.thresholds, plan.regression_tolerances)
     validate_observations(rows, plan.ordered_ground_truth_refs, plan.metric_names)
@@ -124,13 +155,22 @@ def build_candidate(
         for metric in plan.regression_tolerances
         if metric not in summary
     )
-    drift = provenance.get("default_version_changed") is True
+    # A run pinned to a committed version scores that version no matter where
+    # DEFAULT points, so only an unpinned run is voided by DEFAULT moving.
+    drift = (
+        provenance.get("default_version_changed") is True
+        and provenance.get("requested_version") is None
+    )
     if drift:
         failures.append("Agent DEFAULT version changed during evaluation; result is indeterminate")
     source_drift = provenance.get("dataset_source_changed") is True
     if source_drift:
         failures.append("Evaluation dataset source changed; result is indeterminate")
-    return {
+    mismatch = _version_mismatch(provenance)
+    if mismatch:
+        failures.append(mismatch)
+    judges = metric_judges(list(plan.native_eval_config.get("metrics") or []))
+    candidate = {
         "schema_version": ARTIFACT_SCHEMA_VERSION,
         "artifact_type": "candidate",
         "agent": plan.agent_name,
@@ -146,16 +186,20 @@ def build_candidate(
         "dataset_fqn": plan.table_fqn,
         "stage_fqn": plan.stage_fqn,
         "metric_names": plan.metric_names,
+        "metric_judges": {name: judges.get(name, "auto") for name in plan.metric_names},
         "summary": summary,
         "thresholds": plan.thresholds,
         "regression_tolerances": plan.regression_tolerances,
         "passed": not failures,
-        "status": "indeterminate" if drift or source_drift else "completed",
+        "status": "indeterminate" if drift or source_drift or mismatch else "completed",
         "threshold_failures": failures,
         "total_records": len({row["ground_truth_ref"] for row in rows}),
         "ordered_ground_truth_refs": plan.ordered_ground_truth_refs,
         "results": rows,
     }
+    if observed_metric_judges is not None:
+        candidate["observed_metric_judges"] = observed_metric_judges
+    return candidate
 
 
 def write_candidate(candidate: dict[str, Any], artifact_dir: str | Path) -> Path:
@@ -275,18 +319,69 @@ def validate_result(  # noqa: C901
             raise ValueError(
                 f"Evaluation artifact run_metadata.{phase} must include default_version"
             )
-    if metadata.get("evaluated_version") != metadata["pre_start"]["default_version"]:
-        raise ValueError("Evaluation artifact evaluated_version must equal pre-start DEFAULT")
+    requested = metadata.get("requested_version")
+    if requested is not None and version(str(requested), "requested Agent version") != requested:
+        raise ValueError("Evaluation artifact requested_version must be VERSION$N")
+    expected = requested or metadata["pre_start"]["default_version"]
+    if metadata.get("evaluated_version_source") == "run_trace":
+        # Observed from run traces: a missing or different version is only
+        # acceptable on a result that already says it cannot be trusted.
+        if metadata.get("evaluated_version") != expected and (
+            value.get("status") != "indeterminate" or value.get("passed") is not False
+        ):
+            raise ValueError(
+                "Evaluation artifact whose traced evaluated_version is not "
+                f"{expected} must be indeterminate and failed"
+            )
+    elif metadata.get("evaluated_version") != expected:
+        raise ValueError(
+            "Evaluation artifact evaluated_version must equal requested_version or, "
+            "unpinned, the pre-start DEFAULT"
+        )
     changed = (
         metadata["pre_start"]["default_version"] != metadata["post_completion"]["default_version"]
     )
     if metadata.get("default_version_changed") is not changed:
         raise ValueError("Evaluation artifact DEFAULT drift flag is inconsistent with provenance")
-    if changed and (value.get("status") != "indeterminate" or value.get("passed") is not False):
+    if (
+        changed
+        and requested is None
+        and (value.get("status") != "indeterminate" or value.get("passed") is not False)
+    ):
         raise ValueError("Evaluation artifact with DEFAULT drift must be indeterminate and failed")
+    _validate_metric_judges(value)
     _validate_dataset_binding(value)
     _validate_statistics(value)
     return value
+
+
+def _validate_metric_judges(value: dict[str, Any]) -> None:
+    # Artifacts written before judge recording omit the field; the signed suite
+    # signature still covers their metric declarations.
+    if "metric_judges" in value:
+        judges = value["metric_judges"]
+        if (
+            not isinstance(judges, dict)
+            or set(judges) != set(value["metric_names"])
+            or any(not isinstance(judge, str) or not judge for judge in judges.values())
+        ):
+            raise ValueError("Evaluation artifact metric_judges must name a judge for each metric")
+    if "observed_metric_judges" in value:
+        observed = value["observed_metric_judges"]
+        if (
+            not isinstance(observed, dict)
+            or set(observed) != set(value["metric_names"])
+            or any(
+                not isinstance(entry, dict)
+                or set(entry) != {"judge", "version"}
+                or any(item is not None and not isinstance(item, str) for item in entry.values())
+                for entry in observed.values()
+            )
+        ):
+            raise ValueError(
+                "Evaluation artifact observed_metric_judges must map each metric to "
+                "{judge, version}"
+            )
 
 
 def _validate_dataset_binding(value: dict[str, Any]) -> None:

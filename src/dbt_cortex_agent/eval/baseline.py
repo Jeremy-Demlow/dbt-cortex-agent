@@ -36,6 +36,9 @@ def build_baseline(candidate: dict[str, Any]) -> dict[str, Any]:
         "status",
     )
     baseline = {key: candidate.get(key) for key in keys}
+    for optional in ("metric_judges", "observed_metric_judges"):
+        if optional in candidate:
+            baseline[optional] = candidate[optional]
     baseline["schema_version"] = ARTIFACT_SCHEMA_VERSION
     baseline["artifact_type"] = "baseline"
     baseline["run_metadata"] = metadata

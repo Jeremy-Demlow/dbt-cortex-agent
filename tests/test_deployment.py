@@ -11,6 +11,7 @@ import pytest
 from dbt_cortex_agent.config import resolve_config
 from dbt_cortex_agent.dbt_runner import CommandRunner
 from dbt_cortex_agent.deployment import (
+    DEPLOY_PHASE_PREFIX,
     _dbt_phases,
     apply_deploy_plan,
     build_deploy_plan,
@@ -446,6 +447,7 @@ def _manifest():
             "model.x.agent_a": {
                 "unique_id": "model.x.agent_a",
                 "resource_type": "model",
+                "fqn": ["x", "agents", "agent_a", "agent_a"],
                 "name": "agent_a",
                 "database": "DB_A",
                 "schema": "AGENTS",
@@ -455,6 +457,7 @@ def _manifest():
             "model.x.agent_b": {
                 "unique_id": "model.x.agent_b",
                 "resource_type": "model",
+                "fqn": ["x", "agents", "agent_b", "agent_b"],
                 "name": "agent_b",
                 "database": "DB_B",
                 "schema": "AGENTS",
@@ -464,6 +467,7 @@ def _manifest():
             "model.x.upstream": {
                 "unique_id": "model.x.upstream",
                 "resource_type": "model",
+                "fqn": ["x", "agents", "upstream", "upstream"],
                 "name": "upstream",
                 "database": "DATA_DB",
                 "schema": "MART",
@@ -479,6 +483,14 @@ def _manifest():
     }
 
 
+def _reconciled(plan):
+    return "\n".join(
+        "CORTEX_AGENT_DEPLOY_PHASE="
+        + json.dumps({"agent_fqn": agent["physical_fqn"], "phase": "live_reconciled"})
+        for agent in plan.agents
+    )
+
+
 def test_deploy_plan_keeps_physical_identity_and_dependency_selection(tmp_path):
     plan = build_deploy_plan(_manifest(), _config(tmp_path), ["agent_a", "agent_b"])
 
@@ -486,7 +498,10 @@ def test_deploy_plan_keeps_physical_identity_and_dependency_selection(tmp_path):
         "DB_A.AGENTS.SHARED",
         "DB_B.AGENTS.SHARED",
     ]
-    assert plan.dbt_selection == ("+agent_a", "+agent_b")
+    assert plan.dbt_selection == (
+        "+fqn:x.agents.agent_a.agent_a",
+        "+fqn:x.agents.agent_b.agent_b",
+    )
     assert plan.resource_databases == ("DATA_DB", "DB_A", "DB_B")
 
 
@@ -578,7 +593,7 @@ def test_apply_expected_identity_reaches_materialization_before_effects(
             macro_harness.call("materialization_cortex_agent")
         except ValueError as exc:
             return subprocess.CompletedProcess(command, 1, "", str(exc))
-        return subprocess.CompletedProcess(command, 0, "", "")
+        return subprocess.CompletedProcess(command, 0, _reconciled(plan), "")
 
     if drift == "none":
         apply_deploy_plan(plan, _config(tmp_path), runner=CommandRunner(run))
@@ -621,7 +636,7 @@ def test_apply_runs_dbt_build_after_skill_phase(tmp_path):
 
     def run(command, **kwargs):
         calls.append(command)
-        return subprocess.CompletedProcess(command, 0, "ok", "")
+        return subprocess.CompletedProcess(command, 0, _reconciled(plan), "")
 
     outcome = apply_deploy_plan(plan, _config(tmp_path), runner=CommandRunner(run))
 
@@ -634,7 +649,7 @@ def test_apply_runs_dbt_build_after_skill_phase(tmp_path):
             "--target",
             "sandbox",
             "--select",
-            "+agent_a",
+            "+fqn:x.agents.agent_a.agent_a",
             "--vars",
             '{"cortex_agent_expected_fqns":{"model.x.agent_a":"DB_A.AGENTS.SHARED"}}',
         ]
@@ -642,6 +657,7 @@ def test_apply_runs_dbt_build_after_skill_phase(tmp_path):
     assert [item["phase"] for item in outcome.to_dict()] == [
         "preflight",
         "skills_uploaded",
+        "live_reconciled",
         "verified",
     ]
 
@@ -659,7 +675,7 @@ def test_apply_passes_exact_multi_agent_map_without_changing_child_context(tmp_p
         }
         assert kwargs["cwd"] == config.project_dir
         assert kwargs.get("env") == config.dbt_env
-        return subprocess.CompletedProcess(command, 0, "ok", "")
+        return subprocess.CompletedProcess(command, 0, _reconciled(plan), "")
 
     apply_deploy_plan(plan, config, runner=CommandRunner(run))
 
@@ -728,3 +744,27 @@ def test_skill_upload_programming_error_is_not_reported_as_durable_failure(
 
     with pytest.raises(AssertionError, match="programming defect"):
         apply_deploy_plan(plan, _config(tmp_path))
+
+
+def test_selection_cannot_widen_to_models_sharing_the_project_name(tmp_path):
+    # Live finding: `+<name>` also selects every node whose fqn starts with that
+    # name, such as all models of a project with the same name.
+    manifest = _manifest()
+    manifest["nodes"]["model.x.agent_a"]["fqn"] = ["agent_a", "agents", "agent_a", "agent_a"]
+    plan = build_deploy_plan(manifest, _config(tmp_path), ["agent_a"])
+    assert plan.dbt_selection == ("+fqn:agent_a.agents.agent_a.agent_a",)
+
+    del manifest["nodes"]["model.x.agent_a"]["fqn"]
+    with pytest.raises(ValueError, match="no usable fqn"):
+        build_deploy_plan(manifest, _config(tmp_path), ["agent_a"])
+
+
+@pytest.mark.parametrize("output", ["", DEPLOY_PHASE_PREFIX + LifecyclePhase.LIVE_RECONCILED.value])
+def test_successful_build_that_reconciles_no_planned_agent_is_not_verified(tmp_path, output):
+    plan = build_deploy_plan(_manifest(), _config(tmp_path), ["agent_a"])
+
+    def run(command, **kwargs):
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    with pytest.raises(DurablePhaseError, match="did not reconcile planned Agents: DB_A"):
+        apply_deploy_plan(plan, _config(tmp_path), runner=CommandRunner(run))
