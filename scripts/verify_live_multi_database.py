@@ -17,6 +17,10 @@ from pathlib import Path
 _ID = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 
 
+class UnknownServerState(RuntimeError):
+    """A local timeout requires reconciliation before any cleanup or retry."""
+
+
 @dataclass(frozen=True)
 class LiveConfig:
     project_dir: Path
@@ -29,6 +33,8 @@ class LiveConfig:
     role: str
     warehouse: str
     artifact_dir: Path
+    expected_organization: str = "SFSENORTHAMERICA"
+    expected_account: str = "DEMO_JDEMLOW"
 
     @property
     def databases(self) -> tuple[str, str, str]:
@@ -53,9 +59,14 @@ def _run(
     if not apply:
         print("[DRY RUN] " + " ".join(command))
         return ""
-    result = subprocess.run(
-        command, cwd=cwd, env=env, text=True, capture_output=capture, check=False
-    )
+    try:
+        result = subprocess.run(
+            command, cwd=cwd, env=env, text=True, capture_output=capture, check=False, timeout=600
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise UnknownServerState(
+            "Local command timeout; server state unknown; reconcile before retry"
+        ) from exc
     if result.returncode != 0:
         details = [
             value.strip()
@@ -222,6 +233,19 @@ def lifecycle_commands(config: LiveConfig, python: Path) -> list[list[str]]:
         "--apply",
     ]
     return [
+        [
+            str(cli),
+            "agent",
+            "promote",
+            *common,
+            "--version",
+            "VERSION$1",
+            "--alias",
+            "production",
+            "--set-default",
+            "--apply",
+            "--json",
+        ],
         [str(cli), "agent", "deploy", *common, "--apply", "--json"],
         [*smoke, "--version", "VERSION$2"],
         [
@@ -335,54 +359,120 @@ def cleanup_commands(config: LiveConfig) -> list[list[str]]:
         f"DROP TABLE IF EXISTS {config.eval_database}.EVAL.LIVE_ORDERS_A_CORE",
         f"DROP SEMANTIC VIEW IF EXISTS {config.database_a}.SEMANTIC.SEM_ORDERS_LIVE",
     )
+    return [_snow_command(config, statement) for statement in statements]
+
+
+def _snow_command(config: LiveConfig, sql: str) -> list[str]:
     return [
-        ["snow", "sql", "--connection", config.connection, "--query", statement]
-        for statement in statements
+        "snow",
+        "sql",
+        "--connection",
+        config.connection,
+        "--role",
+        config.role,
+        "--warehouse",
+        config.warehouse,
+        "--database",
+        config.database_a,
+        "--format",
+        "json",
+        "--query",
+        sql,
     ]
+
+
+def _rows(config: LiveConfig, sql: str, env: dict[str, str]) -> list[dict]:
+    raw = _run(_snow_command(config, sql), cwd=config.project_dir, env=env, apply=True)
+    rows = json.loads(raw)
+    if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
+        raise RuntimeError("Snowflake inspection did not return an object-row array")
+    return [{str(key).upper(): value for key, value in row.items()} for row in rows]
+
+
+def _verify_identity(config: LiveConfig, env: dict[str, str]) -> None:
+    rows = _rows(
+        config,
+        "SELECT CURRENT_ORGANIZATION_NAME() AS ORGANIZATION_NAME, "
+        "CURRENT_ACCOUNT_NAME() AS ACCOUNT_NAME, CURRENT_ROLE() AS ROLE_NAME, "
+        "CURRENT_DATABASE() AS DATABASE_NAME, CURRENT_WAREHOUSE() AS WAREHOUSE_NAME",
+        env,
+    )
+    expected = {
+        "ORGANIZATION_NAME": config.expected_organization,
+        "ACCOUNT_NAME": config.expected_account,
+        "ROLE_NAME": config.role,
+        "DATABASE_NAME": config.database_a,
+        "WAREHOUSE_NAME": config.warehouse,
+    }
+    if len(rows) != 1 or any(
+        str(rows[0].get(key, "")).upper() != value.upper() for key, value in expected.items()
+    ):
+        raise RuntimeError("Live proof session identity mismatch; no cleanup authorized")
+
+
+def _proof_inventory(config: LiveConfig, env: dict[str, str]) -> list[str]:
+    inspections = [
+        ("AGENTS", database, "AGENTS", "SHARED_ASSISTANT")
+        for database in (config.database_a, config.database_b)
+    ] + [
+        ("SEMANTIC VIEWS", config.database_a, "SEMANTIC", "SEM_ORDERS_LIVE"),
+        ("TABLES", config.eval_database, "EVAL", "LIVE_ORDERS_A_CORE"),
+        ("TABLES", config.eval_database, "EVAL", "LIVE_ORDERS_A_CORE__DBT_TMP"),
+        ("TABLES", config.eval_database, "EVAL", "LIVE_ORDERS_A_CORE__DBT_BACKUP"),
+    ]
+    found = []
+    for kind, database, schema, name in inspections:
+        rows = _rows(config, f"SHOW {kind} LIKE '{name}' IN SCHEMA {database}.{schema}", env)
+        if any(str(row.get("NAME", "")).upper() == name for row in rows):
+            found.append(f"{database}.{schema}.{name}")
+    return found
+
+
+def _preflight(config: LiveConfig, env: dict[str, str]) -> None:
+    _verify_identity(config, env)
+    if _proof_inventory(config, env):
+        raise RuntimeError("Reserved proof objects already exist; refusing mutation or cleanup")
+    tables = _rows(
+        config, f"SHOW TABLES LIKE 'ORDERS' IN SCHEMA {config.database_a}.ANALYTICS", env
+    )
+    if any(str(row.get("NAME", "")).upper() == "ORDERS" for row in tables):
+        rows = _rows(
+            config,
+            f"SELECT ORDER_ID, ORDER_DATE, REGION, REVENUE "
+            f"FROM {config.database_a}.ANALYTICS.ORDERS ORDER BY ORDER_ID LIMIT 4",
+            env,
+        )
+        expected = [
+            ("1001", "2026-01-05", "North", 120.50),
+            ("1002", "2026-01-12", "South", 75.00),
+            ("1003", "2026-02-03", "North", 210.25),
+        ]
+        observed = [
+            (
+                str(row.get("ORDER_ID")),
+                str(row.get("ORDER_DATE")),
+                row.get("REGION"),
+                float(row.get("REVENUE", 0)),
+            )
+            for row in rows
+        ]
+        if observed != expected:
+            raise RuntimeError("Existing proof seed differs from reviewed synthetic input")
 
 
 def _agent_state(config: LiveConfig, database: str, env: dict[str, str]) -> dict:
     fqn = f"{database}.AGENTS.SHARED_ASSISTANT"
-    versions_raw = _run(
-        [
-            "snow",
-            "sql",
-            "--connection",
-            config.connection,
-            "--format",
-            "json",
-            "--query",
-            f"SHOW VERSIONS IN AGENT {fqn}",
-        ],
-        cwd=config.project_dir,
-        env=env,
-        apply=True,
-    )
-    aliases_raw = _run(
-        [
-            "snow",
-            "sql",
-            "--connection",
-            config.connection,
-            "--format",
-            "json",
-            "--query",
-            f"DESCRIBE AGENT {fqn}",
-        ],
-        cwd=config.project_dir,
-        env=env,
-        apply=True,
-    )
-    versions = json.loads(versions_raw or "[]")
-    description = json.loads(aliases_raw or "[]")
+    versions = _rows(config, f"SHOW VERSIONS IN AGENT {fqn}", env)
+    description = _rows(config, f"DESCRIBE AGENT {fqn}", env)
     committed = []
     for row in versions:
         if not isinstance(row, dict):
             continue
         normalized = {str(key).lower(): value for key, value in row.items()}
-        if normalized.get("name"):
-            committed.append(str(normalized["name"]))
-    committed.sort()
+        name = str(normalized.get("name", ""))
+        if re.fullmatch(r"VERSION\$[1-9][0-9]*", name):
+            committed.append(name)
+    committed.sort(key=lambda value: int(value.split("$")[1]))
     aliases = None
     for row in description:
         if not isinstance(row, dict):
@@ -394,6 +484,14 @@ def _agent_state(config: LiveConfig, database: str, env: dict[str, str]) -> dict
     if not committed or not isinstance(aliases, dict) or not aliases.get("DEFAULT"):
         raise RuntimeError(f"Agent state is incomplete for {fqn}")
     return {"agent_fqn": fqn, "versions": committed, "aliases": aliases}
+
+
+def _assert_route_state(state: dict, versions: list[str], routed: str) -> None:
+    if state.get("versions") != versions:
+        raise RuntimeError("Lifecycle committed-version postcondition failed")
+    aliases = state.get("aliases", {})
+    if aliases.get("DEFAULT") != routed or aliases.get("PRODUCTION") != routed:
+        raise RuntimeError("Lifecycle DEFAULT/PRODUCTION routing postcondition failed")
 
 
 def _assert_lifecycle_state(state: dict) -> None:
@@ -409,6 +507,8 @@ def _cleanup(config: LiveConfig, env: dict[str, str], apply: bool) -> None:
     for command in cleanup_commands(config):
         try:
             _run(command, cwd=config.project_dir, env=env, apply=apply, capture=False)
+        except UnknownServerState:
+            raise
         except (RuntimeError, OSError) as exc:
             failures.append(str(exc))
     if failures:
@@ -418,7 +518,8 @@ def _cleanup(config: LiveConfig, env: dict[str, str], apply: bool) -> None:
 def _write_attestation(output: Path, attestation: dict) -> None:
     proof_status = attestation["proof_status"]
     cleanup_status = attestation["cleanup_status"]
-    attestation["status"] = "failed" if "failed" in (proof_status, cleanup_status) else proof_status
+    failed = "failed" in (proof_status, cleanup_status) or attestation.get("server_state_unknown")
+    attestation["status"] = "failed" if failed else proof_status
     output.write_text(json.dumps(attestation, indent=2) + "\n", encoding="utf-8")
 
 
@@ -426,13 +527,25 @@ def _record_cleanup(
     config: LiveConfig, env: dict[str, str], apply: bool, attestation: dict
 ) -> None:
     attestation["cleanup_requested"] = True
+    if apply and attestation.get("server_state_unknown"):
+        attestation["cleanup_status"] = "not_authorized"
+        return
     attestation["cleanup_status"] = "planned"
     attestation.pop("cleanup_error_type", None)
     try:
+        if apply:
+            if not attestation.get("cleanup_authorized"):
+                attestation["cleanup_status"] = "not_authorized"
+                return
+            _verify_identity(config, env)
         _cleanup(config, env, apply)
+        if apply and _proof_inventory(config, env):
+            raise RuntimeError("Proof objects remain after cleanup")
     except Exception as exc:
         attestation["cleanup_status"] = "failed"
         attestation["cleanup_error_type"] = type(exc).__name__
+        if isinstance(exc, UnknownServerState):
+            attestation["server_state_unknown"] = True
         raise
     else:
         if apply:
@@ -443,7 +556,7 @@ def _prior_attestation(output: Path, expected: dict) -> dict:
     prior = json.loads(output.read_text(encoding="utf-8"))
     if not isinstance(prior, dict):
         raise ValueError("Existing live attestation must be an object")
-    for key in ("schema_version", "target", "eval_database", "paid_evaluation"):
+    for key in ("schema_version", "target", "eval_database", "paid_evaluation", "execution_scope"):
         if prior.get(key) != expected[key]:
             raise ValueError(f"Existing live attestation has mismatched {key}")
     if (
@@ -464,7 +577,13 @@ def _prior_attestation(output: Path, expected: dict) -> dict:
         raise ValueError("Existing live attestation has mismatched Agent identities")
     if prior.get("proof_status") not in {"planned", "not_started", "completed", "failed"}:
         raise ValueError("Existing live attestation has no valid proof_status")
-    if prior.get("cleanup_status") not in {"not_requested", "planned", "completed", "failed"}:
+    if prior.get("cleanup_status") not in {
+        "not_requested",
+        "not_authorized",
+        "planned",
+        "completed",
+        "failed",
+    }:
         raise ValueError("Existing live attestation has no valid cleanup_status")
     return prior
 
@@ -478,6 +597,8 @@ def run(  # noqa: C901
         ("evaluation database", config.eval_database),
         ("role", config.role),
         ("warehouse", config.warehouse),
+        ("expected organization", config.expected_organization),
+        ("expected account", config.expected_account),
     ):
         _identifier(value, label)
     if len({database.upper() for database in config.databases}) != 3:
@@ -498,10 +619,13 @@ def run(  # noqa: C901
             "CORTEX_AGENT_LIVE_DATABASE_A": config.database_a,
             "CORTEX_AGENT_LIVE_DATABASE_B": config.database_b,
             "CORTEX_AGENT_LIVE_DATABASE_EVAL": config.eval_database,
+            "CORTEX_AGENT_LIVE_SPEC_REVISION": "v1",
         }
     )
     config.artifact_dir.mkdir(parents=True, exist_ok=True)
     output = config.artifact_dir / "live-attestation.json"
+    if not cleanup_only and output.exists():
+        raise ValueError("Proof evidence already exists; choose a new artifact directory")
     attestation = {
         "schema_version": 1,
         "proof_status": "not_started" if cleanup_only else "planned",
@@ -519,9 +643,18 @@ def run(  # noqa: C901
         "paid_evaluation": False,
         "cleanup_requested": cleanup or cleanup_only,
         "cleanup_status": "not_requested",
+        "cleanup_authorized": False,
+        "execution_scope": {
+            "organization": config.expected_organization,
+            "account": config.expected_account,
+            "role": config.role,
+            "warehouse": config.warehouse,
+            "database": config.database_a,
+        },
         "guarded_retirement": False,
         "dbt_package_source": "release checkout matching the wheel build",
         "reconciliation": {"before": [], "after": []},
+        "default_pin_regression": {},
     }
     if cleanup_only:
         if output.exists():
@@ -541,6 +674,9 @@ def run(  # noqa: C901
     cleanup_error: Exception | None = None
     try:
         if apply:
+            _preflight(config, env)
+            attestation["cleanup_authorized"] = True
+            _write_attestation(output, attestation)
             _run(
                 [sys.executable, "-m", "venv", "--clear", str(venv)],
                 cwd=config.project_dir,
@@ -559,8 +695,25 @@ def run(  # noqa: C901
         if apply and first_state != second_state:
             raise RuntimeError("No-change reconciliation changed Agent versions or aliases")
         lifecycle_env = {**env, "CORTEX_AGENT_LIVE_SPEC_REVISION": "v2"}
-        for command in lifecycle_commands(config, python):
-            _run(command, cwd=config.project_dir, env=lifecycle_env, apply=apply, capture=False)
+        for index, command in enumerate(lifecycle_commands(config, python)):
+            phase_env = env if index == 0 else lifecycle_env
+            _run(command, cwd=config.project_dir, env=phase_env, apply=apply, capture=False)
+            if apply and index in (0, 1, 3, 4, 6, 7):
+                state = _agent_state(config, config.database_a, phase_env)
+                versions = ["VERSION$1"] if index == 0 else ["VERSION$1", "VERSION$2"]
+                routed = "VERSION$1" if index in (0, 1, 4, 6) else "VERSION$2"
+                label = {
+                    0: "pinned",
+                    1: "after_candidate_commit",
+                    3: "promoted",
+                    4: "rolled_back",
+                    6: "no_change",
+                    7: "rolled_forward",
+                }[index]
+                attestation["default_pin_regression"][label] = state
+                attestation["agents"][0] = state
+                _write_attestation(output, attestation)
+                _assert_route_state(state, versions, routed)
         if apply:
             lifecycle_state = _agent_state(config, config.database_a, lifecycle_env)
             attestation["agents"][0] = lifecycle_state
@@ -573,6 +726,8 @@ def run(  # noqa: C901
         proof_error = exc
         attestation["proof_status"] = "failed"
         attestation["proof_error_type"] = type(exc).__name__
+        if isinstance(exc, UnknownServerState):
+            attestation["server_state_unknown"] = True
     finally:
         if cleanup:
             try:
@@ -598,6 +753,8 @@ def main() -> int:
     parser.add_argument("--eval-database", required=True)
     parser.add_argument("--role", required=True)
     parser.add_argument("--warehouse", required=True)
+    parser.add_argument("--expected-organization", default="SFSENORTHAMERICA")
+    parser.add_argument("--expected-account", default="DEMO_JDEMLOW")
     parser.add_argument("--artifact-dir", required=True)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--cleanup", action="store_true")
@@ -615,6 +772,8 @@ def main() -> int:
             role=args.role,
             warehouse=args.warehouse,
             artifact_dir=Path(args.artifact_dir).resolve(),
+            expected_organization=args.expected_organization,
+            expected_account=args.expected_account,
         ),
         apply=args.apply,
         cleanup=args.cleanup,

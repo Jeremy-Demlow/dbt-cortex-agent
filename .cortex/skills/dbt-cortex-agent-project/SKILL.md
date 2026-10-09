@@ -12,11 +12,11 @@ lifecycle logic.
 
 This file is a repository-local skill. Use it from a checkout of the matching
 release tag, not by assuming that `pip install`, `dbt deps`, or immutable tag
-`v0.0.10` installs or registers it. It has not been published in a skill catalog.
+`v0.0.11` installs or registers it. It has not been published in a skill catalog.
 
 ## Authority and invariants
 
-- This workflow targets `0.0.10`. Detect the installed `dbt-cortex-agent` version
+- This workflow targets `0.0.11`. Detect the installed `dbt-cortex-agent` version
   and require Python and dbt to identify the same immutable release. If they differ
   or another version is installed, stop and review that version's documentation;
   do not silently upgrade or apply this workflow to historical contracts.

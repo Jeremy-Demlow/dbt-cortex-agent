@@ -88,7 +88,7 @@ def test_lifecycle_plan_covers_v2_promotion_rollback_rollforward_and_drop(tmp_pa
     assert "agent promote" in lifecycle
     assert "agent rollback" in lifecycle
     assert "--to-version VERSION$1" in lifecycle
-    assert lifecycle.count("agent promote") == 2
+    assert lifecycle.count("agent promote") == 3
     assert "agent versions" in lifecycle
     assert "agent drop" in drops
     assert "--confirm-agent LIVE_A.AGENTS.SHARED_ASSISTANT" in drops
@@ -121,6 +121,7 @@ def test_cleanup_is_bounded_to_proof_objects(tmp_path):
 
 
 def test_no_change_reconciliation_compares_observed_agent_state(tmp_path, monkeypatch):
+    monkeypatch.setattr(verifier, "_preflight", lambda *args: None)
     states = iter(
         [
             {
@@ -168,22 +169,13 @@ def test_isolated_venv_is_added_to_subprocess_path(tmp_path, monkeypatch):
 
 
 def test_applied_proof_recreates_isolated_venv(tmp_path, monkeypatch):
+    _successful_proof(monkeypatch)
     commands = []
     monkeypatch.setattr(
         verifier,
         "_run",
         lambda command, **kwargs: commands.append(command) or "",
     )
-    monkeypatch.setattr(
-        verifier,
-        "_agent_state",
-        lambda config, database, env: {
-            "agent_fqn": f"{database}.AGENTS.SHARED_ASSISTANT",
-            "versions": ["VERSION$1", "VERSION$2"],
-            "aliases": {"DEFAULT": "VERSION$2", "PRODUCTION": "VERSION$2"},
-        },
-    )
-
     verifier.run(_config(tmp_path), apply=True, cleanup=False)
 
     assert commands[0][1:4] == ["-m", "venv", "--clear"]
@@ -191,12 +183,27 @@ def test_applied_proof_recreates_isolated_venv(tmp_path, monkeypatch):
 
 def _successful_proof(monkeypatch):
     monkeypatch.setattr(verifier, "_run", lambda *args, **kwargs: "")
+    monkeypatch.setattr(verifier, "_preflight", lambda *args: None)
+    monkeypatch.setattr(verifier, "_verify_identity", lambda *args: None)
+    monkeypatch.setattr(verifier, "_proof_inventory", lambda *args: [])
+    observations = iter(
+        [
+            (False, "VERSION$1"),
+            (False, "VERSION$1"),
+            (False, "VERSION$1"),
+            (True, "VERSION$1"),
+            (True, "VERSION$2"),
+            (True, "VERSION$1"),
+            (True, "VERSION$1"),
+            (True, "VERSION$2"),
+            (True, "VERSION$2"),
+        ]
+    )
 
     def state(config, database, env):
-        changed = (
-            database == config.database_a and env.get("CORTEX_AGENT_LIVE_SPEC_REVISION") == "v2"
+        changed, version = (
+            next(observations) if database == config.database_a else (False, "VERSION$1")
         )
-        version = "VERSION$2" if changed else "VERSION$1"
         return {
             "agent_fqn": f"{database}.AGENTS.SHARED_ASSISTANT",
             "versions": ["VERSION$1", "VERSION$2"] if changed else ["VERSION$1"],
@@ -337,7 +344,7 @@ def test_cleanup_only_without_proof_never_claims_qualification(tmp_path, monkeyp
     output = verifier.run(config, apply=apply, cleanup=False, cleanup_only=True)
     evidence = json.loads(output.read_text())
     assert evidence["status"] == evidence["proof_status"] == "not_started"
-    assert evidence["cleanup_status"] == ("completed" if apply else "planned")
+    assert evidence["cleanup_status"] == ("not_authorized" if apply else "planned")
     assert evidence["wheel_sha256"] is None
     assert evidence["guarded_retirement"] is False
 
@@ -453,22 +460,25 @@ def test_cleanup_only_uses_same_pinned_environment_without_venv(tmp_path, monkey
 
     monkeypatch.setattr(verifier, "_run", capture_run)
     output = verifier.run(config, apply=True, cleanup=False, cleanup_only=True)
-    assert [command for command, _ in calls] == verifier.cleanup_commands(config)
+    assert [command for command, _ in calls] == (
+        verifier.cleanup_commands(config) if prior_proof else []
+    )
     assert all(
         kwargs["env"]["DBT_EXECUTABLE"] == str(config.artifact_dir / "venv/bin/dbt")
         for _, kwargs in calls
     )
     evidence = json.loads(output.read_text())
     assert evidence["proof_status"] == ("completed" if prior_proof else "not_started")
-    assert evidence["cleanup_status"] == "completed"
+    assert evidence["cleanup_status"] == ("completed" if prior_proof else "not_authorized")
     assert os.environ["DBT_EXECUTABLE"] == "/unrelated/bin/dbt"
 
 
 def test_fake_setup_without_pinned_dbt_fails_instead_of_using_host(tmp_path, monkeypatch):
+    real_run = verifier._run
+    _successful_proof(monkeypatch)
     config = _config(tmp_path)
     expected = str(config.artifact_dir / "venv/bin/dbt")
     monkeypatch.setenv("DBT_EXECUTABLE", sys.executable)
-    real_run = verifier._run
     calls = []
 
     def fake_setup(command, **kwargs):
@@ -487,3 +497,293 @@ def test_fake_setup_without_pinned_dbt_fails_instead_of_using_host(tmp_path, mon
     assert evidence["status"] == evidence["proof_status"] == "failed"
     assert evidence["proof_error_type"] == "FileNotFoundError"
     assert evidence["cleanup_status"] == "completed"
+
+
+def test_same_value_pin_precedes_candidate_and_retains_native_postcondition(tmp_path, monkeypatch):
+    _successful_proof(monkeypatch)
+    config = _config(tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        verifier, "_run", lambda command, **kwargs: calls.append((command, kwargs)) or ""
+    )
+    output = verifier.run(config, apply=True, cleanup=False)
+    phases = [
+        (command, kwargs["env"]["CORTEX_AGENT_LIVE_SPEC_REVISION"])
+        for command, kwargs in calls
+        if "promote" in command or "deploy" in command
+    ]
+    pin = next(index for index, (command, _) in enumerate(phases) if "promote" in command)
+    assert phases[pin][1] == "v1"
+    assert phases[pin][0][phases[pin][0].index("--version") + 1] == "VERSION$1"
+    assert "deploy" in phases[pin + 1][0] and phases[pin + 1][1] == "v2"
+    regression = json.loads(output.read_text())["default_pin_regression"]
+    assert regression["pinned"]["versions"] == ["VERSION$1"]
+    assert regression["after_candidate_commit"]["versions"] == ["VERSION$1", "VERSION$2"]
+    assert regression["after_candidate_commit"]["aliases"]["DEFAULT"] == "VERSION$1"
+    assert regression["rolled_forward"]["aliases"]["PRODUCTION"] == "VERSION$2"
+
+
+@pytest.mark.parametrize("failure", ["default_drift", "production_drift", "missing_version"])
+def test_later_commit_failure_blocks_promotion_and_preserves_failure(
+    tmp_path, monkeypatch, failure
+):
+    _successful_proof(monkeypatch)
+    original = verifier._agent_state
+    observed_a = 0
+    calls = []
+
+    def state(config, database, env):
+        nonlocal observed_a
+        result = original(config, database, env)
+        if database == config.database_a:
+            observed_a += 1
+        if database == config.database_a and observed_a == 4:
+            if failure == "missing_version":
+                result["versions"] = ["VERSION$1"]
+            else:
+                key = "DEFAULT" if failure == "default_drift" else "PRODUCTION"
+                result["aliases"][key] = "VERSION$2"
+        return result
+
+    monkeypatch.setattr(verifier, "_agent_state", state)
+    monkeypatch.setattr(verifier, "_run", lambda command, **kwargs: calls.append(command) or "")
+    config = _config(tmp_path)
+    with pytest.raises(RuntimeError, match="postcondition"):
+        verifier.run(config, apply=True, cleanup=True)
+    assert sum("promote" in command for command in calls) == 1
+    evidence = json.loads((config.artifact_dir / "live-attestation.json").read_text())
+    assert evidence["proof_status"] == evidence["status"] == "failed"
+    assert evidence["cleanup_status"] == "completed"
+    observed = evidence["default_pin_regression"]["after_candidate_commit"]
+    assert observed == evidence["agents"][0]
+    if failure == "missing_version":
+        assert observed["versions"] == ["VERSION$1"]
+    else:
+        key = "DEFAULT" if failure == "default_drift" else "PRODUCTION"
+        assert observed["aliases"][key] == "VERSION$2"
+
+
+@pytest.mark.parametrize(
+    "field", ["ORGANIZATION_NAME", "ACCOUNT_NAME", "ROLE_NAME", "DATABASE_NAME", "WAREHOUSE_NAME"]
+)
+def test_identity_mismatch_refuses_before_effects(tmp_path, monkeypatch, field):
+    config = _config(tmp_path)
+    row = {
+        "ORGANIZATION_NAME": config.expected_organization,
+        "ACCOUNT_NAME": config.expected_account,
+        "ROLE_NAME": config.role,
+        "DATABASE_NAME": config.database_a,
+        "WAREHOUSE_NAME": config.warehouse,
+    }
+    row[field] = "WRONG"
+    monkeypatch.setattr(verifier, "_rows", lambda *args: [row])
+    with pytest.raises(RuntimeError, match="identity mismatch"):
+        verifier._preflight(config, {})
+
+
+def test_preflight_collision_never_authorizes_cleanup(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    calls = []
+    monkeypatch.setattr(verifier, "_verify_identity", lambda *args: None)
+    monkeypatch.setattr(
+        verifier, "_proof_inventory", lambda *args: ["LIVE_A.AGENTS.SHARED_ASSISTANT"]
+    )
+    monkeypatch.setattr(verifier, "_run", lambda *args, **kwargs: calls.append(args))
+    with pytest.raises(RuntimeError, match="already exist"):
+        verifier.run(config, apply=True, cleanup=True)
+    assert calls == []
+    evidence = json.loads((config.artifact_dir / "live-attestation.json").read_text())
+    assert evidence["cleanup_authorized"] is False
+    assert evidence["cleanup_status"] == "not_authorized"
+
+
+def test_local_timeout_is_unknown_server_state(tmp_path, monkeypatch):
+    import subprocess
+
+    def timeout(*args, **kwargs):
+        assert kwargs["timeout"] == 600
+        raise subprocess.TimeoutExpired(args[0], 600)
+
+    monkeypatch.setattr(verifier.subprocess, "run", timeout)
+    with pytest.raises(RuntimeError, match="server state unknown"):
+        verifier._run(["fake"], cwd=tmp_path, env={}, apply=True)
+
+
+def test_timeout_blocks_automatic_cleanup_and_cleanup_only(tmp_path, monkeypatch):
+    _successful_proof(monkeypatch)
+    config = _config(tmp_path)
+    cleanup = []
+    monkeypatch.setattr(verifier, "_cleanup", lambda *args: cleanup.append(args))
+
+    def timeout(command, **kwargs):
+        if "deploy" in command:
+            raise verifier.UnknownServerState("Local timeout; server state unknown")
+        return ""
+
+    monkeypatch.setattr(verifier, "_run", timeout)
+    with pytest.raises(verifier.UnknownServerState):
+        verifier.run(config, apply=True, cleanup=True)
+    verifier.run(config, apply=True, cleanup=False, cleanup_only=True)
+    assert cleanup == []
+    evidence = json.loads((config.artifact_dir / "live-attestation.json").read_text())
+    assert evidence["server_state_unknown"] is True
+    assert evidence["cleanup_status"] == "not_authorized"
+    assert evidence["proof_status"] == "failed"
+
+
+def test_proof_refuses_existing_evidence_before_commands(tmp_path, monkeypatch):
+    _successful_proof(monkeypatch)
+    config = _config(tmp_path)
+    output = verifier.run(config, apply=False, cleanup=False)
+    before = output.read_bytes()
+    calls = []
+    monkeypatch.setattr(verifier, "_run", lambda *args, **kwargs: calls.append(args))
+    with pytest.raises(ValueError, match="already exists"):
+        verifier.run(config, apply=True, cleanup=True)
+    assert calls == [] and output.read_bytes() == before
+
+
+def test_pin_write_failure_cannot_qualify_or_start_candidate(tmp_path, monkeypatch):
+    _successful_proof(monkeypatch)
+    config = _config(tmp_path)
+    calls = []
+
+    def failure(command, **kwargs):
+        calls.append(command)
+        if "promote" in command:
+            raise RuntimeError("DEFAULT pin write failed")
+        return ""
+
+    monkeypatch.setattr(verifier, "_run", failure)
+    with pytest.raises(RuntimeError, match="pin write failed"):
+        verifier.run(config, apply=True, cleanup=True)
+    assert sum("deploy" in command for command in calls) == 2
+    evidence = json.loads((config.artifact_dir / "live-attestation.json").read_text())
+    assert evidence["proof_status"] == "failed" and evidence["cleanup_status"] == "completed"
+
+
+def test_existing_seed_must_match_exact_reviewed_fixture(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    monkeypatch.setattr(verifier, "_verify_identity", lambda *args: None)
+    monkeypatch.setattr(verifier, "_proof_inventory", lambda *args: [])
+    responses = iter(
+        [
+            [{"NAME": "ORDERS"}],
+            [{"ORDER_ID": 1, "ORDER_DATE": "2026-01-05", "REGION": "North", "REVENUE": 120.50}],
+        ]
+    )
+    monkeypatch.setattr(verifier, "_rows", lambda *args: next(responses))
+    with pytest.raises(RuntimeError, match="seed differs"):
+        verifier._preflight(config, {})
+
+
+@pytest.mark.parametrize("phase", ["identity", "drop", "inventory"])
+def test_cleanup_timeout_stops_and_blocks_retries(tmp_path, monkeypatch, phase):
+    _successful_proof(monkeypatch)
+    config = _config(tmp_path)
+    verifier.run(config, apply=True, cleanup=False)
+    drops = []
+
+    def timeout(*args, **kwargs):
+        raise verifier.UnknownServerState("server state unknown")
+
+    def run(command, **kwargs):
+        drops.append(command)
+        raise verifier.UnknownServerState("server state unknown")
+
+    if phase == "identity":
+        monkeypatch.setattr(verifier, "_verify_identity", timeout)
+    elif phase == "inventory":
+        monkeypatch.setattr(verifier, "_proof_inventory", timeout)
+    else:
+        monkeypatch.setattr(verifier, "_run", run)
+    with pytest.raises(verifier.UnknownServerState):
+        verifier.run(config, apply=True, cleanup=False, cleanup_only=True)
+    assert len(drops) == (1 if phase == "drop" else 0)
+    verifier.run(config, apply=True, cleanup=False, cleanup_only=True)
+    assert len(drops) == (1 if phase == "drop" else 0)
+    evidence = json.loads((config.artifact_dir / "live-attestation.json").read_text())
+    assert evidence["server_state_unknown"] is True
+    assert evidence["cleanup_status"] == "not_authorized"
+    assert evidence["status"] == "failed"
+    assert evidence["cleanup_error_type"] == "UnknownServerState"
+
+
+def test_command_driven_implicit_default_model(tmp_path, monkeypatch):
+    import copy
+
+    config = _config(tmp_path)
+    states = {
+        database: {
+            "agent_fqn": f"{database}.AGENTS.SHARED_ASSISTANT",
+            "versions": [],
+            "aliases": {},
+        }
+        for database in (config.database_a, config.database_b)
+    }
+    explicit = False
+    monkeypatch.setattr(verifier, "_preflight", lambda *args: None)
+    monkeypatch.setattr(verifier, "_verify_identity", lambda *args: None)
+    monkeypatch.setattr(verifier, "_proof_inventory", lambda *args: [])
+    monkeypatch.setattr(
+        verifier, "_agent_state", lambda config, database, env: copy.deepcopy(states[database])
+    )
+
+    def execute(command, **kwargs):
+        nonlocal explicit
+        if "deploy" in command:
+            selected = [
+                command[index + 1] for index, item in enumerate(command) if item == "--agent"
+            ]
+            for agent in selected:
+                database = config.database_a if agent == "live_orders_a" else config.database_b
+                state = states[database]
+                candidate = (
+                    "VERSION$2"
+                    if kwargs["env"]["CORTEX_AGENT_LIVE_SPEC_REVISION"] == "v2"
+                    else "VERSION$1"
+                )
+                if candidate not in state["versions"]:
+                    state["versions"].append(candidate)
+                state["aliases"]["LATEST"] = candidate
+                if database != config.database_a or not explicit:
+                    state["aliases"]["DEFAULT"] = candidate
+        elif "promote" in command or "rollback" in command:
+            flag = "--version" if "promote" in command else "--to-version"
+            routed = command[command.index(flag) + 1]
+            states[config.database_a]["aliases"].update(DEFAULT=routed, PRODUCTION=routed)
+            explicit = True
+        return ""
+
+    monkeypatch.setattr(verifier, "_run", execute)
+    output = verifier.run(config, apply=True, cleanup=True)
+    evidence = json.loads(output.read_text())
+    assert evidence["proof_status"] == "completed"
+    assert "PRODUCTION" not in evidence["reconciliation"]["before"][0]["aliases"]
+    assert (
+        evidence["default_pin_regression"]["after_candidate_commit"]["aliases"]["DEFAULT"]
+        == "VERSION$1"
+    )
+
+
+@pytest.mark.parametrize("aliases", [None, "{}", "not json"])
+def test_native_inspection_rejects_incomplete_or_malformed_aliases(tmp_path, monkeypatch, aliases):
+    config = _config(tmp_path)
+    rows = iter([[{"NAME": "VERSION$1"}], [{"ALIASES": aliases}]])
+    monkeypatch.setattr(verifier, "_rows", lambda *args: next(rows))
+    with pytest.raises((RuntimeError, ValueError)):
+        verifier._agent_state(config, config.database_a, {})
+
+
+def test_native_rows_normalize_lowercase_keys_and_exclude_live(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    responses = iter(
+        [
+            json.dumps([{"name": "LIVE"}, {"name": "VERSION$2"}, {"name": "VERSION$1"}]),
+            json.dumps([{"aliases": '{"DEFAULT":"VERSION$1","LATEST":"VERSION$2"}'}]),
+        ]
+    )
+    monkeypatch.setattr(verifier, "_run", lambda *args, **kwargs: next(responses))
+    state = verifier._agent_state(config, config.database_a, {})
+    assert state["versions"] == ["VERSION$1", "VERSION$2"]
+    assert state["aliases"] == {"DEFAULT": "VERSION$1", "LATEST": "VERSION$2"}

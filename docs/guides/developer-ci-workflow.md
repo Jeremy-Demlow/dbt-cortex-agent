@@ -41,18 +41,18 @@ source of Agent state.
 
 ## Install one release
 
-The 0.0.10 candidate is pending qualification and publication. These pins
+The 0.0.11 candidate is pending qualification and publication. These pins
 identify its intended release artifacts; changing a dbt model still requires its own
 adopter verification.
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.10'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.11'
 ```
 
 ```yaml
 packages:
   - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git
-    revision: v0.0.10
+    revision: v0.0.11
 ```
 
 The Python package coordinates files, dbt, runtime calls, and evidence. The dbt

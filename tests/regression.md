@@ -1,5 +1,27 @@
 # Regression tests
 
+## Explicit DEFAULT Pin Skipped When Its Resolved Value Matched
+
+- Root cause: `cortex_agent__route_default` treated equality of the resolved
+  DEFAULT and requested version as a no-op. An implicit DEFAULT can already
+  resolve to that version without being explicitly pinned, then follow a later
+  commit. The fresh published-0.0.10 sandbox walkthrough observed exactly that.
+- Fix summary: always issue the explicit DEFAULT SET when requested, after the
+  existing identity, committed-version, and stale-state guards. Keep the
+  postcondition and Python partial-failure handling; alias-only requests never
+  enter the DEFAULT phase.
+- Verification: `test_equal_default_request_always_sets_a_durable_pin` checks
+  equal values for implicit and explicit state at two versions;
+  `test_python_equal_default_request_reaches_mutating_macro` exercises promote
+  and rollback with and without `--set-default`;
+  `test_equal_default_write_failure_is_not_reported_as_success` checks that
+  same-value SET errors retain completed alias and failed DEFAULT phases;
+  `test_default_pin_preserves_guard_and_failure_behavior` covers stale state,
+  missing versions, write errors and failed postconditions. Six cases fail
+  against the old macro and pass after the fix. Later-commit durability in the
+  harness is simulated, not native Snowflake qualification. The local fix is
+  unreleased; the immutable v0.0.10 tag and failed walkthrough remain unchanged.
+
 ## Candidate Preparation: Requirements Exceptions Removed
 
 - Root cause: the pending ignore diff removed every historical requirements exception, hiding the new REQ-032 file from normal untracked-file discovery.

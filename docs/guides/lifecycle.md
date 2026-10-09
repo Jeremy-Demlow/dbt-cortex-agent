@@ -119,6 +119,18 @@ Alias movement does not change DEFAULT unless `--set-default` is supplied. Use
 `agent drop` only for deliberately confirmed retirement; dbt model removal does
 not delete an Agent.
 
+An explicit DEFAULT request must issue `SET DEFAULT_VERSION` even when DEFAULT
+already resolves to the requested version. A matching resolved value can be an
+implicit latest-version route, not a durable pin. The 0.0.11 candidate always
+issues that SET after the identity/version/stale-state checks and verifies the
+result. Repeated explicit pin requests reissue the same SET; alias-only requests
+still leave DEFAULT untouched.
+
+Published `0.0.10` skips the SET in this equal-value case. Its first-release
+`--set-default` command therefore cannot establish serving isolation merely by
+reporting a matching DEFAULT. Do not treat the local fix as deployed or released:
+qualify an immutable successor release and inspect DEFAULT after a later commit.
+
 Alias reassignment is two durable Snowflake statements: the current owner is
 unset before the target version receives the alias. The package rejects stale
 observed state, verifies the final owner, and reports partial state if either

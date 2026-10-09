@@ -151,7 +151,7 @@ def test_non_mutating_quickstart_has_no_applied_remote_command():
 
 
 def test_current_release_identity_is_consistent_across_public_docs():
-    expected = "0.0.10"
+    expected = "0.0.11"
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     installation = (ROOT / "docs/getting-started/installation.md").read_text(encoding="utf-8")
     cli_reference = (ROOT / "docs/reference/cli.md").read_text(encoding="utf-8")
@@ -224,10 +224,10 @@ def test_release_setup_documents_protected_environment_and_unqualified_work():
     changelog = (ROOT / "CHANGELOG.md").read_text()
     assert "## 0.0.9 — 2026-09-18" in changelog
     assert "## UNRELEASED" not in changelog
-    assert "## 0.0.10 — 2026-10-08" in changelog
+    assert "## 0.0.11 — 2026-10-09" in changelog
     assert "Published on 2026-09-18" in changelog
     assert "Candidate pending qualification and publication" in changelog
-    assert "`0.0.10` candidate is pending qualification and publication" in " ".join(text.split())
+    assert "`0.0.11` candidate is pending qualification and publication" in " ".join(text.split())
     assert "release run 35400838944" in text
     assert "paid native Agent Evaluation" in text
     assert "not part of its immutable source tag" in " ".join(text.split())

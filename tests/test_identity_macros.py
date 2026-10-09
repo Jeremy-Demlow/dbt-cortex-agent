@@ -129,6 +129,130 @@ def test_matching_and_legacy_calls_mutate_resolved_identity(routing, macro, argu
         assert state["exists"] is False
 
 
+@pytest.mark.parametrize("explicit_default", [False, True])
+@pytest.mark.parametrize("version", ["VERSION$1", "VERSION$2"])
+def test_equal_default_request_always_sets_a_durable_pin(routing, explicit_default, version):
+    harness, effects, _, state = routing
+    state["default_version"] = version
+    pin = {"explicit": explicit_default}
+
+    def query(sql):
+        effects.append(sql)
+        assert sql == f"ALTER AGENT {FQN} SET DEFAULT_VERSION = '{version}'"
+        pin["explicit"] = True
+
+    harness.context["run_query"] = query
+    result = json.loads(
+        harness.call(
+            "cortex_agent__route_default",
+            "assistant",
+            version,
+            version,
+            expected_agent_fqn=FQN,
+        )
+    )
+    assert effects == [f"ALTER AGENT {FQN} SET DEFAULT_VERSION = '{version}'"]
+    assert result["after"]["default_version"] == version
+
+    # Model Snowflake's implicit DEFAULT following a later commit unless explicitly set.
+    state["versions"].append("VERSION$3")
+    if not pin["explicit"]:
+        state["default_version"] = "VERSION$3"
+    assert state["default_version"] == version
+
+
+@pytest.mark.parametrize("action", ["promote", "rollback"])
+@pytest.mark.parametrize("set_default", [False, True])
+def test_python_equal_default_request_reaches_mutating_macro(
+    routing, tmp_path, action, set_default
+):
+    harness, effects, _, state = routing
+    state["aliases"]["PRODUCTION"] = "VERSION$2"
+    state["default_version"] = "VERSION$2"
+    config = resolve_config(SimpleNamespace(project_dir=str(tmp_path), target="sandbox"), env={})
+
+    def run_operation(command, **kwargs):
+        output = []
+        harness.context["log"] = lambda message, **kwargs: output.append(message)
+        arguments = json.loads(command[command.index("--args") + 1])
+        harness.call(command[2].split(".")[-1], **arguments)
+        return subprocess.CompletedProcess(command, 0, "\n".join(output), "")
+
+    plan = build_route_plan(
+        action,
+        {"name": "assistant", "physical_fqn": FQN},
+        "VERSION$2",
+        "production",
+        set_default,
+    )
+    result = apply_route_plan(config, plan, runner=CommandRunner(run_operation))
+    assert result["status"] == "completed"
+    expected = [f"ALTER AGENT {FQN} SET DEFAULT_VERSION = 'VERSION$2'"] if set_default else []
+    assert effects == expected
+    assert [phase["phase"] for phase in result["phases"]] == (
+        ["alias", "default"] if set_default else ["alias"]
+    )
+
+
+@pytest.mark.parametrize("action", ["promote", "rollback"])
+def test_equal_default_write_failure_is_not_reported_as_success(routing, tmp_path, action):
+    harness, effects, _, state = routing
+    state["aliases"]["PRODUCTION"] = "VERSION$2"
+    state["default_version"] = "VERSION$2"
+    config = resolve_config(SimpleNamespace(project_dir=str(tmp_path), target="sandbox"), env={})
+
+    def query(sql):
+        effects.append(sql)
+        raise RuntimeError("Explicit DEFAULT pin failed")
+
+    def run_operation(command, **kwargs):
+        output = []
+        harness.context["log"] = lambda message, **kwargs: output.append(message)
+        arguments = json.loads(command[command.index("--args") + 1])
+        try:
+            harness.call(command[2].split(".")[-1], **arguments)
+        except RuntimeError as error:
+            return subprocess.CompletedProcess(command, 1, "\n".join(output), str(error))
+        return subprocess.CompletedProcess(command, 0, "\n".join(output), "")
+
+    harness.context["run_query"] = query
+    plan = build_route_plan(
+        action, {"name": "assistant", "physical_fqn": FQN}, "VERSION$2", "production", True
+    )
+    result = apply_route_plan(config, plan, runner=CommandRunner(run_operation))
+    assert result["status"] == "partial_failure"
+    assert result["after"]["default_version"] == "VERSION$2"
+    assert result["phases"][0]["status"] == "completed"
+    assert result["phases"][1]["status"] == "failed"
+    assert "Explicit DEFAULT pin failed" in result["error"]
+    assert effects == [f"ALTER AGENT {FQN} SET DEFAULT_VERSION = 'VERSION$2'"]
+
+
+@pytest.mark.parametrize("failure", ["stale", "missing_version", "write", "postcondition"])
+def test_default_pin_preserves_guard_and_failure_behavior(routing, failure):
+    harness, effects, _, state = routing
+    if failure == "stale":
+        state["default_version"] = "VERSION$2"
+    elif failure == "missing_version":
+        state["versions"] = ["VERSION$1"]
+
+    def query(sql):
+        effects.append(sql)
+        if failure == "write":
+            raise RuntimeError("DEFAULT write failed")
+
+    harness.context["run_query"] = query
+    error = {
+        "stale": "DEFAULT changed",
+        "missing_version": "version does not exist",
+        "write": "DEFAULT write failed",
+        "postcondition": "DEFAULT postcondition failed",
+    }[failure]
+    with pytest.raises((ValueError, RuntimeError), match=error):
+        harness.call("cortex_agent__route_default", "assistant", "VERSION$2", "VERSION$1", FQN)
+    assert len(effects) == (0 if failure in {"stale", "missing_version"} else 1)
+
+
 def test_composite_route_binds_default_after_graph_changes(routing):
     harness, effects, node, _ = routing
     original = harness.context["run_query"]

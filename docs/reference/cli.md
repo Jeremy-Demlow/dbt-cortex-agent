@@ -1,4 +1,4 @@
-# CLI reference (v0.0.10)
+# CLI reference (v0.0.11)
 
 `dbt-cortex-agent` is the single console entry. Manifest-dependent commands run
 a fresh `dbt parse` unless `--no-parse` is supplied for a controlled fixture.
@@ -58,7 +58,7 @@ the project working directory and child environment, including `DBT_PROFILES_DIR
 ### `dbt-cortex-agent init` — MUTATION with `--apply`
 
 Preview or append missing package/project-var entries. Options: shared options,
-`--package-source`, `--revision` (default `v0.0.10`), `--agent-schema`,
+`--package-source`, `--revision` (default `v0.0.11`), `--agent-schema`,
 `--eval-schema`, both repeatable allowlists, `--apply`, and `--run-dbt-deps`.
 Output is messages or JSON with `applied`, `changed_files`, and `messages`.
 By default, the command configures an existing dbt project only; it does not scaffold a dbt

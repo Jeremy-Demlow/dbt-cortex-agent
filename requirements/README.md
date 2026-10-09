@@ -3,7 +3,7 @@
 Requirements are the product contract. A requirement is complete only when its acceptance criteria
 have reproducible verification evidence. Historical version-specific requirements remain indexed as
 provenance. Version `0.0.9` was published on 2026-09-18 after exact-wheel
-qualification; the `0.0.10` candidate is pending qualification and publication. REQ-021 through REQ-028 remain
+qualification; the `0.0.11` candidate is pending qualification and publication. REQ-021 through REQ-028 remain
 the historical `0.0.6` foundation, extended by the current corrective release.
 Current proof scope and uncovered acceptance gaps are explicit in
 [`tests/requirement_evidence.json`](../tests/requirement_evidence.json). Collected

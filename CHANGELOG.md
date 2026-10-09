@@ -3,9 +3,25 @@
 This project had no public beta or stable release before `0.0.1`. Earlier Git
 history records design experiments, not supported package versions.
 
-## 0.0.10 — 2026-10-08
+## 0.0.11 — 2026-10-09
 
 Candidate pending qualification and publication; this heading is not release proof.
+
+- Fix explicit DEFAULT pinning when `agent promote --set-default` or
+  `agent rollback --set-default` targets the version DEFAULT already resolves
+  to. Always issue the explicit SET after identity, version, and stale-state
+  checks; an implicit DEFAULT otherwise follows the next commit. Alias-only
+  routing remains unchanged. This fix is not part of the immutable `v0.0.10`
+  release and needs successor-release qualification.
+- Strengthen exact-wheel live qualification with same-value DEFAULT pinning
+  before a changed commit and inspected intermediate routes. Refuse mismatched
+  sessions and existing reserved objects. Preserve failed observations, verify
+  cleanup absence, and stop automatic cleanup/retry when server state is unknown.
+
+## 0.0.10 — 2026-10-08
+
+Published on 2026-10-08. Its immutable artifacts remain available; the later
+walkthrough exposed the equal-value DEFAULT defect corrected by the successor.
 
 - Add `--version VERSION$N` to `eval run` and `eval verify` to score one
   committed Agent version. The version is staged per run, checked before START,

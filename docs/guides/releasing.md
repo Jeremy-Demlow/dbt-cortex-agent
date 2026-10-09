@@ -17,13 +17,21 @@ under `always()`. Its retained attestation is whitelist-only: wheel hash, target
 observed physical Agent FQNs for both databases, versions and aliases, before/after
 reconciliation snapshots, evaluation database, `paid_evaluation: false`, independent
 `proof_status` and `cleanup_status`, and bounded exception types on failure.
-`agents` retains the last observed pre-retirement states, not a claim that those
-Agents still exist. Cleanup-only updates preserve proof results and refuse
-mismatched target/database/wheel evidence. Cleanup success without prior proof
-has `proof_status: not_started`; failed proof stays failed even after cleanup.
-Top-level `status` cannot be completed if proof or cleanup failed. Cleanup
-completion means all bounded DROP commands returned successfully, not an
-independent post-cleanup inventory. Manual workflow dispatch validates/builds an existing tag but
+`agents` retains the last observed pre-retirement states, including a failed
+routing postcondition, not a claim that those Agents still exist. The
+`default_pin_regression` snapshots cover an explicit same-value DEFAULT pin
+before a later commit, promotion, rollback, no-change deployment and roll-forward.
+Cleanup-only preserves proof results and refuses mismatched execution scope or
+wheel evidence. A successful identity and clean reserved-object preflight must
+authorize cleanup; no prior authorization means `cleanup_status: not_authorized`.
+Failed proof stays failed after cleanup. A local timeout records unknown server
+state, stops further cleanup and blocks automatic retries. Reconcile the original
+command/job before separately reviewing recovery; do not edit the attestation to
+pretend the timed-out operation stopped.
+
+Cleanup completion requires bounded DROP success and an independent reserved-object
+absence inventory, not an inference from successful DROP responses alone.
+Manual workflow dispatch validates/builds an existing tag but
 cannot publish and does not invoke the release-only live gate.
 
 This proof invokes Agents and uses a warehouse, so it can incur runtime/compute
@@ -126,7 +134,7 @@ The corrected repository-local skill was merged after `v0.0.9` and is not part
 of its immutable source tag. Never move `v0.0.9` to include later documentation;
 use a future release if immutable distribution of the corrected skill is required.
 
-The `0.0.10` candidate is pending qualification and publication. It carries the
+The `0.0.11` candidate is pending qualification and publication. It carries the
 corrected skill, immutable stage skills, fqn deploy selection, and traced
 evaluation provenance. Its protected lifecycle proof Agents declare no skills, so
 that gate exercises fqn selection and reconciliation, not skill modes; the

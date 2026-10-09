@@ -204,7 +204,7 @@ This supplement is local simulated behavior evidence, not new live qualification
 
 ## REQ-028: Executable developer and CI/CD guide
 
-1. `TC-028-01`: Verify architecture and matching `0.0.10` candidate install coordinates, dated candidate status, aligned CI version assertion, and narrow requirements exceptions including REQ-032; preserve historical release evidence.
+1. `TC-028-01`: Verify architecture and matching `0.0.11` candidate install coordinates, dated candidate status, aligned CI version assertion, and narrow requirements exceptions including REQ-032; preserve historical release evidence.
 2. `TC-028-02`: Verify generic-first creation and optional capability examples.
 3. `TC-028-03`: Parse validation, deploy, smoke, and recovery command sequence.
 4. `TC-028-04`: Parse evaluation, gate, and baseline command sequence and approval labels.

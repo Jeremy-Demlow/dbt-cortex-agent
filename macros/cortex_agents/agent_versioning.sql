@@ -135,10 +135,10 @@
   {% if (before.get('default_version') or '') != expected_version %}
     {{ exceptions.raise_compiler_error("Agent DEFAULT changed after alias routing") }}
   {% endif %}
-  {% if before.get('default_version') != safe_version %}
-    {% do dbt_cortex_agent.cortex_agent__assert_expected_identity(agent_fqn, expected_agent_fqn) %}
-    {% do run_query("ALTER AGENT " ~ agent_fqn ~ " SET DEFAULT_VERSION = '" ~ safe_version ~ "'") %}
-  {% endif %}
+  {# An equal resolved DEFAULT can still be implicit and follow the next COMMIT.
+     An explicit pin request must issue SET even when the value already matches. #}
+  {% do dbt_cortex_agent.cortex_agent__assert_expected_identity(agent_fqn, expected_agent_fqn) %}
+  {% do run_query("ALTER AGENT " ~ agent_fqn ~ " SET DEFAULT_VERSION = '" ~ safe_version ~ "'") %}
   {% set after = dbt_cortex_agent.cortex_agent__version_state(agent_fqn) %}
   {% if after.get('default_version') != safe_version %}
     {{ exceptions.raise_compiler_error("Agent DEFAULT postcondition failed") }}

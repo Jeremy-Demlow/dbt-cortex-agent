@@ -153,11 +153,11 @@ def test_current_product_versions_and_project_names_align():
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
 
     assert package["project"]["name"].replace("-", "_") == project["name"]
-    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.10"
-    assert '__version__ = "0.0.10"' in init_source
-    assert 'name = "dbt-cortex-agent"\nversion = "0.0.10"' in lock
-    assert package["project"]["urls"]["Documentation"].endswith("/tree/v0.0.10/docs")
-    assert '" --version)" = "0.0.10"' in _workflow_text()
+    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.11"
+    assert '__version__ = "0.0.11"' in init_source
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.11"' in lock
+    assert package["project"]["urls"]["Documentation"].endswith("/tree/v0.0.11/docs")
+    assert '" --version)" = "0.0.11"' in _workflow_text()
 
 
 def test_requirements_ignore_exceptions_remain_narrow():
