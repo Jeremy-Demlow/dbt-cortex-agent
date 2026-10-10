@@ -16,6 +16,33 @@ FQN = "DB.DEV_AGENTS.PHYSICAL_AGENT"
 # Evidence: TC-032-03 TC-032-05
 
 
+@pytest.mark.parametrize(
+    "live_rows,expected", [([None], True), ([""], True), (["  "], True), ([], False)]
+)
+def test_version_inventory_recognizes_native_live_row(macro_harness, live_rows, expected):
+    aliases = {"DEFAULT": "VERSION$1", "LAST": "VERSION$2", "PRODUCTION": "VERSION$1"}
+
+    class Rows(list):
+        column_names = ["name"]
+
+    queries = []
+
+    def query(sql):
+        queries.append(sql)
+        assert sql == f"SHOW VERSIONS IN AGENT {FQN}"
+        return Rows([(name,) for name in ["VERSION$2", *live_rows, "VERSION$1"]])
+
+    macro_harness.override("cortex_agent__agent_exists", lambda fqn: True)
+    macro_harness.override("cortex_agent__describe_aliases", lambda fqn: aliases)
+    macro_harness.context["run_query"] = query
+    state = macro_harness.call("cortex_agent__version_state", FQN)
+    assert state["live"] is expected
+    assert state["versions"] == ["VERSION$1", "VERSION$2"]
+    assert state["aliases"] == aliases
+    assert state["default_version"] == "VERSION$1"
+    assert queries == [f"SHOW VERSIONS IN AGENT {FQN}"]
+
+
 @pytest.fixture
 def routing(macro_harness):
     node = SimpleNamespace(

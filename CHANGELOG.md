@@ -13,6 +13,9 @@ Candidate pending qualification and publication; this heading is not release pro
   checks; an implicit DEFAULT otherwise follows the next commit. Alias-only
   routing remains unchanged. This fix is not part of the immutable `v0.0.10`
   release and needs successor-release qualification.
+- Recognize SQL NULL names as native LIVE rows in `agent versions`, consistently
+  with deployment inspection. Keep blank-name compatibility and report absent
+  LIVE accurately; committed versions and routing are unchanged.
 - Strengthen exact-wheel live qualification with same-value DEFAULT pinning
   before a changed commit and inspected intermediate routes. Refuse mismatched
   sessions and existing reserved objects. Preserve failed observations, verify

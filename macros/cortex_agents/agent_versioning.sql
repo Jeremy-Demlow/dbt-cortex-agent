@@ -31,7 +31,7 @@
   {% set version_numbers = [] %}
   {% set live_state = namespace(present=false) %}
   {% for row in rows %}
-    {% set name = row[name_idx] | string %}
+    {% set name = '' if row[name_idx] is none else row[name_idx] | string %}
     {% set match = modules.re.match('^VERSION[$]([1-9][0-9]*)$', name) %}
     {% if match %}
       {% do version_numbers.append(match.group(1) | int) %}

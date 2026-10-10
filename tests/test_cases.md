@@ -1,5 +1,12 @@
 # Test cases
 
+## Native LIVE Inventory Regression
+
+- REQ-025: `tests/test_identity_macros.py::test_version_inventory_recognizes_native_live_row`
+  executes the actual inventory macro with SQL NULL, blank, whitespace, and absent
+  LIVE rows. Committed versions remain ordered and the authoritative alias map
+  remains unchanged. This is offline behavioral coverage, not native release proof.
+
 ## Final Review: HTTP Resources And Proof Isolation
 
 - REQ-030 final-review criteria: behavioral tests in `tests/test_invoke.py` raise real stdlib `HTTPError` with synthetic owned bodies, inject body/cursor/connection close failures and artifact-write failure, and assert primary identity, cleanup order, secondary metadata, and bounded evidence. Existing partial-stream tests remain required.
