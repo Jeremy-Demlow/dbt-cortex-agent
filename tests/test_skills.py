@@ -534,9 +534,64 @@ def test_skill_smoke_passes_role_through_command_and_runtime(tmp_path, monkeypat
         ]
     )
     assert handle(args, _config(tmp_path, role="APPROVED_ROLE")) == 0
-    assert calls[0][1] == {"role": "APPROVED_ROLE"}
+    assert calls[0][1] == {"role": "APPROVED_ROLE", "timeout": 60}
     assert calls[0][0][:3] == ("DB", "AGENTS", "AGENT")
     assert json.loads(capsys.readouterr().out)["verified"] == ["one"]
+
+
+@pytest.mark.parametrize("json_output", [True, False])
+def test_skill_command_preserves_failed_response_and_timeout(
+    tmp_path, monkeypatch, capsys, json_output
+):
+    from dbt_cortex_agent.invoke import AgentInvocationError
+
+    manifest = _manifest(
+        {
+            "agent": [
+                _skill("one", "@DB.AGENTS.SKILL_STAGE/library/one"),
+                _skill("two", "@DB.AGENTS.SKILL_STAGE/library/two"),
+            ]
+        }
+    )
+    monkeypatch.setattr("dbt_cortex_agent.commands.skill.fresh_manifest", lambda *a, **k: manifest)
+    calls = []
+
+    def invoke(*args, **kwargs):
+        calls.append(kwargs["timeout"])
+        raise AgentInvocationError(
+            "deadline", {"answer": "partial", "errors": ["deadline"], "duration_seconds": 120.5}
+        )
+
+    monkeypatch.setattr(
+        "dbt_cortex_agent.commands.skill.smoke_skills", partial(smoke_skills, invoker=invoke)
+    )
+    args = build_parser().parse_args(
+        [
+            "skill",
+            "smoke",
+            "--agent",
+            "agent",
+            "--timeout-seconds",
+            "120.5",
+            "--apply",
+            "--allow-target",
+            "sandbox",
+            "--allow-database",
+            "DB",
+            *(["--json"] if json_output else []),
+        ]
+    )
+    assert handle(args, _config(tmp_path, role="ROLE")) == 2
+    assert calls == [120.5]
+    output = capsys.readouterr().out
+    if json_output:
+        payload = json.loads(output)
+        assert payload["timeout_seconds"] == 120.5
+        assert payload["verified"] == []
+        assert payload["failure"]["skill"] == "one"
+        assert payload["failure"]["response"]["answer"] == "partial"
+    else:
+        assert "FAIL one" in output and "partial" in output
 
 
 @pytest.mark.parametrize(

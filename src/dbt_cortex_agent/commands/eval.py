@@ -7,7 +7,7 @@ from ..eval.baseline import accept_baseline
 from ..eval.compare import compare_results
 from ..eval.gate import gate_candidate
 from ..eval.lifecycle import build_plan, run_evaluation
-from ..eval.results import load_result
+from ..eval.results import eligibility_failures, load_result
 from ..eval.verify import build_verify_selections, verify_evaluations
 from ..identifiers import version
 from .common import add_allowlists, emit_json, require_explicit_connection
@@ -172,6 +172,8 @@ def _handle_run(args: argparse.Namespace, config: Config) -> int:
         "suite_signature": plan.suite_signature,
         "paid_apply": bool(args.apply),
     }
+    if plan.question_policy:
+        plan_payload["question_policy"] = plan.question_policy
     output = run_evaluation(
         config,
         plan,
@@ -185,11 +187,14 @@ def _handle_run(args: argparse.Namespace, config: Config) -> int:
         agent_version=args.agent_version,
     )
     candidate = load_result(output) if output else None
+    passed = candidate.get("passed") if candidate else None
+    if candidate and "question_policy" in candidate:
+        passed = not eligibility_failures(candidate)
     payload = {
         "command": "eval run",
         "plan": plan_payload,
         "candidate": str(output) if output else None,
-        "passed": candidate.get("passed") if candidate else None,
+        "passed": passed,
     }
     if args.json:
         emit_json(payload)
@@ -197,7 +202,7 @@ def _handle_run(args: argparse.Namespace, config: Config) -> int:
         emit_json(plan_payload)
         if output:
             print(f"Candidate: {output}")
-    return 0 if candidate is None or candidate.get("passed") else 1
+    return 0 if candidate is None or passed else 1
 
 
 def _handle_compare(args: argparse.Namespace, _config: Config) -> int:
@@ -213,6 +218,8 @@ def _handle_accept(args: argparse.Namespace, config: Config) -> int:
     candidate = load_result(args.candidate)
     if args.force and not args.apply:
         raise ValueError("--force requires --apply")
+    if "question_policy" in candidate and eligibility_failures(candidate):
+        raise ValueError("Failed or non-completed evaluation candidates cannot become baselines")
     target = accept_baseline(candidate, directory, force=args.force) if args.apply else None
     payload = {
         "command": "eval accept-baseline",

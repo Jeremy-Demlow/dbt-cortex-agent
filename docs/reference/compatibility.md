@@ -1,15 +1,15 @@
 # Compatibility
 
-This matrix defines the compatibility targets for the `dbt_cortex_agent`
-0.0.11 candidate on both install surfaces. It is pending the protected
-exact-wheel lifecycle proof and the two dbt installed-wheel CI lines; those
-checks do not establish live behavior on every accepted patch.
+This matrix defines compatibility targets for `dbt_cortex_agent` 0.0.12.
+Qualification and publication are separate gates; the release guide records
+pending publication separately from retained historical evidence. No matrix
+establishes live behavior on every accepted patch.
 
-The project-local Cortex Code adoption skill uses the same 0.0.11 CLI/parser and
+The project-local Cortex Code adoption skill uses the same 0.0.12 CLI/parser and
 metadata contracts. dbt Core with `dbt-snowflake` remains authoritative for its
 proof steps; Fusion/fdbt output is advisory. The skill adds no runtime dependency,
 is script-free, and adds no global installation or live-verification claim.
-The proposed `v0.0.11` tag carries forward the corrected skill that `v0.0.9`
+The published `v0.0.11` tag carries the corrected skill that `v0.0.9`
 predates. Neither Python installation nor the wheel registers it. Runtime
 scaffold, Agent smoke, and doctor behavior are independent of that skill text.
 
@@ -20,7 +20,7 @@ scaffold, Agent smoke, and doctor behavior are independent of that skill text.
 - Snowflake account features and privileges required by Cortex Agents and Agent
   Evaluation.
 
-## Tested authority
+## Historical tested authority
 
 | Component | Status |
 |---|---|
@@ -35,6 +35,17 @@ scaffold, Agent smoke, and doctor behavior are independent of that skill text.
 
 The CI matrix covers the lower accepted minor and the authoritative minor. Do not
 infer that every accepted patch has live lifecycle coverage.
+
+For the pre-finalization 0.0.12 candidate, local exact-wheel consumer checks used
+dbt Core 1.10.22 with dbt-snowflake 1.10.3 and dbt Core 1.11.15 with
+dbt-snowflake 1.11.4. They used cached dependencies and local dbt package sources,
+parsed default-schema Agent-only and optional-evaluation consumers, and exercised
+public previews. Finalization
+changes require fresh release checks; these earlier checks do not qualify the
+final tag's bytes. They did not invoke Snowflake or prove Hub/Git distribution,
+native timing, cancellation,
+answer quality, or publication. Remote Python 3.10-3.13 CI and protected native
+qualification remain separate gates.
 
 ## Fusion boundary
 

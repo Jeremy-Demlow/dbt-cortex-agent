@@ -134,12 +134,32 @@ The corrected repository-local skill was merged after `v0.0.9` and is not part
 of its immutable source tag. Never move `v0.0.9` to include later documentation;
 use a future release if immutable distribution of the corrected skill is required.
 
-The `0.0.11` candidate is pending qualification and publication. It carries the
+Version `0.0.11` is published on PyPI and at immutable tag `v0.0.11`.
+[Release run 38013357721](https://github.com/Jeremy-Demlow/dbt-cortex-agent/actions/runs/38013357721)
+retains build, protected lifecycle and publication evidence. It carries the
 corrected skill, immutable stage skills, fqn deploy selection, and traced
 evaluation provenance. Its protected lifecycle proof Agents declare no skills, so
 that gate exercises fqn selection and reconciliation, not skill modes; the
 immutable and `git_integration` skill modes were proven in separate approved live
 probes, and paid native Agent Evaluation remains outside the release gate.
+
+### 0.0.12 release preparation
+
+Release preparation is gated pending protected exact-wheel proof and PyPI
+publication. The current install contract is Python 0.0.12 / Git v0.0.12;
+instructions require published availability and are not a publication receipt.
+No 0.0.12 tag, release run ID, live attestation or PyPI availability is confirmed
+in this source. Record those facts only after the corresponding gates succeed.
+Do not rebuild changed bytes under 0.0.11 or relabel earlier candidate hashes as
+the final release's proof.
+
+The 0.0.12 interfaces include configurable smoke budgets and opt-in CLI question
+floors with schema-v3 evidence. Native macro run/gate rejects opted-in floors;
+the release lane does not run paid native Agent Evaluation and makes no answer-
+quality or native question-floor qualification claim. Local fake-clock tests,
+synthetic policy tests and earlier installed consumers do not replace fresh
+exact-tag checks or the protected exact-wheel lifecycle gate. Commit, push,
+immutable tagging and publication follow the owner-controlled checklist above.
 
 After PyPI publication, the release workflow retains the completed protected
 live attestation as `release-live-attestation.json` on the GitHub release.

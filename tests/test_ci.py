@@ -153,11 +153,11 @@ def test_current_product_versions_and_project_names_align():
     lock = (ROOT / "uv.lock").read_text(encoding="utf-8")
 
     assert package["project"]["name"].replace("-", "_") == project["name"]
-    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.11"
-    assert '__version__ = "0.0.11"' in init_source
-    assert 'name = "dbt-cortex-agent"\nversion = "0.0.11"' in lock
-    assert package["project"]["urls"]["Documentation"].endswith("/tree/v0.0.11/docs")
-    assert '" --version)" = "0.0.11"' in _workflow_text()
+    assert package["project"]["version"] == project["version"] == citation["version"] == "0.0.12"
+    assert '__version__ = "0.0.12"' in init_source
+    assert 'name = "dbt-cortex-agent"\nversion = "0.0.12"' in lock
+    assert package["project"]["urls"]["Documentation"].endswith("/tree/v0.0.12/docs")
+    assert '" --version)" = "0.0.12"' in _workflow_text()
 
 
 def test_requirements_ignore_exceptions_remain_narrow():
@@ -176,6 +176,8 @@ def test_requirements_ignore_exceptions_remain_narrow():
         "REQ-030_runtime_failure_evidence.md",
         "REQ-031_shared_controlled_failure_contract.md",
         "REQ-032_resolved_mutation_identity.md",
+        "REQ-033_configurable_runtime_budget.md",
+        "REQ-034_question_metric_floors.md",
         "README.md",
         "user_stories.md",
     ]

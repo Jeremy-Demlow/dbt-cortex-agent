@@ -12,7 +12,8 @@ Before a paid CLI run, provide all three prerequisites:
 1. the **normally deployed Agent** selected by the full-body model and target;
 2. a **materialized eval table** with `INPUT_QUERY` and `OUTPUT` VARIANT rows;
 3. access to the **evaluation stage** resolved as
-   `<target.database>.<cortex_agent_schema>.EVAL_CONFIG_STAGE`.
+   `<resolved Agent database>.<resolved Agent schema>.EVAL_CONFIG_STAGE`
+   (or the explicitly configured stage in the execution plan).
 
 Evaluation never creates, deploys, replaces, or otherwise mutates that Agent. The
 eval table FQN comes from the resolved dbt model in `cortex_eval_schema`. Dataset names are content-hashed from
@@ -20,8 +21,8 @@ the Agent/suite identity so changed ground truth does not silently reuse a stale
 Snowflake dataset.
 
 `dbt-cortex-agent eval run` does not create these prerequisites. Its default path
-only renders the authoritative plan. `--apply` uploads a generated JSON config,
-creates the stage if needed, starts Snowflake Agent Evaluation, and incurs Cortex
+only renders the authoritative plan. `--apply` checks the pre-existing stage,
+uploads a generated JSON config, starts Snowflake Agent Evaluation, and incurs Cortex
 and warehouse spend. Applied execution requires explicit `--connection` and
 `--warehouse`, `--target`, `--database`, and matching repeatable `--allow-target`
 and `--allow-database` values. The plan target and database must match the
@@ -222,7 +223,8 @@ New candidates retain `run_metadata.dataset_snapshot` as rows of
 `[input_query, test_type, ground_truth_ref]` and a boolean `dataset_source_changed`.
 Artifact validation checks complete unique mapping membership and exact result
 input/ref/type agreement, and rejects a passing artifact with observed drift.
-Baseline acceptance retains these metadata fields but still omits scored rows.
+Schema-v2 baseline acceptance retains these metadata fields but still omits
+scored rows; protected schema-v3 baselines retain rows for question-floor replay.
 The fields are additive to schema v2: older artifacts without either field retain
 existing validation, not retrospective snapshot proof. Regenerate an older
 candidate when immutable annotation provenance is required; do not backfill its
@@ -236,6 +238,59 @@ rebuilds externally when that stronger guarantee is required. This protection
 applies to the Python client path, not the separate native macro gate below.
 
 ## dbt macro path
+
+### Opt-in question floors (0.0.12)
+
+Protect individual questions with `questions[].thresholds` in dbt-owned eval
+metadata. Suite-wide `thresholds` still apply to averages; question floors apply
+independently to the selected `ground_truth_ref`/metric observations. For example:
+
+```yaml
+metrics: [answer_correctness, tool_selection_accuracy]
+thresholds: {answer_correctness: 0.6}
+questions:
+  - id: critical_answer
+    ground_truth_ref: critical_answer_v1
+    test_type: in_scope
+    thresholds: {answer_correctness: 0.8, tool_selection_accuracy: 1.0}
+  - id: ordinary_answer
+    ground_truth_ref: ordinary_answer_v1
+```
+
+A critical score of 0.4 and ordinary score of 1.0 average to 0.7, satisfying the
+suite floor but failing the critical floor. Equality passes. Missing, duplicate,
+nonfinite, out-of-range or inapplicable protected observations fail validation;
+editing `passed`, clearing failure lists, or replacing summaries cannot produce
+a passing gate. The existing ref/metric completeness rules still apply.
+
+Metric keys must be declared. Built-in floors are in [0, 1]. Custom metrics need
+explicit finite, ordered min/median/max `score_ranges` pairs; their outer bounds
+define the legal floor and protected score range. Tool-accuracy floors are rejected
+for questions whose `test_type` is not `in_scope`; boundary answer/custom floors
+remain valid. Before START, the client checks protected question types against
+the captured dataset snapshot, and retained rows must match that applicability.
+
+Nonempty policy uses plan and artifact schema v3, with `question_policy` version
+1 containing `thresholds` (ref -> metric -> floor), `score_bounds` and `test_types`.
+dbt includes the complete policy in `signature_material` and `suite_signature`.
+Changing, lowering, removing or rekeying a policy is incomparable with an existing
+baseline; `eval verify` also binds the exact policy to the current plan.
+Protected v3 baselines retain complete scored rows so eligibility is replayable,
+rather than trusting a historical pass flag or compact average. Existing v2
+artifacts remain readable and unchanged; absent or empty question maps retain
+the original v2 signature inputs, compact baselines and aggregate behavior.
+There is no evidence backfill or automatic baseline migration. Older clients
+reject v3 evidence; use matching 0.0.12 product code and macros for this policy.
+
+Use `dbt-cortex-agent eval run/verify`, then artifact `compare/gate/accept-baseline`.
+The native macro `cortex_eval__run` and `cortex_eval__gate` explicitly reject a
+nonempty question policy before START or result queries, directing operators to
+the CLI. Native dry-run previews and execution-plan rendering remain available;
+direct START/config primitives are not quality gates. No native per-question
+SQL gating or paid/live qualification is claimed. Retained evidence and MD5
+suite signatures prove consistency, not authenticity against an actor rewriting
+all local files. Keep baseline changes separately reviewed and source rebuilds
+coordinated under the existing snapshot limitations above.
 
 Use public macros when the complete workflow should remain in dbt:
 
@@ -251,6 +306,29 @@ declared threshold gates. It is an on-demand native macro path; it does not writ
 the CLI's durable candidate/baseline artifacts or apply accepted-baseline policy.
 Direct macro calls also rely on dbt's profile and package safety vars rather than
 the CLI's explicit connection, resolved-database, and duplicate allowlist gates.
+Unlike the Python CLI path, the native start macro issues `CREATE STAGE IF NOT
+EXISTS` for its resolved config stage. This requires stage-creation privileges
+when absent. Do not transfer that provisioning behavior to `eval run` or
+`eval verify` CLI instructions; those require the stage already provisioned.
+
+Native `cortex_eval__run` and `cortex_eval__start` dry runs use the real config
+renderer's explicit `dry_run=true` path. It performs local metadata validation
+but no content-hash, dataset-inventory, live-table, stage, START, polling or result
+queries, including when dbt sets `execute=true` or live checks were requested.
+Direct `cortex_eval__render_config` calls default to normal rendering, which
+still queries the actual content hash and inventory; `execute_checks=false`
+only disables live table validation. Pass `dry_run=true` explicitly for preview.
+
+Preview configs carry `preview.executable: false`, the `preview_unresolved`
+dataset-hash sentinel, and `preview.dataset_exists: null`. Dataset creation/reuse
+is unknown, so no dataset block is inferred; an explicitly requested inclusion
+is only a shape preview, not proof of existence. Under dbt `execute=false`, config
+rendering also uses this unresolved preview. Do not upload preview output to
+START or treat it as a full executable plan. Normal execution rerenders against
+real content and inventory. The separate offline `cortex_eval__execution_plan`
+still uses its established dataset token and signed identity/policy contract;
+neither preview proves native execution, Agent versions/aliases, or dataset
+existence. These are local Jinja regression checks, not live dbt qualification.
 
 ## Ground-truth rules
 

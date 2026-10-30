@@ -39,6 +39,8 @@ def _bind_candidate(
         "regression_tolerances": plan.regression_tolerances,
     }
     mismatched = [field for field, value in expected.items() if candidate.get(field) != value]
+    if candidate.get("question_policy", {}) != plan.question_policy:
+        mismatched.append("question_policy")
     if (candidate.get("run_metadata") or {}).get("requested_version") != agent_version:
         mismatched.append("requested_version")
     if mismatched:
@@ -103,6 +105,7 @@ def verify_evaluations(
             "baseline": str(item.baseline),
             "baseline_state": "established" if item.baseline.is_file() else "not_established",
             "agent_version": agent_version,
+            **({"question_policy": item.plan.question_policy} if item.plan.question_policy else {}),
         }
         for item in selections
     ]

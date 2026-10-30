@@ -1,5 +1,13 @@
 # Test cases
 
+## REQ-033: Configurable runtime budget and engineer handoff
+
+- `TC-033-01`: Both parsers reject nonpositive/nonfinite/malformed budgets, keep 60 by default, and accept fractions; Python validation precedes acquisition.
+- `TC-033-02`: Agent preview never invokes; applied Agent/skill commands forward the budget and emit it. Runtime metadata keeps the client budget authoritative.
+- `TC-033-03`: Skill timeout retains prior successes and partial response, returns exit 2 in human/JSON mode and stops later calls. HTTP wrapped timeouts retain their cause and correct classification.
+- `TC-033-04`: Fake setup/read clock yields an 80-second completion; default 60 fails while 120/300 succeed. No real sleep or paid runtime used.
+- `TC-033-05`: Public command examples parse and documentation distinguishes 0.0.12 interfaces from pending publication and historical 0.0.11 evidence, schema resolution, pre-existing CLI eval stage, artifact paths and recovery. These checks do not prove native or installed-wheel behavior.
+
 ## Native LIVE Inventory Regression
 
 - REQ-025: `tests/test_identity_macros.py::test_version_inventory_recognizes_native_live_row`
@@ -35,7 +43,7 @@
 ## Task 6: Proof Linkage Contract
 
 `tests/requirement_evidence.json` is the machine-readable inventory for every
-numbered acceptance criterion in REQ-021 through REQ-032 and every canonical
+numbered acceptance criterion in REQ-021 through REQ-034 and every canonical
 developer-guide section. `TC-*` IDs below describe intended tests, not completion.
 Legacy source comments are not evidence. Each map entry contains a bounded claim,
 proof references and gaps. Empty gaps mean only the linked local scope is covered,
@@ -86,6 +94,14 @@ All task 5 evidence is local and synthetic, not live connector/dbt/Snowflake qua
 8. `TC-021-08`: Enforce lint, typing, branch coverage, complexity, dependency, inventory, and secret gates.
 9. `TC-021-09`: Run targeted property and mutation tests for safety boundaries.
 10. `TC-021-10`: Snapshot supported `0.0.5` CLI, JSON, artifact, and macro behavior.
+
+Release-finalization supplement to `TC-021-07`/`TC-021-08` (2026-10-30):
+`test_requirements_ignore_exceptions_remain_narrow` pins exactly REQ-019,
+REQ-021 through REQ-034, README and user stories, with no broad unignore.
+Current docs/CLI identity tests require Python 0.0.12 / Git v0.0.12, the dated
+changelog and explicit pending publication. Historical 0.0.11 records remain.
+Runtime/question-floor/project-skill contracts remain offline only; this worker
+does not create Git fixtures, tags, releases or native evaluation proof.
 
 ## REQ-022: Package-native workflow safety
 
@@ -181,7 +197,24 @@ This supplement is local simulated behavior evidence, not new live qualification
 11. `TC-025-11`: Inject failure between alias/default movement and prove retry convergence.
 12. `TC-025-12`: Reject missing, unsafe, unapproved, and stale routing; verify conflicting postconditions fail and retry converges across the non-transactional alias gap.
 13. `TC-025-13`: Live-prove distinct V1/V2 promotion, rollback, roll-forward, and routed invocation.
-14. `TC-025-14`: Prove final unchanged deployment creates no V3 or routing churn.
+14. `TC-025-14`: Prove final unchanged deployment creates no V3 or unnecessary routing churn when the model alias already matches; requested reconciliation can restore a displaced alias.
+
+Task 3 alias-doc/test supplement to `TC-025-04`, `TC-025-10`, `TC-025-14`,
+`TC-023-07` and `TC-023-09`:
+
+- `tests/test_deployment.py::test_promote_then_unchanged_deploy_restores_model_alias_with_pinned_default`
+  runs actual Jinja deployment, explicit DEFAULT pinning, version inspection and
+  custom-alias promotion against the same persistent fixture. V1/V2 have distinct
+  content and real content hashes; simulated custom aliases are exclusive per
+  version, separately from DEFAULT/LAST. With DEFAULT pinned to V1, promotion to
+  PRODUCTION displaces LATEST on V2. No-change deploy restores LATEST only when
+  reconciliation is enabled, displacing PRODUCTION without V3 or DEFAULT writes.
+  A final repeat emits no mutations; both immutable specifications remain intact.
+- `tests/test_docs.py::test_alias_docs_distinguish_content_routes_and_describe_views`
+  pins the warning, helper semantics, reference and reported DEFAULT-versus-LIVE
+  DESCRIBE distinction without claiming native qualification.
+- Prior native behavior is the user's supplied observation, not a run performed
+  by these offline tests or a platform-wide independent-coexistence guarantee.
 
 ## REQ-026: Guarded Agent retirement
 
@@ -211,7 +244,7 @@ This supplement is local simulated behavior evidence, not new live qualification
 
 ## REQ-028: Executable developer and CI/CD guide
 
-1. `TC-028-01`: Verify architecture and matching `0.0.11` candidate install coordinates, dated candidate status, aligned CI version assertion, and narrow requirements exceptions including REQ-032; preserve historical release evidence.
+1. `TC-028-01`: Verify matched 0.0.12 release metadata, installation pins and CI assertions, with a dated changelog and pending publication distinguished from historical 0.0.11 evidence. The exact requirements exceptions include REQ-033/034; credentials and local evidence remain ignored.
 2. `TC-028-02`: Verify generic-first creation and optional capability examples.
 3. `TC-028-03`: Parse validation, deploy, smoke, and recovery command sequence.
 4. `TC-028-04`: Parse evaluation, gate, and baseline command sequence and approval labels.
@@ -477,3 +510,12 @@ This supplement is local simulated behavior evidence, not new live qualification
 6. Verify intrinsic quality failure exits 1, missing baseline is valid, and infrastructure/configuration failure exits 2.
 7. Verify explicit role/context handling remains backward compatible and unsupported authentication combinations are actionable.
 8. Verify direct customer docs and installed-wheel proof contain no Makefile or adopter-script dependency.
+
+## REQ-034: Opt-in question metric floors
+
+- TC-034-01: Execute dbt policy validation for refs, metric declarations, finite/ranged floors, custom ranges and tool applicability.
+- TC-034-02: Render/consume signed v3 policy plans; prove absent/empty policies preserve v2 signatures and reject mismatched versions.
+- TC-034-03: Green average with a failed critical question fails; missing/duplicate/nonfinite/out-of-range/wrong-type row evidence cannot pass.
+- TC-034-04: Compare, file gate, baseline acceptance and verify enforce floors and policy binding; protected baselines retain replayable rows.
+- TC-034-05: Execute real native Jinja run/gate guards and the actual run/start/render/build preview chain with `execute=true`; assert zero queries, unresolved dataset identity/existence, non-executable labels, unchanged normal hashing and execution-plan signatures. Do not replace the renderer.
+- TC-034-06: Run focused/full offline tests and document schema compatibility and explicit native unsupported boundary; independent/live proof remains pending.

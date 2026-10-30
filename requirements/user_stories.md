@@ -1,5 +1,11 @@
 # User stories
 
+## REQ-033
+
+- As an operator, I can choose a finite invocation budget through either smoke command without editing installed files.
+- As an engineer, I can retain partial evidence and prior successful skill checks on failure without silently retrying.
+- As a consumer, I can use matched 0.0.12 instructions without mistaking pending publication or fake-clock tests for native qualification.
+
 ## REQ-032
 
 - As an adopter, deployment uses dbt's resolved naming, including generated schemas.
@@ -12,6 +18,7 @@
 - As a maintainer, I can reason about immutable validated domain values instead of loosely shaped dictionaries.
 - As a contributor, I receive fast lint, type, complexity, property, and test feedback before release.
 - As a consumer, expected failures are bounded, actionable, and never expose a traceback or secret.
+- As a release reviewer, I can stage the exact approved requirements inventory normally, keep local evidence and credentials ignored, and distinguish matched 0.0.12 instructions from completed publication proof.
 
 ## REQ-022
 
@@ -45,6 +52,7 @@
 - As a release operator, I can inspect, promote, roll back, and roll forward immutable Agent versions.
 - As an incident responder, I can route traffic to an older version without deleting newer history.
 - As an evaluator, I can prove the exact version that answered and was evaluated.
+- As an operator, I understand when no-change deployment restores a displaced model alias without creating another version or moving explicitly pinned DEFAULT, and do not assume custom aliases coexist independently.
 
 ## REQ-026
 
@@ -234,3 +242,11 @@
 - As a developer, programming defects remain visible rather than being mislabeled as recoverable operational failures.
 - As a multi-database operator, connection context does not silently narrow manifest-derived resource authorization.
 - As a platform owner, infrastructure tooling and fleet authorization remain adopter policy rather than package dependencies.
+
+## REQ-034
+
+- As a release owner, selected critical questions block release despite green averages.
+- As a baseline owner, lowered or changed question policies are incomparable.
+- As an auditor, protected baseline decisions can be replayed from scored rows.
+- As an operator, the real native dry-run renderer performs no queries and labels
+  unknown dataset identity/existence rather than claiming executable proof.

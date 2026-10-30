@@ -55,6 +55,8 @@ requirements/*
 !requirements/REQ-030_runtime_failure_evidence.md
 !requirements/REQ-031_shared_controlled_failure_contract.md
 !requirements/REQ-032_resolved_mutation_identity.md
+!requirements/REQ-033_configurable_runtime_budget.md
+!requirements/REQ-034_question_metric_floors.md
 !requirements/README.md
 !requirements/user_stories.md
 evidence/

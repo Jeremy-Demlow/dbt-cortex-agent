@@ -89,26 +89,38 @@
   {{ return(eval_config) }}
 {% endmacro %}
 
-{% macro cortex_eval__build_config(model_name, run_name=none, dataset_name=none, execute_checks=false, include_dataset=none) %}
-  {% do cortex_eval__validate(model_name, execute_checks) %}
+{% macro cortex_eval__build_config(model_name, run_name=none, dataset_name=none, execute_checks=false, include_dataset=none, dry_run=false) %}
+  {% set preview = dry_run or not execute %}
+  {% do cortex_eval__validate(model_name, false if preview else execute_checks) %}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
   {% set resource = cortex_agent__get_agent(eval_meta.get('agent')) %}
   {% set agent = cortex_agent__agent_meta(resource) %}
   {% set dataset_fqn = cortex_eval__dataset_fqn(model_name) %}
-  {% set content_hash = cortex_eval__dataset_content_hash(model_name) %}
+  {% set content_hash = 'preview_unresolved' if preview else cortex_eval__dataset_content_hash(model_name) %}
   {% set eval_dataset_name = cortex_eval__hash_named_dataset_name(dataset_name, content_hash) or cortex_eval__default_dataset_name(model_name, eval_meta, content_hash) %}
   {% set include_dataset_block = include_dataset %}
-  {% if include_dataset_block is none %}
+  {% if include_dataset_block is none and not preview %}
     {% set include_dataset_block = not cortex_eval__dataset_exists(eval_dataset_name) %}
   {% endif %}
   {% set agent_fqn = cortex_agent__resource_agent_fqn(resource, agent) %}
   {% set label = run_name or (agent.get('snowflake_name') ~ ' ' ~ eval_meta.get('name') ~ ' evaluation') %}
 
-  {{ return(cortex_eval__native_config(eval_meta, agent_fqn, dataset_fqn, eval_dataset_name, label, include_dataset_block)) }}
+  {% set eval_config = cortex_eval__native_config(eval_meta, agent_fqn, dataset_fqn, eval_dataset_name, label, include_dataset_block) %}
+  {% if preview %}
+    {# Do not infer dataset creation/reuse or present an unresolved config as a plan. #}
+    {% do eval_config.update({'preview': {
+      'executable': false,
+      'dataset_content_hash': 'preview_unresolved',
+      'dataset_exists': none,
+      'include_dataset': include_dataset
+    }}) %}
+    {% do log('[DRY RUN] preview only, not executable: dataset content hash and existence are unresolved; live checks skipped', info=True) %}
+  {% endif %}
+  {{ return(eval_config) }}
 {% endmacro %}
 
-{% macro cortex_eval__render_config(model_name, run_name=none, dataset_name=none, execute_checks=false) %}
-  {% set eval_config = cortex_eval__build_config(model_name, run_name, dataset_name, execute_checks) %}
+{% macro cortex_eval__render_config(model_name, run_name=none, dataset_name=none, execute_checks=false, dry_run=false) %}
+  {% set eval_config = cortex_eval__build_config(model_name, run_name, dataset_name, execute_checks, dry_run=dry_run) %}
   {# JSON is valid YAML. Use adapter-native serialization rather than hand-built
      indentation and quoting, eliminating a class of YAML corruption bugs. #}
   {% set rendered = tojson(eval_config) %}
@@ -133,6 +145,10 @@
   {% set model_name = node.name %}
   {% do cortex_eval__validate(model_name, false) %}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
+  {% set question_policy = cortex_eval__question_policy(eval_meta) %}
+  {% if question_policy %}
+    {% set plan_schema_version = 3 %}
+  {% endif %}
   {% set resource = cortex_agent__get_agent(agent_name) %}
   {% set agent = cortex_agent__agent_meta(resource) %}
   {% set metrics = eval_meta.get('metrics', []) %}
@@ -176,6 +192,9 @@
     'regression_tolerances': tolerances,
     'ordered_ground_truth_refs': ordered_refs
   } %}
+  {% if question_policy %}
+    {% do signature_inputs.update({'question_policy': question_policy}) %}
+  {% endif %}
   {% set signature_material = tojson(signature_inputs) %}
   {% set plan = {
     'schema_version': plan_schema_version,
@@ -190,6 +209,9 @@
     'signature_material': signature_material,
     'suite_signature': local_md5(signature_material)
   } %}
+  {% if question_policy %}
+    {% do plan.update({'question_policy': question_policy}) %}
+  {% endif %}
   {% do log('CORTEX_EVAL_PLAN_JSON=' ~ tojson(plan), info=True) %}
   {{ return(tojson(plan)) }}
 {% endmacro %}
@@ -200,17 +222,12 @@
   {% set eval_run_name = run_name or (eval_meta.get('agent') ~ '_' ~ eval_meta.get('name') ~ '_eval_' ~ invocation_slug[:12]) %}
   {% set eval_run_name = cortex_eval__assert_run_name(eval_run_name) %}
   {% set eval_stage = stage_fqn or cortex_eval__default_stage_fqn() %}
-  {% set config_yaml = cortex_eval__render_config(model_name, eval_run_name, dataset_name, execute_checks) %}
+  {% set config_yaml = cortex_eval__render_config(model_name, eval_run_name, dataset_name, execute_checks, dry_run=dry_run) %}
   {% set filename = cortex_eval__config_filename(model_name) %}
   {% set config_url = '@' ~ eval_stage ~ '/' ~ filename %}
 
   {% if dry_run %}
-    {% set rendered_config = cortex_eval__build_config(model_name, eval_run_name, dataset_name, execute_checks) %}
-    {% if rendered_config.get('dataset') %}
-      {% do log('[DRY RUN] would create dataset from table ' ~ rendered_config['dataset']['table_name'] ~ ' as ' ~ rendered_config['dataset']['dataset_name'], info=True) %}
-    {% else %}
-      {% do log('[DRY RUN] would reuse existing dataset ' ~ rendered_config['evaluation']['source_metadata']['dataset_name'], info=True) %}
-    {% endif %}
+    {% do log('[DRY RUN] dataset creation/reuse is unresolved for table ' ~ cortex_eval__dataset_fqn(model_name), info=True) %}
     {% do log('[DRY RUN] would create stage ' ~ eval_stage, info=True) %}
     {% do log('[DRY RUN] would upload eval config to ' ~ config_url, info=True) %}
     {% do log('[DRY RUN] would start EXECUTE_AI_EVALUATION run_name=' ~ eval_run_name, info=True) %}

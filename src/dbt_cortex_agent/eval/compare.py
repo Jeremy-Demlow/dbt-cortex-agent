@@ -30,6 +30,8 @@ def suite_change(baseline: dict[str, Any], candidate: dict[str, Any]) -> str | N
         return "metric contract changed"
     if _judges_changed(baseline, candidate):
         return "metric judges changed; scores from different judges are not comparable"
+    if baseline.get("question_policy") != candidate.get("question_policy"):
+        return "question threshold policy changed"
     if baseline.get("thresholds") != candidate.get("thresholds"):
         return "threshold policy changed"
     if baseline.get("regression_tolerances") != candidate.get("regression_tolerances"):

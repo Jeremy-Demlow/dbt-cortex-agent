@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import subprocess
 from types import SimpleNamespace
@@ -27,6 +28,14 @@ class Rows(list):
         self.rows = rows
 
 
+def _unset_custom_alias(state, version):
+    # Model the supplied native observation, not independent dict additions.
+    reserved = {"DEFAULT", "FIRST", "LAST", "LIVE"}
+    for alias, owner in list(state["aliases"].items()):
+        if owner == version and alias not in reserved:
+            del state["aliases"][alias]
+
+
 def _deploy_mutation(behavior, sql):
     parts = sql.split()
     assert parts[:2] == ["ALTER", "AGENT"], sql
@@ -39,27 +48,38 @@ def _deploy_mutation(behavior, sql):
         " SET COMMENT ": "metadata",
         " UNSET ALIAS": "alias_unset",
         " SET ALIAS ": "alias_set",
+        " SET DEFAULT_VERSION ": "default_set",
     }
     phase = next((phase for token, phase in operations.items() if token in sql), None)
-    assert phase is not None, f"Unexpected mutation (including role or DEFAULT movement): {sql}"
+    assert phase is not None, f"Unexpected mutation (including role movement): {sql}"
     if behavior.fault["agent"] == agent_fqn and behavior.fault["phase"] == phase:
         raise RuntimeError(f"controlled {phase} failure")
     behavior.effects.append((agent_fqn, phase, sql))
     if phase == "live_add":
         state["live"] = behavior.fault["phase"] != "live_postcondition"
         state["live_added"] = True
+        state["live_spec"] = state["version_specs"][state["aliases"]["LAST"]]
+    elif phase == "spec":
+        state["live_spec"] = sql.split("$$")[1]
     elif phase == "commit":
         version = f"VERSION${len(state['versions']) + 1}"
         state["versions"][version] = sql.split("$$")[1]
+        state["version_specs"][version] = state["live_spec"]
         state["aliases"]["LAST"] = version
+        if not state["default_explicit"]:
+            state["aliases"]["DEFAULT"] = version
         state["live"] = False
         return Rows(["result"], [[f"Committed {version}"]])
     elif phase == "metadata":
         state["versions"][parts[5]] = sql.split("$$")[1]
     elif phase == "alias_unset":
-        state["aliases"].pop("SANDBOX")
+        _unset_custom_alias(state, parts[5])
     elif phase == "alias_set":
-        state["aliases"]["SANDBOX"] = parts[5]
+        _unset_custom_alias(state, parts[5])
+        state["aliases"][parts[-1]] = parts[5]
+    elif phase == "default_set":
+        state["aliases"]["DEFAULT"] = parts[-1].strip("'")
+        state["default_explicit"] = True
     return Rows([], [])
 
 
@@ -69,7 +89,9 @@ def _deploy_query(behavior, sql):
         assert agent_fqn not in behavior.states
         behavior.states[agent_fqn] = {
             "versions": {"VERSION$1": ""},
+            "version_specs": {"VERSION$1": sql.split("$$")[1]},
             "aliases": {"DEFAULT": "VERSION$1", "LAST": "VERSION$1"},
+            "default_explicit": False,
             "live": False,
             "comment": "Managed by dbt cortex_agent materialization",
         }
@@ -108,7 +130,9 @@ def deploy_behavior(macro_harness):
     states = {
         f"{database}.AGENTS.SHARED": {
             "versions": {"VERSION$1": "spec_md5=aa", "VERSION$2": "spec_md5=bb"},
+            "version_specs": {"VERSION$1": '{"source":"a"}', "VERSION$2": '{"source":"b"}'},
             "aliases": {"DEFAULT": "VERSION$1", "LAST": "VERSION$2", "SANDBOX": "VERSION$1"},
+            "default_explicit": True,
             "live": True,
         }
         for database in ("DB_A", "DB_B")
@@ -132,18 +156,119 @@ def deploy_behavior(macro_harness):
         }.get(name, default),
     )
 
-    def deploy(agent_fqn="DB_A.AGENTS.SHARED", reconcile_alias=True, skill_hash="", spec_json="{}"):
+    def deploy(
+        agent_fqn="DB_A.AGENTS.SHARED",
+        reconcile_alias=True,
+        skill_hash="",
+        spec_json="{}",
+        deploy_alias="SANDBOX",
+    ):
         return macro_harness.call(
             "cortex_agent__apply_deploy",
             agent_fqn,
             spec_json,
-            "SANDBOX",
+            deploy_alias,
             reconcile_alias=reconcile_alias,
             skill_hash=skill_hash,
         )
 
     behavior.deploy = deploy
     return behavior
+
+
+@pytest.mark.parametrize("reconcile_alias", [False, True])
+def test_promote_then_unchanged_deploy_restores_model_alias_with_pinned_default(
+    deploy_behavior, reconcile_alias
+):
+    behavior = deploy_behavior
+    agent_fqn = "DB_A.AGENTS.SHARED"
+    del behavior.states[agent_fqn]
+    node = SimpleNamespace(
+        resource_type="model",
+        name="assistant",
+        alias="SHARED",
+        database="DB_A",
+        schema="AGENTS",
+        config={"materialized": "cortex_agent", "meta": {}},
+    )
+    behavior.harness.context.update(
+        graph=SimpleNamespace(nodes={"model.fixture.assistant": node}),
+        local_md5=lambda value: hashlib.md5(value.encode(), usedforsecurity=False).hexdigest(),
+    )
+    spec_v1 = json.dumps(
+        {"models": {"orchestration": "synthetic-model"}, "instructions": {"system": "Synthetic V1"}}
+    )
+    spec_v2 = json.dumps(
+        {"models": {"orchestration": "synthetic-model"}, "instructions": {"system": "Synthetic V2"}}
+    )
+    behavior.deploy(spec_json=spec_v1, deploy_alias="LATEST")
+    behavior.harness.call(
+        "cortex_agent__route_default",
+        "assistant",
+        "VERSION$1",
+        "VERSION$1",
+        expected_agent_fqn=agent_fqn,
+    )
+    state = behavior.states[agent_fqn]
+    assert state["default_explicit"] is True
+    assert sum(phase == "default_set" for _, phase, _ in behavior.effects) == 1
+    behavior.deploy(spec_json=spec_v2, deploy_alias="LATEST")
+    immutable_versions = copy.deepcopy(state["versions"])
+    immutable_specs = copy.deepcopy(state["version_specs"])
+    assert immutable_specs == {"VERSION$1": spec_v1, "VERSION$2": spec_v2}
+    for version, specification in immutable_specs.items():
+        digest = hashlib.md5(specification.encode(), usedforsecurity=False).hexdigest()
+        assert f"spec_md5={digest}" in immutable_versions[version]
+    assert state["aliases"] == {"DEFAULT": "VERSION$1", "LAST": "VERSION$2", "LATEST": "VERSION$2"}
+    before_promotion = len(behavior.effects)
+
+    promoted = json.loads(
+        behavior.harness.call(
+            "cortex_agent__route_version",
+            "assistant",
+            "VERSION$2",
+            "production",
+            set_default=False,
+            expected_agent_fqn=agent_fqn,
+        )
+    )
+    assert promoted["before"]["aliases"]["LATEST"] == "VERSION$2"
+    assert promoted["after"]["aliases"] == {
+        "DEFAULT": "VERSION$1",
+        "LAST": "VERSION$2",
+        "PRODUCTION": "VERSION$2",
+    }
+    assert [phase for _, phase, _ in behavior.effects[before_promotion:]] == ["alias_set"]
+    before_no_change = len(behavior.effects)
+    behavior.deploy(spec_json=spec_v2, deploy_alias="LATEST", reconcile_alias=reconcile_alias)
+    assert [phase for _, phase, _ in behavior.effects[before_no_change:]] == (
+        ["alias_set"] if reconcile_alias else []
+    )
+    assert state["aliases"] == {
+        "DEFAULT": "VERSION$1",
+        "LAST": "VERSION$2",
+        "LATEST" if reconcile_alias else "PRODUCTION": "VERSION$2",
+    }
+    if not reconcile_alias:
+        behavior.deploy(spec_json=spec_v2, deploy_alias="LATEST", reconcile_alias=True)
+    restored = behavior.harness.call("cortex_agent__version_state_for_model", "assistant")
+    inventory = json.loads(restored)
+    assert inventory["aliases"] == {
+        "DEFAULT": "VERSION$1",
+        "LAST": "VERSION$2",
+        "LATEST": "VERSION$2",
+    }
+    assert inventory["versions"] == ["VERSION$1", "VERSION$2"]
+    assert inventory["live"] is True
+    assert state["live_spec"] == spec_v2
+    assert state["versions"] == immutable_versions
+    assert state["version_specs"] == immutable_specs
+    assert state["default_explicit"] is True
+    assert sum(phase == "commit" for _, phase, _ in behavior.effects) == 1
+    assert sum(phase == "default_set" for _, phase, _ in behavior.effects) == 1
+    restored_effects = list(behavior.effects)
+    behavior.deploy(spec_json=spec_v2, deploy_alias="LATEST")
+    assert behavior.effects == restored_effects
 
 
 @pytest.mark.parametrize("skill_hash", ["", "aa"])

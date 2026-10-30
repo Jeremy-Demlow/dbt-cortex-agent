@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ..artifacts import ARTIFACT_SCHEMA_VERSION, contained_path
+from ..artifacts import contained_path
 from .results import _identity_components, eligibility_failures, validate_result
 
 
@@ -36,10 +36,12 @@ def build_baseline(candidate: dict[str, Any]) -> dict[str, Any]:
         "status",
     )
     baseline = {key: candidate.get(key) for key in keys}
-    for optional in ("metric_judges", "observed_metric_judges"):
+    for optional in ("metric_judges", "observed_metric_judges", "question_policy"):
         if optional in candidate:
             baseline[optional] = candidate[optional]
-    baseline["schema_version"] = ARTIFACT_SCHEMA_VERSION
+    baseline["schema_version"] = candidate["schema_version"]
+    if "question_policy" in candidate:
+        baseline["results"] = candidate["results"]
     baseline["artifact_type"] = "baseline"
     baseline["run_metadata"] = metadata
     validate_result(baseline, "baseline")

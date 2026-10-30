@@ -41,18 +41,19 @@ source of Agent state.
 
 ## Install one release
 
-The 0.0.11 candidate is pending qualification and publication. These pins
-identify its intended release artifacts; changing a dbt model still requires its own
-adopter verification.
+These pins define the matched 0.0.12 release contract and require published
+availability; see [installation](../getting-started/installation.md) and
+[releasing](releasing.md) for the pending gates. Changing a dbt model still
+requires its own adopter verification.
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.11'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.12'
 ```
 
 ```yaml
 packages:
   - git: https://github.com/Jeremy-Demlow/dbt-cortex-agent.git
-    revision: v0.0.11
+    revision: v0.0.12
 ```
 
 The Python package coordinates files, dbt, runtime calls, and evidence. The dbt
@@ -125,6 +126,36 @@ Applied deploy JSON retains `phases`; a controlled partial failure includes
 and a normalized `response`; preview leaves both null. Runtime inference and
 warehouse work may incur costs independently of native Agent Evaluation.
 
+## Configurable client budget (0.0.12)
+
+Version 0.0.12 adds `--timeout-seconds` to `agent smoke` and `skill smoke`.
+It is not supported by 0.0.11. After installing matching 0.0.12 artifacts,
+choose an explicit finite-positive budget for a multi-tool investigation:
+
+```bash
+dbt-cortex-agent agent smoke --project-dir . --target sandbox --agent finance_assistant --version 'VERSION$2' --question 'Summarize the evidence and identify missing facts.' --timeout-seconds 300 --connection sandbox --database ANALYTICS_DEV --schema DEV_AGENTS --allow-target sandbox --allow-database ANALYTICS_DEV --json
+```
+
+This preview shows `timeout_seconds: 300` and does not invoke the Agent. Review
+the destination, version, question and cost allowance before adding `--apply`.
+Agent smoke returns `passed`, `response`, and the effective budget. Skill smoke
+returns `verified` plus `failure` containing the failed skill, Agent, error and
+partial response; it stops without invoking later skills. An expected tool name
+does not prove a correct answer. Inspect skill identity, loaded content, final
+facts, and per-question evaluation evidence separately.
+
+The default remains 60 seconds for compatibility. Each skill gets a fresh
+budget; several skill checks may take longer than this total. Setup and response
+streaming count, but dbt parsing and evaluation polling do not. Heartbeats do not
+renew the budget. Blocking calls and cleanup can overrun. A local timeout is not
+proof that the server stopped or spending ceased. Retain evidence and reconcile
+the original request before approving another call. See [troubleshooting](../troubleshooting.md).
+
+Raw events, when requested, are written beneath
+`<artifact-dir>/raw-events/<filename>`; default root is
+`<project-dir>/target/dbt_cortex_agent`. Use unique filenames because collisions
+fail before invocation. Keep responses and trace artifacts private.
+
 ## Understand what deployment commits
 
 The materialization adapts dbt desired state to Snowflake's LIVE draft and
@@ -162,6 +193,24 @@ baseline. Bare scaffold alone does not create a runnable evaluation suite.
 Verify preview returns `applied: false` and `passed: null`; an applied verification
 retains per-suite candidate paths and separates execution from gate outcomes.
 
+For version-targeted proof, add `--version 'VERSION$2'` to `eval verify` or
+`eval run` only after observing that committed version. Without it, DEFAULT
+provenance must remain stable. Inspect all per-question observations as well as
+configured aggregate floors. A floor PASS without an accepted baseline is not
+regression-to-baseline proof. Candidate JSON defaults to
+`target/dbt_cortex_agent/candidates/<target>/<database>/<schema>/<object>/<suite>/<run_name>.json`.
+The accepted baseline uses the corresponding `baselines/.../<suite>.json` path;
+`--baseline-dir` overrides that root, not the identity hierarchy. Gate/compare
+operate on local artifacts and do not invoke the Agent. Keep baseline acceptance
+out of automatic retry/recovery.
+
+Version 0.0.12 supports opt-in `questions[].thresholds` through the CLI, keyed
+by stable `ground_truth_ref`. A failing protected observation blocks a gate even
+if averages pass. Nonempty policies use replayable schema-v3 candidate/baseline
+evidence; absent/empty policies keep schema v2. Native macro run/gate rejects
+the opted-in policy before effects. See [question floors](evaluations.md#opt-in-question-floors-0012);
+offline tests and release smoke do not establish paid native evaluation quality.
+
 ## Promote and roll back
 
 ```bash
@@ -176,11 +225,56 @@ Rollback moves routing and preserves newer immutable versions. Re-promoting
 These commands require observed `VERSION$1` and `VERSION$2` from two distinct
 deployed specifications; do not infer those versions from the examples.
 
+After rollback, repeat the reviewed deploy preview and, if approved, deployment
+of unchanged source. Compare version inventory before/after and the returned
+reconciliation phases: unchanged content must not create a duplicate version.
+Roll forward by promoting the existing version, then read inventory again to
+verify DEFAULT and serving alias. Runtime calls are separately costed; reading
+routes is not proof of the answer served through an application or UI.
+
 Alias movement is not transactional. The package validates the target and
 planned source state, performs the required durable operations, verifies alias
 and DEFAULT postconditions, and reports partial state. After a failure, inspect
 the returned state and retry the same desired route instead of assuming an
 automatic rollback.
+
+### Custom aliases and subsequent deployments
+
+`--alias production` is an explicit routing operation, not a model change.
+Do not assume PRODUCTION and the model's configured alias (for example LATEST)
+coexist independently on the same version. In the prior native observation
+reported for this workflow, assigning PRODUCTION to V2 displaced LATEST on V2.
+A subsequent unchanged deploy restored LATEST to V2 and displaced PRODUCTION,
+without creating V3 or issuing a DEFAULT change. The dbt materialization always
+enables model-alias reconciliation, including on unchanged content. This
+observation is not a universal native-platform guarantee; inspect the alias
+inventory in your deployment environment.
+
+The examples above explicitly use `--set-default`; custom-alias-only promotion
+omits that option. With DEFAULT explicitly pinned to V1 and desired content at
+V2, alias-only promotion and model-alias restoration leave DEFAULT at V1. The
+unchanged deploy reuses managed V2 content even though DEFAULT serves V1.
+Content idempotency does not mean every alias remains unchanged. Only the
+lower-level `cortex_agent__apply_deploy` helper accepts `reconcile_alias=false`
+to leave the custom alias alone on unchanged content; this is not a CLI option
+or a project variable. Changed-content deployment still reconciles the model
+alias. See [lifecycle guidance](lifecycle.md#custom-alias-reconciliation).
+
+Read `agent versions --json` before and after promotion and the next deploy;
+check `aliases`, `default_version`, and the committed-version inventory. If you
+require the PRODUCTION name after model-alias restoration, explicitly reapply
+the reviewed promotion and inspect again. That can displace LATEST in the
+observed behavior, so do not create an automatic deploy/promote reconciliation
+loop or treat a custom alias as a durable DEFAULT pin.
+
+When checking specifications, distinguish the serving version from the draft.
+In the prior reported observation, unversioned `DESCRIBE AGENT <fqn>` returned
+the DEFAULT specification, not the editable LIVE specification. With DEFAULT
+pinned to V1 and LIVE containing V2, that read can show V1 without implying that
+V2 failed to deploy. Inspect the explicitly selected committed version and LIVE
+separately; an alias inventory is not runtime-answer proof. The local regression
+models the observed alias and pin behavior; it does not rerun native DESCRIBE or
+qualify specification-selection behavior across platform versions.
 
 ## Retire deliberately
 

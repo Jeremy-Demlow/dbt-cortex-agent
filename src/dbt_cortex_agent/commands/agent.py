@@ -8,7 +8,13 @@ from ..config import Config
 from ..deployment import apply_deploy_plan, build_deploy_plan, validate_deploy_plan
 from ..domain import AgentVersionSelector, DurablePhaseError
 from ..identifiers import identifier
-from ..invoke import AgentInvocationError, compact_agent_output, invoke_agent
+from ..invoke import (
+    DEFAULT_TIMEOUT_SECONDS,
+    AgentInvocationError,
+    compact_agent_output,
+    invocation_timeout,
+    invoke_agent,
+)
 from ..lifecycle import apply_route_plan, build_route_plan, drop_agent, read_version_state
 from ..manifest import (
     assert_resource_databases_allowed,
@@ -17,7 +23,13 @@ from ..manifest import (
 )
 from ..scaffold import apply_scaffold_plan, build_scaffold_plan
 from ..skills import assert_apply_safety, upload_payload
-from .common import add_allowlists, emit_json, fresh_manifest, require_explicit_connection
+from .common import (
+    add_allowlists,
+    add_runtime_timeout,
+    emit_json,
+    fresh_manifest,
+    require_explicit_connection,
+)
 
 RETAINED_ON_DROP = (
     "dbt source files",
@@ -134,6 +146,7 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
         help="committed version, alias, or DEFAULT/FIRST/LAST/LIVE selector",
     )
     smoke.add_argument("--endpoint", help="HTTPS Snowflake Agent endpoint override")
+    add_runtime_timeout(smoke)
     smoke.add_argument(
         "--raw-events",
         help="explicit artifact filename under target/dbt_cortex_agent/raw-events",
@@ -173,6 +186,7 @@ def handle_scaffold(args: argparse.Namespace, config: Config) -> int:
 
 
 def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> int:
+    timeout = invocation_timeout(getattr(args, "timeout_seconds", DEFAULT_TIMEOUT_SECONDS))
     logical_agent = _nonblank(args.agent, "--agent")
     question = _nonblank(args.question, "--question")
     expected_tool = (
@@ -217,6 +231,7 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
                 question,
                 str(config.connection),
                 args.endpoint,
+                timeout=timeout,
                 role=config.role,
                 raw_event_path=raw_event_path,
             )
@@ -237,6 +252,7 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
         "requested_version": requested_version,
         "question": question,
         "expected_tool": expected_tool,
+        "timeout_seconds": timeout,
         "passed": passed,
         "response": response,
         "raw_event_artifact": str(raw_event_path) if raw_event_path else None,
@@ -249,6 +265,7 @@ def _handle_smoke(args: argparse.Namespace, config: Config, manifest: dict) -> i
         print(compact_agent_output(response or {}))
     else:
         print(f"[DRY RUN] would smoke {logical_agent} via {agent_object}: {question}")
+        print(f"Client budget: {timeout:g} seconds")
     return 2 if args.apply and passed is False else 0
 
 

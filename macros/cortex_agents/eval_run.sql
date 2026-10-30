@@ -122,6 +122,7 @@
      Python run_eval.compute_summary filter so the two paths do not diverge. #}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
   {% set thresholds = eval_meta.get('thresholds', {}) %}
+  {% do cortex_eval__assert_native_question_policy_supported(eval_meta) %}
   {% if not execute %}
     {{ return({}) }}
   {% endif %}
@@ -167,7 +168,7 @@
 {% macro cortex_eval__run(model_name, run_name=none, dry_run=true, max_attempts=60, interval=15) %}
   {# End-to-end native eval: render -> start -> poll -> results table -> gate.
      Fully dbt-native; run_eval.py stays the Python parity path for local-dataset
-     YAML configs. Sandbox-guarded; dry_run previews without mutating. #}
+     YAML configs. Sandbox-guarded; dry_run previews without querying or mutating. #}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
   {% set invocation_slug = invocation_id | replace('-', '') %}
   {% set eval_run_name = run_name or (eval_meta.get('agent') ~ '_' ~ eval_meta.get('name') ~ '_eval_' ~ invocation_slug[:12]) %}
@@ -175,12 +176,13 @@
   {% set config_url = '@' ~ cortex_eval__default_stage_fqn() ~ '/' ~ cortex_eval__config_filename(model_name) %}
 
   {% if dry_run %}
-    {% do cortex_eval__render_config(model_name, eval_run_name, none, false) %}
+    {% do cortex_eval__render_config(model_name, eval_run_name, none, false, dry_run=true) %}
     {% do log("[DRY RUN] would start/poll/gate eval run_name=" ~ eval_run_name, info=True) %}
     {% do log("[DRY RUN] results table would be " ~ cortex_eval__results_fqn(eval_run_name), info=True) %}
     {{ return(eval_run_name) }}
   {% endif %}
 
+  {% do cortex_eval__assert_native_question_policy_supported(eval_meta) %}
   {% do cortex_agent__assert_deploy_target('cortex_eval__run') %}
 
   {% do cortex_eval__start(model_name, eval_run_name, none, none, false, true) %}

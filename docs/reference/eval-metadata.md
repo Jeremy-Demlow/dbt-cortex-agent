@@ -27,6 +27,7 @@ Eval metadata lives at `models[].config.meta.cortex_eval` on a table model.
 | `questions[].test_type` | string | Recommended | `in_scope`, `out_of_scope`, or `negative` |
 | `questions[].expected_tools[]` | string | No | Declared native-supported tool name |
 | `questions[].ground_truth_ref` | string | Yes | Must map to exactly one live dataset row |
+| `questions[].thresholds.<metric>` | number | No | Opt-in per-question hard floor, keyed in the plan by `ground_truth_ref` |
 
 Custom metrics require `name` and `prompt`. `thresholds` are used by package-native
 gating. `regression_tolerances` are consumed by the shipped CLI comparison and gate commands.
@@ -38,6 +39,15 @@ such as `StaffingSimulator` is validated by its package-level type and name. Ski
 MCP connectors, `code_execution`, and other capability tools cannot be claimed as
 native coverage; use smoke, integration, trace, or other capability-specific proof.
 Use `test_type` values `in_scope`, `out_of_scope`, or `negative`.
+
+In 0.0.12, nonempty question thresholds opt into the schema-v3 policy. Keys must
+name declared metrics; values must be finite numbers within [0, 1] for built-in
+metrics. Custom metrics with question floors require all three explicit
+`score_ranges` pairs (min/median/max), with finite endpoints in nondecreasing
+order; floors must lie within their outer bounds. Tool-accuracy floors require
+`test_type: in_scope` (the default), and the source snapshot must agree. Empty
+maps preserve legacy behavior. See [question floors](../guides/evaluations.md#opt-in-question-floors-0012)
+for artifact compatibility and the native macro unsupported boundary.
 
 ## Capability evidence
 

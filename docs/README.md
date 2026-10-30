@@ -28,7 +28,8 @@ interfaces.
   versions, aliases, DEFAULT, rollback, and retirement.
 - [Skills](guides/skills.md) - declare, upload, and prove stage-backed skills.
 - [Evaluations](guides/evaluations.md) - author SQL-computed ground truth, run
-  native evaluation, gate candidates, and accept baselines.
+  native evaluation, gate candidates, and accept baselines; includes 0.0.12
+  [opt-in question floors](guides/evaluations.md#opt-in-question-floors-0012).
 - [Access control](guides/access-control.md) - separate deployment, runtime,
   evaluation, and infrastructure privileges.
 - [MCP](guides/mcp.md) - understand the current MCP ownership boundary.

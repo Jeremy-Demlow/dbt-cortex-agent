@@ -121,18 +121,38 @@ not delete an Agent.
 
 An explicit DEFAULT request must issue `SET DEFAULT_VERSION` even when DEFAULT
 already resolves to the requested version. A matching resolved value can be an
-implicit latest-version route, not a durable pin. The 0.0.11 candidate always
+implicit latest-version route, not a durable pin. Since 0.0.11, the package always
 issues that SET after the identity/version/stale-state checks and verifies the
 result. Repeated explicit pin requests reissue the same SET; alias-only requests
 still leave DEFAULT untouched.
 
 Published `0.0.10` skips the SET in this equal-value case. Its first-release
 `--set-default` command therefore cannot establish serving isolation merely by
-reporting a matching DEFAULT. Do not treat the local fix as deployed or released:
-qualify an immutable successor release and inspect DEFAULT after a later commit.
+reporting a matching DEFAULT. The immutable 0.0.11 release corrected this defect;
+use matching newer artifacts and inspect DEFAULT after a later commit rather
+than assuming an installation changed an already deployed Agent.
 
 Alias reassignment is two durable Snowflake statements: the current owner is
 unset before the target version receives the alias. The package rejects stale
 observed state, verifies the final owner, and reports partial state if either
 statement fails. Snowflake does not provide an atomic compare-and-swap for this
 operation, so conflicting operators must retry from freshly inspected state.
+
+## Custom alias reconciliation
+
+Do not assume that a model alias such as LATEST and an explicitly promoted
+PRODUCTION alias coexist independently on the same version. In the prior native
+observation supplied for this workflow, PRODUCTION displaced LATEST on V2;
+unchanged deployment restored LATEST and displaced PRODUCTION. The dbt
+materialization always enables model-alias reconciliation. With DEFAULT
+explicitly pinned to V1, that restoration reused V2 without creating V3 or
+moving DEFAULT. With the argument
+`reconcile_alias=false` on the lower-level `cortex_agent__apply_deploy` helper,
+unchanged deployment leaves the observed alias alone; this is not a CLI option
+or a project variable. Changed-content deployment still reconciles its model
+alias. Inspect routes after each operation.
+See the [developer workflow warning](developer-ci-workflow.md#custom-aliases-and-subsequent-deployments)
+for promotion sequencing and the distinction between unversioned DESCRIBE's
+observed DEFAULT specification and the separately selected LIVE draft. These
+are reported observations and bounded local regression cases, not universal
+native-platform guarantees or new live qualification.

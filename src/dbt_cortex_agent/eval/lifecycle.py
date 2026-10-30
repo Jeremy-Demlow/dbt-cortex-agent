@@ -6,7 +6,7 @@ import re
 import time
 from collections.abc import Callable
 from contextlib import ExitStack
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,6 +25,7 @@ from .dataset import (
     validate_table,
 )
 from .dataset import metric_names as parse_metric_names
+from .question_policy import validate_question_policy, validate_question_snapshot
 from .results import build_candidate, validate_observations, write_candidate, write_diagnostic
 
 TERMINAL_SUCCESS = {"COMPLETED", "SUCCEEDED", "DONE"}
@@ -68,6 +69,7 @@ class EvalPlan:
     ordered_ground_truth_refs: list[str]
     suite_signature: str
     plan_identity: dict[str, Any]
+    question_policy: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -101,8 +103,12 @@ def _numeric_policy(raw: Any, label: str) -> dict[str, float]:
 def _plan_from_payload(  # noqa: C901
     payload: dict[str, Any], agent_name: str, suite_name: str
 ) -> EvalPlan:
-    if payload.get("schema_version") != PLAN_SCHEMA_VERSION:
-        raise ValueError(f"Evaluation plan schema_version must be {PLAN_SCHEMA_VERSION}")
+    expected_version = 3 if "question_policy" in payload else PLAN_SCHEMA_VERSION
+    if (
+        type(payload.get("schema_version")) is not int
+        or payload["schema_version"] != expected_version
+    ):
+        raise ValueError(f"Evaluation plan schema_version must be {expected_version}")
     identity = payload.get("identity")
     if not isinstance(identity, dict):
         raise ValueError("Evaluation plan identity must be an object")
@@ -148,6 +154,8 @@ def _plan_from_payload(  # noqa: C901
         "regression_tolerances": payload.get("regression_tolerances"),
         "ordered_ground_truth_refs": payload.get("ordered_ground_truth_refs"),
     }
+    if "question_policy" in payload:
+        signed_fields["question_policy"] = payload["question_policy"]
     if signed != signed_fields:
         raise ValueError("Evaluation plan signed fields do not match signature_material")
     config_template = payload.get("native_eval_config")
@@ -168,6 +176,8 @@ def _plan_from_payload(  # noqa: C901
         raise ValueError(
             "Evaluation plan must not sign agent_version; choose the version at run time"
         )
+    if expected_version == 3 and any(not isinstance(ref, str) or not ref.strip() for ref in refs):
+        raise ValueError("Question policy ordered refs must be nonblank strings")
     refs = [str(value) for value in refs]
     if not refs or any(not value for value in refs) or len(refs) != len(set(refs)):
         raise ValueError("Evaluation plan ordered_ground_truth_refs must be non-empty and unique")
@@ -187,8 +197,13 @@ def _plan_from_payload(  # noqa: C901
         _numeric_policy(payload.get("thresholds"), "thresholds"),
         _numeric_policy(payload.get("regression_tolerances"), "regression_tolerances"),
     )
+    question_policy = {}
+    if "question_policy" in payload:
+        question_policy = validate_question_policy(
+            payload["question_policy"], refs, metric_names, config_template["metrics"]
+        )
     return EvalPlan(
-        schema_version=PLAN_SCHEMA_VERSION,
+        schema_version=expected_version,
         agent_name=agent_name,
         suite_name=suite_name,
         eval_model=str(identity["eval_model"]),
@@ -213,6 +228,7 @@ def _plan_from_payload(  # noqa: C901
         ordered_ground_truth_refs=refs,
         suite_signature=expected_signature,
         plan_identity=dict(identity),
+        question_policy=question_policy,
     )
 
 
@@ -622,6 +638,15 @@ def validate_evaluation_apply(
         raise ValueError("Transient retries must be non-negative")
     for plan in plans:
         validate_metric_policy(plan.metric_names, plan.thresholds, plan.regression_tolerances)
+        if plan.question_policy:
+            validate_question_policy(
+                plan.question_policy,
+                plan.ordered_ground_truth_refs,
+                plan.metric_names,
+                list(plan.native_eval_config.get("metrics") or []),
+            )
+        if plan.schema_version != (3 if plan.question_policy else PLAN_SCHEMA_VERSION):
+            raise ValueError("Evaluation plan schema_version does not match question policy")
         resource_databases = {
             plan.agent_fqn.split(".", 1)[0],
             plan.table_fqn.split(".", 1)[0],
@@ -686,6 +711,7 @@ def run_evaluation(
         snapshot = validate_table(
             cursor, plan.table_fqn, plan.metric_names, plan.ordered_ground_truth_refs
         )
+        validate_question_snapshot(plan.question_policy, snapshot)
         dataset_source_changed = False
         final_run = base_run
         status = PollResult("FAILED", "evaluation was not started")

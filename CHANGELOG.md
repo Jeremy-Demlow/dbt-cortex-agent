@@ -3,16 +3,37 @@
 This project had no public beta or stable release before `0.0.1`. Earlier Git
 history records design experiments, not supported package versions.
 
+## 0.0.12 — 2026-10-30
+
+Release preparation is gated pending protected exact-wheel proof and PyPI
+publication. The dated heading prepares release preflight; it is not evidence
+that a tag, GitHub release or PyPI distribution has been published. Paid native
+Agent Evaluation is outside this release gate.
+
+- Expose finite-positive `--timeout-seconds` on Agent and skill smoke, retaining
+  the 60-second compatibility default and existing Python `timeout` argument.
+- Preserve the effective budget, failure phase/type and unknown server outcome
+  in normalized runtime evidence. Skill smoke retains prior checks and the
+  failing identity/response, exits 2, and stops without retrying later skills.
+- Add fake-clock regressions for an 80-second completion and update the engineer
+  guide, matched release instructions, artifact paths and evaluation-stage ownership.
+- Add opt-in dbt-owned per-question metric floors, schema-v3 replayable candidate
+  and baseline evidence, policy comparison/binding, and a fail-closed native
+  macro run/gate boundary. Absent/empty policy keeps v2 semantics and signatures;
+  paid/native question-floor qualification is not claimed.
+
 ## 0.0.11 — 2026-10-09
 
-Candidate pending qualification and publication; this heading is not release proof.
+Published on PyPI and at immutable Git tag `v0.0.11`. Publication and protected
+lifecycle evidence are recorded in release workflow 38013357721. Later local
+runtime-budget and question-floor changes are not part of these artifacts.
 
 - Fix explicit DEFAULT pinning when `agent promote --set-default` or
   `agent rollback --set-default` targets the version DEFAULT already resolves
   to. Always issue the explicit SET after identity, version, and stale-state
   checks; an implicit DEFAULT otherwise follows the next commit. Alias-only
   routing remains unchanged. This fix is not part of the immutable `v0.0.10`
-  release and needs successor-release qualification.
+  release; it was qualified in the published 0.0.11 lifecycle proof.
 - Recognize SQL NULL names as native LIVE rows in `agent versions`, consistently
   with deployment inspection. Keep blank-name compatibility and report absent
   LIVE accurately; committed versions and routing are unchanged.

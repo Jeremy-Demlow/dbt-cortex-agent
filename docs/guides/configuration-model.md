@@ -8,7 +8,7 @@ for skills, runtime, and evaluations, but never reparses the model source.
 ## Full-body Agent model
 
 ```jinja
-{% do ref('sem_orders') %}
+{% set orders_view = ref('sem_orders') %}
 {{
   config(
     materialized='cortex_agent',
@@ -41,7 +41,7 @@ tools:
 
 tool_resources:
   OrdersAnalytics:
-    semantic_view: "{{ target.database }}.SEMANTIC.SEM_ORDERS"
+    semantic_view: '{{ orders_view }}'
     execution_environment:
       type: warehouse
       warehouse: "{{ target.warehouse }}"
@@ -52,7 +52,10 @@ Every model must explicitly declare `models.orchestration`. Values such as
 `claude-sonnet-4-6`, `claude-opus-4-6`, or `auto` are preserved unchanged;
 missing orchestration fails compilation.
 
-Use no-output `ref()` calls for Agent dependencies. The relation database,
+Resolve tool relations with `ref()`; the rendered relation includes dbt's actual
+database, generated schema, alias and quoting. Do not assume the custom schema
+is the physical schema: default dbt generation combines target and custom schemas.
+Use no-output `ref()` calls for dependencies not rendered in tool resources. The relation database,
 schema, and alias are the physical Agent identity. `config.meta.cortex_agent`
 contains operational metadata that is not part of the deployed specification:
 explicit local skill mapping and native-evaluation classifications. Local uploads

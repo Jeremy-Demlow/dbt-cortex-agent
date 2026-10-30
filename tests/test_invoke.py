@@ -166,7 +166,7 @@ def test_smoke_skills_uses_direct_invoker_and_requires_server_skill(tmp_path):
     skill = SkillDeclaration("agent", "triage", "stage", "@DB.S.STAGE/triage", tmp_path)
     calls = []
 
-    def success(*args):
+    def success(*args, **kwargs):
         calls.append(args)
         return {"tool_uses": [{"name": "server_skill", "input": {"skill_name": "triage"}}]}
 
@@ -190,7 +190,7 @@ def test_smoke_skills_uses_direct_invoker_and_requires_server_skill(tmp_path):
             [skill],
             agent_names={"agent": {"database": "DB", "schema": "S", "object_name": "AGENT"}},
             connection="conn",
-            invoker=lambda *args: {"tool_uses": []},
+            invoker=lambda *args, **kwargs: {"tool_uses": []},
         )
 
 
@@ -201,7 +201,7 @@ def test_smoke_skills_maps_each_logical_agent_to_its_physical_object(tmp_path):
     ]
     calls = []
 
-    def invoke(*args):
+    def invoke(*args, **kwargs):
         calls.append(args)
         skill_name = args[3].split()[2]
         return {"tool_uses": [{"name": "server_skill", "input": {"skill_name": skill_name}}]}
@@ -573,6 +573,82 @@ def test_runtime_deadline_includes_setup_and_slow_stream(runtime_transport, tmp_
     assert failure.value.result["answer"] == "partial"
     assert failure.value.result["duration_seconds"] == 10
     assert len(runtime_transport.read_sizes) == 8
+
+
+@pytest.mark.parametrize("timeout,passes", [(60, False), (120, True), (300, True)])
+def test_eighty_second_completion_requires_explicit_budget(runtime_transport, timeout, passes):
+    # Setup takes ten seconds; seven reads through DONE take another seventy.
+    runtime_transport.set_stream(PARTIAL_STREAM * 2 + b"data: [DONE]\n\n")
+    runtime_transport.connect_delay = 10
+    runtime_transport.read_delay = 10
+    if passes:
+        result = invoke_agent("DB", "S", "A", "question", "conn", timeout=timeout)
+        assert result["duration_seconds"] == 80
+        assert result["answer"] == "partialpartial"
+    else:
+        with pytest.raises(AgentInvocationError, match="deadline") as caught:
+            invoke_agent("DB", "S", "A", "question", "conn", timeout=timeout)
+        result = caught.value.result
+        assert result["metadata"]["client_failure_kind"] == "timeout"
+        assert result["metadata"]["client_failure_phase"] == "response_stream"
+        assert result["metadata"]["server_completion"] == "unknown"
+    assert result["metadata"]["client_timeout_seconds"] == timeout
+
+
+def test_skill_timeout_retains_prior_checks_and_stops(tmp_path):
+    from dbt_cortex_agent.invoke import SkillSmokeError
+
+    skills = [
+        SkillDeclaration("agent", name, "stage", "@DB.S.STAGE/skills", tmp_path)
+        for name in ("one", "two", "three")
+    ]
+    calls = []
+
+    def invoke(*args, **kwargs):
+        calls.append(kwargs["timeout"])
+        if len(calls) == 2:
+            raise AgentInvocationError("deadline", {"answer": "partial", "duration_seconds": 120})
+        return {"tool_uses": [{"name": "server_skill", "input": {"skill_name": "one"}}]}
+
+    with pytest.raises(SkillSmokeError) as caught:
+        smoke_skills(
+            skills,
+            agent_names={"agent": {"database": "DB", "schema": "S", "object_name": "A"}},
+            connection="conn",
+            invoker=invoke,
+            timeout=120,
+        )
+    assert calls == [120, 120]
+    assert caught.value.verified == ["one"]
+    assert caught.value.skill == "two"
+    assert caught.value.agent == "DB.S.A"
+    assert caught.value.response["answer"] == "partial"
+
+
+@pytest.mark.parametrize("invalid", [0, -1, float("nan"), float("inf"), True, None])
+def test_skill_budget_invalid_even_without_skills(invalid):
+    with pytest.raises(ValueError):
+        smoke_skills([], agent_names={}, connection="conn", timeout=invalid)
+
+
+@pytest.mark.parametrize("is_timeout", [True, False])
+def test_http_wrapped_timeout_is_classified(runtime_transport, monkeypatch, is_timeout):
+    from urllib.error import URLError
+
+    reason = TimeoutError("timed out") if is_timeout else OSError("unreachable")
+    error = URLError(reason)
+
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr("dbt_cortex_agent.invoke.urlopen", fail)
+    with pytest.raises(AgentInvocationError) as caught:
+        invoke_agent("DB", "S", "A", "question", "conn", timeout=120)
+    assert caught.value.__cause__ is error
+    metadata = caught.value.result["metadata"]
+    assert metadata["client_failure_kind"] == ("timeout" if is_timeout else "invocation_error")
+    assert metadata["client_failure_phase"] == "http_open"
+    assert metadata["client_timeout_seconds"] == 120
 
 
 def test_setup_overrun_closes_connection_without_opening_http(runtime_transport):

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import argparse
+from typing import Any
 
 from ..config import Config
 from ..domain import DurablePhaseError, OperationOutcome
 from ..identifiers import identifier
-from ..invoke import smoke_skills
+from ..invoke import SkillSmokeError, compact_agent_output, smoke_skills
 from ..manifest import (
     assert_resource_databases_allowed,
     physical_agent_name,
@@ -20,7 +21,13 @@ from ..skills import (
     upload_payload,
     upload_skills,
 )
-from .common import add_allowlists, emit_json, fresh_manifest, require_explicit_connection
+from .common import (
+    add_allowlists,
+    add_runtime_timeout,
+    emit_json,
+    fresh_manifest,
+    require_explicit_connection,
+)
 
 
 def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentParser) -> None:
@@ -62,6 +69,7 @@ def register(subparsers: argparse._SubParsersAction, shared: argparse.ArgumentPa
         "--agent-object", help="physical Agent override for exactly one selected Agent"
     )
     smoke.add_argument("--endpoint", help="HTTPS Snowflake Agent endpoint override")
+    add_runtime_timeout(smoke)
     smoke.add_argument(
         "--apply", action="store_true", help="[RUNTIME] invoke Agents; default is preview"
     )
@@ -144,6 +152,7 @@ def handle(args: argparse.Namespace, config: Config) -> int:
         for skill in declarations
     ]
     verified: list[str] = []
+    failure: dict[str, Any] | None = None
     if args.apply:
         require_explicit_connection(config, "Skill smoke")
         assert_apply_safety(config, args.allow_target, args.allow_database)
@@ -151,13 +160,23 @@ def handle(args: argparse.Namespace, config: Config) -> int:
             {identity["database"] for identity in physical_agents.values()},
             args.allow_database,
         )
-        verified = smoke_skills(
-            declarations,
-            agent_names=physical_agents,
-            connection=str(config.connection),
-            endpoint=args.endpoint,
-            role=config.role,
-        )
+        try:
+            verified = smoke_skills(
+                declarations,
+                agent_names=physical_agents,
+                connection=str(config.connection),
+                endpoint=args.endpoint,
+                role=config.role,
+                timeout=args.timeout_seconds,
+            )
+        except SkillSmokeError as error:
+            verified = error.verified
+            failure = {
+                "skill": error.skill,
+                "agent": error.agent,
+                "error": str(error),
+                "response": error.response,
+            }
     if args.json:
         emit_json(
             {
@@ -165,12 +184,18 @@ def handle(args: argparse.Namespace, config: Config) -> int:
                 "applied": bool(args.apply),
                 "planned": planned,
                 "verified": verified,
+                "timeout_seconds": args.timeout_seconds,
+                "failure": failure,
             }
         )
     elif args.apply:
         for skill_name in verified:
             print(f"PASS {skill_name}: server_skill selected")
+        if failure:
+            print(f"FAIL {failure['skill']} via {failure['agent']}: {failure['error']}")
+            print(compact_agent_output(failure["response"]))
     else:
         for item in planned:
             print(f"[DRY RUN] would smoke {item['skill']} via {item['agent']}")
-    return 0
+        print(f"Client budget: {args.timeout_seconds:g} seconds per invocation")
+    return 2 if failure else 0

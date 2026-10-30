@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).parents[1]
-ACTIVE_REQUIREMENTS = range(21, 33)
+ACTIVE_REQUIREMENTS = range(21, 35)
 MAP_PATH = ROOT / "tests/requirement_evidence.json"
 
 

@@ -7,6 +7,7 @@ from typing import Any
 
 from ..config import Config
 from ..dbt_runner import CommandRunner, run_dbt_parse
+from ..invoke import DEFAULT_TIMEOUT_SECONDS, invocation_timeout
 from ..manifest import load_manifest
 
 
@@ -32,6 +33,23 @@ def shared_parser() -> argparse.ArgumentParser:
         help="skip fresh dbt parse only for controlled test fixtures; unsafe for normal use",
     )
     return parser
+
+
+def _timeout_seconds(value: str) -> float:
+    try:
+        return invocation_timeout(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from error
+
+
+def add_runtime_timeout(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--timeout-seconds",
+        type=_timeout_seconds,
+        default=DEFAULT_TIMEOUT_SECONDS,
+        help="per-invocation client budget including setup and streaming; finite and positive "
+        "(default: 60); not an idle timeout or server cancellation guarantee",
+    )
 
 
 def add_allowlists(parser: argparse.ArgumentParser) -> None:

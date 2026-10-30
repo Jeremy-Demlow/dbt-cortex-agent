@@ -1,5 +1,74 @@
 # Regression tests
 
+## 0.0.12 release inventory and current instructions diverged
+
+- Root cause: removal of the requirements exception block hid REQ-033/034 from
+  normal staging, while 0.0.12 metadata coexisted with 0.0.11 installation pins
+  and candidate-only labels in current operating guidance.
+- Fix: restore only the exact CI-declared requirements allowlist, align current
+  Python/Git instructions at 0.0.12, date its release-preparation heading, and
+  retain a pending-proof/publication notice without inventing a run or receipt.
+- Verification: exact-ignore, current-docs/CLI identity, parser, requirements,
+  runtime, question-policy and project-skill contracts. Historical immutable
+  releases and unrelated ignores remain unchanged. No Git mutation, native
+  evaluation, baseline movement or final-release qualification is implied.
+
+## Task 3: Dictionary-Add Alias Fixture Concealed Deployment Interaction
+
+- Root cause: the deployment fixture hard-coded SANDBOX dictionary additions and
+  removal rather than associating one custom alias with each version. Isolated
+  deploy/routing tests could imply that PRODUCTION and model LATEST coexist
+  independently, hiding the prior native displacement/restoration observation.
+- Fix: make the existing simulator's SET/UNSET version-scoped, retain immutable
+  spec content and explicit DEFAULT pin state, and document custom-alias promotion
+  versus subsequent model reconciliation. No product macro behavior changed.
+- Verification: `test_promote_then_unchanged_deploy_restores_model_alias_with_pinned_default`
+  executes real Jinja V1 deployment/pin, changed V2 deployment, alias-only promote,
+  no-change deploy with reconciliation disabled/enabled, restoration and repeat.
+  PRODUCTION/LATEST displace each other as observed; DEFAULT stays pinned to V1,
+  immutable V1/V2 content is retained, there is one later COMMIT and no V3, and
+  the final repeat emits no mutations. The docs test retains the DESCRIBE
+  DEFAULT-versus-LIVE explanation and bounded evidence language.
+- Boundary: native observations were supplied by the user; the fixture models
+  them, not universal platform semantics. Native SQL, runtime, DESCRIBE selection,
+  concurrency, installs and current release qualification were not exercised.
+
+## REQ-034: Native dry run queried Snowflake through its real renderer
+
+- Root cause: `execute_checks=false` suppressed table validation only. The real
+  config builder still hashed content and ran `SHOW DATASETS` under dbt
+  `execute=true`; the prior test replaced the renderer and concealed the calls.
+- Fix: append explicit `dry_run` parameters to the renderer/builder and propagate
+  them from native run/start. Keep local validation, label hash/existence unknown
+  and output non-executable, and do not infer creation/reuse. Normal rendering
+  still computes the actual hash and inspects inventory.
+- Verification: `test_native_policy_dry_run_remains_offline` executes the real
+  run/start/render/build/validation graph with `execute=true` and a zero-query
+  spy, without replacing any renderer. Adjacent tests cover explicit dataset
+  shape, normal content hashing/reuse, unchanged signed plans and validation.
+  The regression failed at the real content-hash query before the fix. No SQL,
+  Snowflake connection or native qualification was performed.
+
+## REQ-034: Green Averages Concealed A Failed Critical Question
+
+- Root cause: intrinsic gates only checked suite averages, and compact baselines
+  lacked row evidence for replaying a question-specific requirement.
+- Fix: opt-in `questions[].thresholds`, validated/signed by dbt and resolved by
+  stable refs; schema-v3 artifacts retain policy and protected baseline rows.
+  Eligibility recomputes floors from observations and comparison rejects changed
+  policy. Native run/gate rejects unsupported policy before effects.
+- Verification: `tests/test_question_floors.py` executes real Jinja plan/policy
+  validation and Python candidate/compare/gate/baseline/verify with synthetic
+  evidence, including forged pass flags, changed floors and malformed rows.
+  No live or independent-review qualification is implied.
+
+## Runtime CLI Did Not Expose Its Existing Python Timeout
+
+- Root cause: both smoke command paths omitted an option and inherited the Python client's 60-second budget.
+- Fix: finite-positive `--timeout-seconds`, per-invocation forwarding, preview/result budget, normalized failure metadata, and skill failure evidence that stops remaining calls.
+- Verification: synthetic 80-second completion fails under 60 and succeeds under 120/300; parser rejects invalid values; wrapped HTTP timeouts are classified; prior skill success and failing response survive without retries.
+- Boundary: unreleased local change, no real connector enforcement, native cancellation, successor publication or reference-Agent quality proof implied.
+
 ## Explicit DEFAULT Pin Skipped When Its Resolved Value Matched
 
 - Root cause: `cortex_agent__route_default` treated equality of the resolved

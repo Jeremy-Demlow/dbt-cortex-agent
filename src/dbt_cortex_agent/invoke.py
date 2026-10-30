@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from http.client import HTTPException
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
@@ -19,6 +19,14 @@ MAX_RESULT_PREVIEW_ROWS = 5
 MAX_RAW_EVENT_BYTES = 1_000_000
 MAX_STREAM_BYTES = 1_000_000
 MAX_AGENT_EVENTS = 10_000
+DEFAULT_TIMEOUT_SECONDS = 60.0
+
+
+def invocation_timeout(value: Any) -> float:
+    timeout = finite_number(value, "Agent invocation timeout")
+    if timeout <= 0:
+        raise ValueError("Agent invocation timeout must be positive")
+    return timeout
 
 
 @dataclass(frozen=True)
@@ -58,6 +66,17 @@ class AgentInvocationError(RuntimeError):
         super().__init__(message)
         self.result = result
         self.raw_event_path: Path | None = None
+
+
+class SkillSmokeError(RuntimeError):
+    def __init__(
+        self, message: str, verified: list[str], skill: str, agent: str, response: dict[str, Any]
+    ) -> None:
+        super().__init__(message)
+        self.verified = list(verified)
+        self.skill = skill
+        self.agent = agent
+        self.response = response
 
 
 TERMINAL_EVENTS = frozenset({"done", "response"})
@@ -336,7 +355,7 @@ def invoke_agent(
     question: str,
     connection: str,
     endpoint: str | None = None,
-    timeout: float = 60,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
     role: str | None = None,
     raw_event_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -347,6 +366,7 @@ def invoke_agent(
         agent_name, version_selector = agent_name.rsplit("!", 1)
         version_selector = identifier(version_selector, "Agent version selector")
     agent_name = identifier(agent_name, "Agent object")
+    timeout = invocation_timeout(timeout)
     try:
         import snowflake.connector
     except ImportError as exc:
@@ -354,9 +374,6 @@ def invoke_agent(
             "Direct invocation requires the 'runtime' extra: "
             "pip install 'dbt-cortex-agent[runtime]'"
         ) from exc
-    timeout = finite_number(timeout, "Agent invocation timeout")
-    if timeout <= 0:
-        raise ValueError("Agent invocation timeout must be positive")
     if raw_event_path is not None and raw_event_path.exists():
         raise FileExistsError(f"Raw Agent event artifact already exists: {raw_event_path}")
     if endpoint is not None:
@@ -368,10 +385,12 @@ def invoke_agent(
         metadata={
             "requested_version": version_selector,
             "agent_fqn": f"{database}.{schema}.{agent_name}",
+            "client_timeout_seconds": timeout,
         }
     )
     events: list[AgentEvent] = []
     failure: Exception | None = None
+    phase = "connection_setup"
     try:
         with ExitStack() as resources:
             conn = resources.enter_context(
@@ -406,20 +425,33 @@ def invoke_agent(
                 conn.rest.token,
                 role,
             )
+            phase = "http_open"
             try:
                 response = urlopen(request, timeout=_remaining(deadline))
             except HTTPError as exc:
                 resources.enter_context(managed_resource(exc))
                 raise
             resources.enter_context(managed_resource(response))
+            phase = "response_stream"
             collect_agent_events(
                 frame_sse(response, deadline=deadline), result=result, raw_events=events
             )
             _remaining(deadline)
+            phase = "resource_cleanup"
     except Exception as exc:
         if not is_controlled_operation_error(exc) and not isinstance(exc, HTTPException):
             raise
         failure = exc
+        result.metadata.update(
+            client_failure_phase=phase,
+            client_failure_kind=(
+                "timeout"
+                if isinstance(exc, TimeoutError)
+                or (isinstance(exc, URLError) and isinstance(exc.reason, TimeoutError))
+                else "invocation_error"
+            ),
+            server_completion="unknown",
+        )
         if str(exc) not in result.errors:
             result.errors.append(str(exc))
         cleanup_errors = getattr(exc, "cleanup_errors", [])
@@ -430,6 +462,7 @@ def invoke_agent(
         {
             "requested_version": version_selector,
             "agent_fqn": f"{database}.{schema}.{agent_name}",
+            "client_timeout_seconds": timeout,
         }
     )
     return _finish_invocation(result, events, raw_event_path, failure)
@@ -508,29 +541,42 @@ def smoke_skills(
     endpoint: str | None = None,
     invoker=invoke_agent,
     role: str | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
 ) -> list[str]:
+    timeout = invocation_timeout(timeout)
     verified: list[str] = []
     for skill in skills:
         if skill.agent_name not in agent_names:
             raise ValueError(f"No physical Agent mapping for {skill.agent_name!r}")
         identity = agent_names[skill.agent_name]
-        result = invoker(
-            identity["database"],
-            identity["schema"],
-            identity["object_name"],
-            f"Use the {skill.skill_name} skill and summarize the expected next actions.",
-            connection,
-            endpoint,
-            **({"role": role} if role is not None else {}),
-        )
+        agent = ".".join(identity[key] for key in ("database", "schema", "object_name"))
+        try:
+            result = invoker(
+                identity["database"],
+                identity["schema"],
+                identity["object_name"],
+                f"Use the {skill.skill_name} skill and summarize the expected next actions.",
+                connection,
+                endpoint,
+                timeout=timeout,
+                **({"role": role} if role is not None else {}),
+            )
+        except AgentInvocationError as error:
+            raise SkillSmokeError(
+                str(error), verified, skill.skill_name, agent, error.result
+            ) from error
         selected = any(
             item.get("name") == "server_skill"
             and (item.get("input") or {}).get("skill_name") == skill.skill_name
             for item in result.get("tool_uses", [])
         )
         if not selected:
-            raise RuntimeError(
-                f"Skill smoke failed for {skill.skill_name!r}: server_skill was not selected"
+            raise SkillSmokeError(
+                f"Skill smoke failed for {skill.skill_name!r}: server_skill was not selected",
+                verified,
+                skill.skill_name,
+                agent,
+                result,
             )
         verified.append(skill.skill_name)
     return verified

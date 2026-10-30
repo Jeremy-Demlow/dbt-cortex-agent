@@ -27,6 +27,7 @@ EXPECTED_PACKAGE_FILES = {
     "dbt_cortex_agent/eval/dataset.py",
     "dbt_cortex_agent/eval/gate.py",
     "dbt_cortex_agent/eval/lifecycle.py",
+    "dbt_cortex_agent/eval/question_policy.py",
     "dbt_cortex_agent/eval/results.py",
     "dbt_cortex_agent/eval/verify.py",
     "dbt_cortex_agent/identifiers.py",

@@ -12,11 +12,11 @@ lifecycle logic.
 
 This file is a repository-local skill. Use it from a checkout of the matching
 release tag, not by assuming that `pip install`, `dbt deps`, or immutable tag
-`v0.0.11` installs or registers it. It has not been published in a skill catalog.
+`v0.0.12` installs or registers it. It has not been published in a skill catalog.
 
 ## Authority and invariants
 
-- This workflow targets `0.0.11`. Detect the installed `dbt-cortex-agent` version
+- This workflow targets `0.0.12`. Detect the installed `dbt-cortex-agent` version
   and require Python and dbt to identify the same immutable release. If they differ
   or another version is installed, stop and review that version's documentation;
   do not silently upgrade or apply this workflow to historical contracts.
@@ -164,6 +164,12 @@ The suite's `agent` field names the same enabled Agent model; never create, depl
 second Agent for evaluation. Each row must emit one `OUTPUT` VARIANT. Use
 `ground_truth_output` for answer correctness and `ground_truth_invocations` for tool metrics;
 expected tool names must match declared native tool names exactly.
+
+In 0.0.12, optional `questions[].thresholds` protect individual metric observations
+by stable `ground_truth_ref`; nonempty policies use replayable schema-v3 evidence,
+while absent/empty policies keep v2. Use the CLI verify/compare/gate/baseline path:
+native macro run/gate rejects opted-in policies before effects. Load the matching
+evaluation guide; offline tests or runtime smoke do not prove paid evaluation quality.
 
 Skills and MCP behavior require separate smoke/integration proof because native Agent Evaluation
 does not cover them.

@@ -117,6 +117,25 @@ def test_canonical_developer_guide_commands_parse_with_shipped_cli():
         parser.parse_args(command[1:])
 
 
+def test_alias_docs_distinguish_content_routes_and_describe_views():
+    guide = " ".join((ROOT / "docs/guides/developer-ci-workflow.md").read_text().split())
+    lifecycle = " ".join((ROOT / "docs/guides/lifecycle.md").read_text().split())
+    for text in (guide, lifecycle):
+        assert "PRODUCTION displaced LATEST" in text or "displaced LATEST on V2" in text
+        assert "materialization always enables model-alias reconciliation" in text
+        assert "`reconcile_alias=false`" in text
+        assert "not a CLI option or a project variable" in text
+        assert "cortex_agent_reconcile_alias_on_noop" not in text
+        assert "DEFAULT explicitly pinned to V1" in text
+        assert "coexist independently" in text
+        assert "universal" in text and "observation" in text
+    assert "Content idempotency does not mean every alias remains unchanged" in guide
+    assert "unversioned `DESCRIBE AGENT <fqn>`" in guide
+    assert "DEFAULT specification, not the editable LIVE specification" in guide
+    assert "does not rerun native DESCRIBE" in guide
+    assert "developer-ci-workflow.md#custom-aliases-and-subsequent-deployments" in lifecycle
+
+
 def test_documentation_relative_links_resolve():
     paths = [ROOT / "README.md", *(ROOT / "docs").rglob("*.md")]
     failures: list[str] = []
@@ -151,7 +170,7 @@ def test_non_mutating_quickstart_has_no_applied_remote_command():
 
 
 def test_current_release_identity_is_consistent_across_public_docs():
-    expected = "0.0.11"
+    expected = "0.0.12"
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     installation = (ROOT / "docs/getting-started/installation.md").read_text(encoding="utf-8")
     cli_reference = (ROOT / "docs/reference/cli.md").read_text(encoding="utf-8")
@@ -161,7 +180,10 @@ def test_current_release_identity_is_consistent_across_public_docs():
         assert f"revision: v{expected}" in text
     assert cli_reference.startswith(f"# CLI reference (v{expected})")
     for text in (readme, installation):
-        assert "pending qualification and publication" in text
+        assert "require published availability" in text
+        assert "publication is not confirmed here" in text
+        assert "dbt-cortex-agent[runtime]==0.0.11" not in text
+        assert "revision: v0.0.11" not in text
 
 
 def test_product_docs_do_not_invoke_absent_grants_or_promise_role_switching():
@@ -182,6 +204,27 @@ def test_product_docs_do_not_invoke_absent_grants_or_promise_role_switching():
     from dbt_cortex_agent.scaffold import _skills_readme
 
     assert "config.meta.cortex_agent.skills" in _skills_readme()
+
+
+def test_runtime_handoff_documents_actual_operational_boundaries():
+    guide = (ROOT / "docs/guides/developer-ci-workflow.md").read_text()
+    reference = (ROOT / "docs/reference/cli.md").read_text()
+    evaluations = (ROOT / "docs/guides/evaluations.md").read_text()
+    configuration = (ROOT / "docs/guides/configuration-model.md").read_text()
+    recovery = (ROOT / "docs/troubleshooting.md").read_text()
+    assert "creates the stage if needed" not in evaluations
+    assert "pre-existing stage" in evaluations
+    assert "CREATE STAGE IF NOT" in evaluations
+    assert "semantic_view: '{{ orders_view }}'" in configuration
+    assert "target.database }}.SEMANTIC" not in configuration
+    assert guide.index("## Configurable client budget") < guide.index("## Understand what")
+    assert reference.index("Runtime-budget addition") < reference.index("## Evaluations")
+    for text in (guide, reference, recovery):
+        assert "0.0.12" in text and "--timeout-seconds" in text
+        assert "unreleased successor" not in text
+    assert "raw-events/<filename>" in guide
+    assert "not regression-to-baseline" in " ".join(guide.split())
+    assert "original client" in recovery
 
 
 def test_golden_adopter_target_schema_and_effect_boundaries():
@@ -226,8 +269,35 @@ def test_release_setup_documents_protected_environment_and_unqualified_work():
     assert "## UNRELEASED" not in changelog
     assert "## 0.0.11 — 2026-10-09" in changelog
     assert "Published on 2026-09-18" in changelog
-    assert "Candidate pending qualification and publication" in changelog
-    assert "`0.0.11` candidate is pending qualification and publication" in " ".join(text.split())
+    assert "immutable Git tag `v0.0.11`" in changelog
+    assert "Version `0.0.11` is published" in text
+    assert "Release preparation is gated pending protected exact-wheel proof" in text
+    assert "instructions require published availability" in text
+    assert (
+        "No 0.0.12 tag, release run ID, live attestation or PyPI availability is confirmed" in text
+    )
+    assert "## 0.0.12 — 2026-10-30" in changelog
+    assert "## 0.0.12 — Candidate" not in changelog
     assert "release run 35400838944" in text
     assert "paid native Agent Evaluation" in text
     assert "not part of its immutable source tag" in " ".join(text.split())
+
+
+def test_current_docs_explain_question_floor_compatibility_and_native_boundary():
+    evaluations = (ROOT / "docs/guides/evaluations.md").read_text()
+    guide = (ROOT / "docs/guides/developer-ci-workflow.md").read_text()
+    metadata = (ROOT / "docs/reference/eval-metadata.md").read_text()
+    reference = (ROOT / "docs/reference/cli.md").read_text()
+    skill = (ROOT / ".cortex/skills/dbt-cortex-agent-project/SKILL.md").read_text()
+    assert "### Opt-in question floors (0.0.12)" in evaluations
+    assert "questions[].thresholds" in evaluations and "questions[].thresholds" in guide
+    assert "schema-v3" in guide and "schema v2" in guide
+    assert "Native macro run/gate rejects" in guide
+    assert "explicitly reject" in evaluations
+    assert "No native per-question" in evaluations
+    assert "source snapshot must agree" in metadata
+    for text in (reference, skill):
+        assert "questions[].thresholds" in text and "schema-v3" in text
+        assert "macro run/gate rejects" in text
+    for text in (evaluations, guide, metadata, reference, skill):
+        assert "opt-in-question-floors-unreleased" not in text

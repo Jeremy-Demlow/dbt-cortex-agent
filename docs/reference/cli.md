@@ -1,4 +1,8 @@
-# CLI reference (v0.0.11)
+# CLI reference (v0.0.12)
+
+This reference describes the 0.0.12 interfaces. Install matching Python and dbt
+artifacts; the [installation guide](../getting-started/installation.md) and
+[release guide](../guides/releasing.md) separate that contract from publication proof.
 
 `dbt-cortex-agent` is the single console entry. Manifest-dependent commands run
 a fresh `dbt parse` unless `--no-parse` is supplied for a controlled fixture.
@@ -16,7 +20,8 @@ may open the Snowflake adapter; neither is guaranteed offline.
 | `2` | controlled configuration, filesystem, connector, HTTP, or runtime error |
 
 Applicable commands emit human text by default and machine-readable stdout with
-`--json`. Controlled errors go to stderr. Mutation, runtime, and spend commands
+`--json`. Pre-operation controlled errors go to stderr; runtime and durable
+partial-failure handlers retain structured JSON on stdout. Mutation, runtime, and spend commands
 are preview/dry-run by default and require `--apply`.
 
 ## Shared options
@@ -58,7 +63,7 @@ the project working directory and child environment, including `DBT_PROFILES_DIR
 ### `dbt-cortex-agent init` — MUTATION with `--apply`
 
 Preview or append missing package/project-var entries. Options: shared options,
-`--package-source`, `--revision` (default `v0.0.11`), `--agent-schema`,
+`--package-source`, `--revision` (default `v0.0.12`), `--agent-schema`,
 `--eval-schema`, both repeatable allowlists, `--apply`, and `--run-dbt-deps`.
 Output is messages or JSON with `applied`, `changed_files`, and `messages`.
 By default, the command configures an existing dbt project only; it does not scaffold a dbt
@@ -106,7 +111,7 @@ Subsequent destinations are not attempted and no rollback is implied. See
 ### `dbt-cortex-agent skill smoke` — RUNTIME with `--apply`
 
 Preview mappings or invoke live Agents. Options: shared options, repeatable
-`--agent`, `--agent-object`, `--endpoint`, both allowlists, and `--apply`.
+`--agent`, `--agent-object`, `--endpoint`, `--timeout-seconds`, both allowlists, and `--apply`.
 Applied smoke requires `--connection`, database, schema, and the `runtime` extra.
 The resolved role is forwarded to the Agent runtime request.
 
@@ -153,7 +158,7 @@ Preview or invoke one manifest-owned Agent without requiring a skill declaration
 Required options are one logical `--agent` and a nonblank `--question`. Optional
 options are `--expect-tool` for an exact returned tool-name assertion, `--version`
 for a committed version, alias, or shortcut,
-`--agent-object` for a physical Agent override, `--endpoint`, both repeatable
+`--agent-object` for a physical Agent override, `--endpoint`, `--timeout-seconds`, both repeatable
 allowlists, and `--apply`.
 
 Preview resolves physical identity from manifest target naming or validates the
@@ -187,7 +192,33 @@ written `raw_event_path`; programming defects are re-raised unchanged. Independe
 cleanup never masks an active primary exception; secondary cleanup errors are
 attached to it and included in controlled runtime metadata.
 
+### Runtime-budget addition (0.0.12)
+
+Version 0.0.12 adds `--timeout-seconds SECONDS` to `agent smoke` and `skill smoke`.
+Version 0.0.11 does not have this option. Values are finite and strictly positive,
+including fractions; default 60. The Python `invoke_agent(timeout=...)` parameter
+remains supported. Preview/applied JSON includes `timeout_seconds`; normalized
+responses include `metadata.client_timeout_seconds`. On controlled invocation
+failure, metadata records `client_failure_kind` (`timeout` or `invocation_error`),
+`client_failure_phase`, and `server_completion: unknown`.
+
+Skill smoke stops at the first failed invocation or skill-selection assertion,
+retains prior `verified` checks and the failing `failure.response`, and exits 2.
+`failure` is null on preview/success. Programming defects propagate unchanged.
+There is no automatic reinvocation. A budget is per invocation, includes setup
+and streaming, and is not an idle timeout or cancellation guarantee. Native
+orchestration budgets, tool SQL timeouts, evaluation poll limits, and dbt process
+timeouts are separate controls. Parser errors still use argparse stderr/exit 2.
+
 ## Evaluations
+
+In 0.0.12, nonempty dbt-owned `questions[].thresholds` opt into policy-bound
+schema-v3 plans, candidates and replayable baselines. `eval run/verify`,
+`eval compare`, `eval gate` and `eval accept-baseline` enforce the protected
+observations independently of suite averages. Absent/empty policies retain v2;
+changed or removed policies are incomparable with protected baselines. Native
+macro run/gate rejects opted-in policies before effects. See
+[question floors](../guides/evaluations.md#opt-in-question-floors-0012).
 
 ### `dbt-cortex-agent eval verify` — PAID with `--apply`
 

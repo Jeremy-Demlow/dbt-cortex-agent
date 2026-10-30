@@ -1,6 +1,6 @@
 # dbt_cortex_agent
 
-`dbt_cortex_agent` 0.0.11 is a Snowflake-only dbt package and Python companion for
+`dbt_cortex_agent` is a Snowflake-only dbt package and Python companion for
 defining, versioning, evaluating, and operating Cortex Agents from dbt models.
 A `materialized='cortex_agent'` model body is the native Agent YAML
 specification.
@@ -17,32 +17,35 @@ evidence. It does not implement a second Agent specification or DDL authority.
 
 ## Install one immutable version on two surfaces
 
-The 0.0.11 candidate is pending qualification and publication. The coordinates
-below are the intended release contract, not a claim that the tag or PyPI
-distribution is already available. See [releasing](docs/guides/releasing.md).
+The coordinates below are the matched 0.0.12 release installation contract.
+They require published availability of both PyPI 0.0.12 and immutable Git tag
+`v0.0.12`. Release preparation is gated pending protected exact-wheel proof and
+PyPI publication; publication is not confirmed here. See
+[releasing](docs/guides/releasing.md) for the gates and retained evidence.
+Do not mix Python 0.0.12 with older dbt macros.
 
 Install the Python companion from PyPI:
 
 ```bash
-pipx install 'dbt-cortex-agent[runtime]==0.0.11'
+pipx install 'dbt-cortex-agent[runtime]==0.0.12'
 ```
 
 For a managed Python environment, use:
 
 ```bash
-python -m pip install 'dbt-cortex-agent[runtime]==0.0.11'
+python -m pip install 'dbt-cortex-agent[runtime]==0.0.12'
 ```
 
 dbt does not install packages from PyPI. Pin the dbt package separately to the
-public HTTPS `v0.0.11` Git tag in `packages.yml`:
+public HTTPS `v0.0.12` Git tag in `packages.yml`:
 
 ```yaml
 packages:
   - git: "https://github.com/Jeremy-Demlow/dbt-cortex-agent.git"
-    revision: v0.0.11
+    revision: v0.0.12
 ```
 
-After publication, PyPI version `0.0.11` and Git tag `v0.0.11` identify the same immutable release
+PyPI version `0.0.12` and Git tag `v0.0.12` must identify the same immutable release
 across the CLI and dbt surfaces. Run `dbt deps`, then
 `dbt-cortex-agent doctor --project-dir . --json`; `doctor` verifies that the CLI,
 declared dbt dependency, and installed consumer dbt package versions align. A
@@ -115,7 +118,7 @@ For Cortex Code-guided adoption, use the project-local
 [`dbt-cortex-agent-project` skill](.cortex/skills/dbt-cortex-agent-project/SKILL.md).
 It discovers an existing dbt project, establishes objective/levers/data/proof,
 and guides an existing semantic view, the fixed Orders starter, or an existing
-Agent into a dbt-owned model. It is script-free, shows manual 0.0.11 command
+Agent into a dbt-owned model. It is script-free, shows manual 0.0.12 command
 parity, and stops separately before local writes, Snowflake mutation/runtime,
 paid evaluation, and baseline movement. The checked-in skill is not a claim of
 catalog publication, wheel installation, or assistant-invocation proof. Use the
@@ -224,6 +227,12 @@ eval table, and an evaluation stage; `--apply` incurs Cortex spend. It never
 deploys or changes an Agent. It writes candidate JSON with plan identity,
 ordered ground-truth refs, policy, and pre/post DEFAULT provenance for threshold
 and accepted-baseline gates. See [evaluations](docs/guides/evaluations.md).
+
+In 0.0.12, both smoke commands expose `--timeout-seconds` with the compatible
+60-second default. Opt-in `questions[].thresholds` protect individual metric
+observations through the CLI and schema-v3 evidence; absent/empty policies retain
+schema v2. Native macro run/gate rejects nonempty question policies before effects.
+These interfaces do not establish native timing, cancellation or answer quality.
 
 For a complete evaluation workflow, `eval verify` materializes and tests the
 selected eval model, executes native evaluation, consumes the exact candidate,

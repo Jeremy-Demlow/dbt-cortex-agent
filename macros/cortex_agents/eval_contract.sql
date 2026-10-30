@@ -123,6 +123,89 @@
   {{ return(evidence) }}
 {% endmacro %}
 
+{% macro cortex_eval__finite_policy_number(value, label) %}
+  {% if value is not number or value is boolean or (value - value) != 0 %}
+    {{ exceptions.raise_compiler_error(label ~ ' must be a finite number') }}
+  {% endif %}
+  {{ return(value) }}
+{% endmacro %}
+
+{% macro cortex_eval__question_policy(eval_meta) %}
+  {% set thresholds = {} %}
+  {% set test_types = {} %}
+  {% set score_bounds = {} %}
+  {% set names = cortex_eval__metric_names(eval_meta.get('metrics', [])) %}
+  {% set system_metrics = ['answer_correctness', 'logical_consistency', 'tool_selection_accuracy', 'tool_execution_accuracy'] %}
+  {% for question in eval_meta.get('questions', []) %}
+    {% set floors = question.get('thresholds', {}) %}
+    {% if floors is not mapping %}
+      {{ exceptions.raise_compiler_error('Question thresholds must be a metric map') }}
+    {% endif %}
+    {% if floors %}
+      {% set reference = question.get('ground_truth_ref') %}
+      {% set test_type = question.get('test_type', 'in_scope') %}
+      {% if reference is not string or not reference | trim or reference in thresholds %}
+        {{ exceptions.raise_compiler_error('Question policy requires unique nonblank ground_truth_ref') }}
+      {% endif %}
+      {% if test_type is not string or not test_type | trim %}
+        {{ exceptions.raise_compiler_error('Question policy requires nonblank test_type') }}
+      {% endif %}
+      {% for name, floor in floors.items() %}
+        {% if name not in names or names.count(name) != 1 %}
+          {{ exceptions.raise_compiler_error('Question floor must name a unique declared metric: ' ~ name) }}
+        {% endif %}
+        {% if name in ['tool_selection_accuracy', 'tool_execution_accuracy'] and test_type != 'in_scope' %}
+          {{ exceptions.raise_compiler_error('Question tool floors require in_scope questions') }}
+        {% endif %}
+        {% if name in system_metrics %}
+          {% do score_bounds.update({name: [0, 1]}) %}
+        {% else %}
+          {% set selected = namespace(metric=none) %}
+          {% for metric in eval_meta.get('metrics', []) %}
+            {% if metric is mapping and metric.get('name') == name %}
+              {% set selected.metric = metric %}
+            {% endif %}
+          {% endfor %}
+          {% set ranges = selected.metric.get('score_ranges') if selected.metric is not none else none %}
+          {% if ranges is not mapping or ranges.keys() | sort != ['max_score', 'median_score', 'min_score'] %}
+            {{ exceptions.raise_compiler_error('Question floor metric ' ~ name ~ ' requires explicit score_ranges') }}
+          {% endif %}
+          {% set values = [] %}
+          {% for key in ['min_score', 'median_score', 'max_score'] %}
+            {% set pair = ranges[key] %}
+            {% if pair is not sequence or pair is string or pair is mapping or pair | length != 2 %}
+              {{ exceptions.raise_compiler_error('Question floor metric requires two-value score ranges') }}
+            {% endif %}
+            {% for value in pair %}
+              {% do values.append(cortex_eval__finite_policy_number(value, 'score range')) %}
+            {% endfor %}
+          {% endfor %}
+          {% if values != values | sort %}
+            {{ exceptions.raise_compiler_error('Question floor metric requires ordered score ranges') }}
+          {% endif %}
+          {% do score_bounds.update({name: [values[0], values[-1]]}) %}
+        {% endif %}
+        {% set numeric_floor = cortex_eval__finite_policy_number(floor, 'question threshold') %}
+        {% if numeric_floor < score_bounds[name][0] or numeric_floor > score_bounds[name][1] %}
+          {{ exceptions.raise_compiler_error('Question threshold is outside score bounds for ' ~ name) }}
+        {% endif %}
+      {% endfor %}
+      {% do thresholds.update({reference: floors}) %}
+      {% do test_types.update({reference: test_type}) %}
+    {% endif %}
+  {% endfor %}
+  {% if not thresholds %}
+    {{ return({}) }}
+  {% endif %}
+  {{ return({'schema_version': 1, 'thresholds': thresholds, 'score_bounds': score_bounds, 'test_types': test_types}) }}
+{% endmacro %}
+
+{% macro cortex_eval__assert_native_question_policy_supported(eval_meta) %}
+  {% if cortex_eval__question_policy(eval_meta) %}
+    {{ exceptions.raise_compiler_error('Per-question thresholds are unsupported by the native macro run/gate; use dbt-cortex-agent eval run/verify and artifact gates') }}
+  {% endif %}
+{% endmacro %}
+
 {% macro cortex_eval__validate(model_name, execute_checks=false) %}
   {% set node = cortex_eval__get_eval(model_name) %}
   {% set eval_meta = cortex_eval__get_eval_meta(model_name) %}
@@ -199,6 +282,7 @@
     {% do question_ids.append(question.get('id')) %}
     {% do ground_truth_refs.append(question.get('ground_truth_ref')) %}
   {% endfor %}
+  {% do cortex_eval__question_policy(eval_meta) %}
 
   {% set native_supported_tool_names = cortex_eval__native_supported_tool_names(eval_meta.get('agent')) %}
   {% set unsupported_native_tool_claims = cortex_eval__unsupported_native_tool_claims(eval_meta.get('agent')) %}

@@ -15,6 +15,7 @@ from .dataset import (
     validate_metric_policy,
     validate_snapshot,
 )
+from .question_policy import question_failures, validate_question_policy
 
 CURRENT_PLAN_SCHEMA_VERSION = 2
 
@@ -98,6 +99,9 @@ def eligibility_failures(value: dict[str, Any]) -> list[str]:
     if value.get("threshold_failures"):
         failures.append("Evaluation records intrinsic failures")
     failures.extend(threshold_failures(value["summary"], value["thresholds"]))
+    if "question_policy" in value:
+        validate_result(value)
+        failures.extend(question_failures(value["results"], value["question_policy"]))
     for metric in value["regression_tolerances"]:
         if metric not in value["summary"]:
             failures.append(f"{metric}: missing regression metric")
@@ -150,6 +154,15 @@ def build_candidate(
     validate_observations(rows, plan.ordered_ground_truth_refs, plan.metric_names)
     summary = compute_summary(rows)
     failures = threshold_failures(summary, plan.thresholds)
+    policy = getattr(plan, "question_policy", {})
+    if policy:
+        validate_question_policy(
+            policy,
+            plan.ordered_ground_truth_refs,
+            plan.metric_names,
+            list(plan.native_eval_config.get("metrics") or []),
+        )
+        failures.extend(question_failures(rows, policy))
     failures.extend(
         f"{metric}: missing regression metric"
         for metric in plan.regression_tolerances
@@ -199,6 +212,9 @@ def build_candidate(
     }
     if observed_metric_judges is not None:
         candidate["observed_metric_judges"] = observed_metric_judges
+    if policy:
+        candidate["schema_version"] = 3
+        candidate["question_policy"] = policy
     return candidate
 
 
@@ -246,12 +262,11 @@ def write_diagnostic(diagnostic: dict[str, Any], artifact_dir: str | Path) -> Pa
 def validate_result(  # noqa: C901
     value: dict[str, Any], expected_type: str | None = None
 ) -> dict[str, Any]:
-    if value.get("schema_version") != ARTIFACT_SCHEMA_VERSION:
-        raise ValueError(f"Evaluation artifact schema_version must be {ARTIFACT_SCHEMA_VERSION}")
-    if value.get("plan_schema_version") != CURRENT_PLAN_SCHEMA_VERSION:
-        raise ValueError(
-            f"Evaluation artifact plan_schema_version must be {CURRENT_PLAN_SCHEMA_VERSION}"
-        )
+    expected_version = 3 if "question_policy" in value else ARTIFACT_SCHEMA_VERSION
+    if type(value.get("schema_version")) is not int or value["schema_version"] != expected_version:
+        raise ValueError(f"Evaluation artifact schema_version must be {expected_version}")
+    if value.get("plan_schema_version") != expected_version:
+        raise ValueError(f"Evaluation artifact plan_schema_version must be {expected_version}")
     artifact_type = value.get("artifact_type")
     if artifact_type not in {"candidate", "baseline"}:
         raise ValueError("Evaluation artifact_type must be candidate or baseline")
@@ -396,7 +411,7 @@ def _validate_dataset_binding(value: dict[str, Any]) -> None:
         raise ValueError("Evaluation dataset_source_changed must be a boolean")
     if changed and (value.get("status") != "indeterminate" or value.get("passed") is not False):
         raise ValueError("Evaluation artifact with dataset drift must be indeterminate and failed")
-    if value["artifact_type"] == "candidate":
+    if value["artifact_type"] == "candidate" or "question_policy" in value:
         rows = value.get("results")
         if not isinstance(rows, list) or any(not isinstance(row, dict) for row in rows):
             raise ValueError("Evaluation candidate requires row evidence")
@@ -427,13 +442,16 @@ def _validate_statistics(value: dict[str, Any]) -> None:
             raise ValueError(f"Evaluation summary count for {metric} is incomplete")
     if set(value["metric_names"]) - TOOL_METRICS - value["summary"].keys():
         raise ValueError("Evaluation summary is missing required metrics")
-    if value["artifact_type"] == "candidate":
+    if value["artifact_type"] == "candidate" or "question_policy" in value:
         rows = value.get("results")
         if not isinstance(rows, list):
             raise ValueError("Evaluation candidate requires row evidence")
         validate_observations(rows, refs, value["metric_names"])
         if compute_summary(rows) != value["summary"]:
             raise ValueError("Evaluation summary does not match row evidence")
+        if "question_policy" in value:
+            validate_question_policy(value["question_policy"], refs, value["metric_names"])
+            question_failures(rows, value["question_policy"])
 
 
 def load_result(path: str | Path, expected_type: str | None = None) -> dict[str, Any]:

@@ -26,8 +26,8 @@ Use this sequence rather than skipping directly to deploy or evaluation:
    normal Agent is deployed; then preview `eval run` and consider its paid
    `--apply` path. Do not deploy a second Agent.
 9. Retain the candidate at
-   `<artifact-dir>/candidates/<agent>/<suite>/<run_name>.json`, gate it, compare
-   it with `<artifact-dir>/baselines/<agent>/<suite>.json`, and move a baseline
+   `<artifact-dir>/candidates/<target>/<database>/<schema>/<object>/<suite>/<run_name>.json`, gate it, compare
+   it with `<artifact-dir>/baselines/<target>/<database>/<schema>/<object>/<suite>.json`, and move a baseline
    only through a separately reviewed `accept-baseline --apply`.
 
 | Symptom | Resolution |
@@ -52,6 +52,31 @@ Use this sequence rather than skipping directly to deploy or evaluation:
 | Candidate is indeterminate | Check pre/post DEFAULT provenance; do not rerun until green or relax tolerances. |
 | Baseline comparison rejected | Keep suite signature/policy compatible and use the accepted baseline's tolerances. |
 | Unexpected target suffix | Review `naming.<target>` and `cortex_agent_env_suffixes`; evaluation does not add an Agent suffix. |
-| Controlled error lacks JSON on stdout | Errors are emitted to stderr; process exit is `2`. |
+| Controlled error lacks JSON on stdout | Pre-operation configuration/parser errors use stderr/exit `2`. Smoke and durable partial-operation handlers retain their structured evidence on stdout with `--json`; preserve both streams and the exit code. |
+
+## Invocation timeout and failure recovery
+
+Version 0.0.12 adds `--timeout-seconds` to both smoke commands, retaining the
+60-second default. Version 0.0.11 has no CLI override. Use an explicit larger
+budget only after installing matching 0.0.12 artifacts and approving the call's
+cost. Increasing it does not fix
+unsupported conclusions or incorrect facts.
+
+1. Save the exit code and complete JSON. Agent smoke retains `response`; skill
+   smoke retains prior `verified` skills and `failure.response` in 0.0.12.
+2. Distinguish expected-tool mismatch from `response.errors`. A successful
+   transport or skill selection does not establish answer quality.
+3. For a timeout, inspect elapsed duration, the effective budget and any observed
+   request/query identifiers. Do not invent a request ID or assume cancellation.
+   Where access permits, read native events scoped to the exact Agent/trace and
+   correlate the original question, version and query IDs. Tool SQL completion
+   alone does not establish parent Agent completion. Keep content private.
+4. If server outcome is unknown, report it as unknown; do not automatically
+   invoke again. A recovered answer still does not change the original client
+   failure into a pass. Review its facts separately.
+5. Approve any new invocation explicitly. Do not retry until green or weaken a
+   gate. For deployment partial failures, inspect completed phases and current
+   state instead of assuming rollback. For completed evaluation rejection,
+   inspect per-row evidence and aggregate floors; baseline acceptance is separate.
 
 See the [CLI reference](reference/cli.md) and [configuration model](guides/configuration-model.md).
